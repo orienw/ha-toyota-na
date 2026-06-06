@@ -1,0 +1,49 @@
+name: Mirror upstream with patched interval
+on:
+  schedule:
+    - cron: "0 7 * * *"      # check upstream daily
+  workflow_dispatch:          # ...or run it on demand
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - id: up
+        name: Find latest upstream release
+        run: echo "tag=$(curl -s https://api.github.com/repos/widewing/ha-toyota-na/releases/latest | jq -r .tag_name)" >> "$GITHUB_OUTPUT"
+
+      - id: check
+        name: Skip if already mirrored
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${{ steps.up.outputs.tag }}" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            && echo "exists=true" >> "$GITHUB_OUTPUT" || echo "exists=false" >> "$GITHUB_OUTPUT"
+
+      - if: steps.check.outputs.exists == 'false'
+        name: Check out upstream at that tag
+        uses: actions/checkout@v4
+        with:
+          repository: widewing/ha-toyota-na
+          ref: ${{ steps.up.outputs.tag }}
+
+      - if: steps.check.outputs.exists == 'false'
+        name: Patch the refresh interval
+        run: |
+          sed -i 's/^REFRESH_STATUS_INTERVAL = .*/REFRESH_STATUS_INTERVAL = 8760 * 3600/' custom_components/toyota_na/const.py
+          grep REFRESH_STATUS_INTERVAL custom_components/toyota_na/const.py   # fail loud if the line ever moves
+
+      - if: steps.check.outputs.exists == 'false'
+        name: Build the HACS zip
+        run: cd custom_components/toyota_na && zip -r ha_toyota_na.zip *
+
+      - if: steps.check.outputs.exists == 'false'
+        name: Publish patched release on this fork
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.up.outputs.tag }}" \
+            custom_components/toyota_na/ha_toyota_na.zip -R "$GITHUB_REPOSITORY" \
+            -t "${{ steps.up.outputs.tag }} (interval patched)" \
+            -n "Upstream ${{ steps.up.outputs.tag }} with REFRESH_STATUS_INTERVAL pinned to 1 year."
