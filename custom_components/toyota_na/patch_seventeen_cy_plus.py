@@ -121,7 +121,6 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 self._vin,
                 self._region,
                 self.endpoint_generation,
-                self._brand,
             )
             if telemetry:
                 self._parse_telemetry(telemetry)
@@ -140,7 +139,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
                 # REST v1/global/remote/status provides door/lock/window/hood/hatch
                 vehicle_status = await self._client.get_vehicle_status_17cyplus(
-                    self._vin, self._brand, self._region
+                    self._vin, self._region
                 )
                 if vehicle_status:
                     self._last_vehicle_status = vehicle_status
@@ -154,7 +153,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             if self._has_remote_subscription:
                 # engine_status - use 17cyplus endpoint
                 engine_status = await self._client.get_engine_status_17cyplus(
-                    self._vin, self._brand, self._region
+                    self._vin, self._region
                 )
                 if engine_status:
                     _LOGGER.debug("Engine status received for VIN %s", self._vin[-4:])
@@ -168,7 +167,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             if self._has_electric:
                 # electric_status
                 electric_status = await self._client.get_electric_status(
-                    self.vin, brand=self._brand, region=self._region
+                    self.vin, region=self._region
                 )
                 if electric_status:
                     self._parse_electric_status(electric_status)
@@ -180,26 +179,26 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         # GraphQL refresh flow: pre-wake -> confirm subscription -> refresh
         try:
             guid = await self._client.auth.get_guid()
-            await self._client.graphql_pre_wake(guid, self._brand)
+            await self._client.graphql_pre_wake(guid)
         except Exception as e:
             _LOGGER.debug("GraphQL pre-wake failed: %s", e)
 
         try:
             await self._client.graphql_confirm_subscription(
-                self._vin, self._backdoor_type, self._brand
+                self._vin, self._backdoor_type
             )
         except Exception as e:
             _LOGGER.debug("GraphQL confirm subscription failed: %s", e)
 
         try:
-            await self._client.graphql_refresh_status(self._vin, self._brand)
+            await self._client.graphql_refresh_status(self._vin)
         except Exception as e:
             _LOGGER.debug("GraphQL refresh status failed: %s", e)
 
         # Also do REST refresh
         try:
             await self._client.send_refresh_request_17cyplus(
-                self._vin, self._brand, self._region
+                self._vin, self._region
             )
         except Exception as e:
             _LOGGER.debug("REST refresh request failed: %s", e)
@@ -209,7 +208,6 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 electric_status = await self._client.get_electric_realtime_status(
                     self.vin,
                     self.endpoint_generation,
-                    self._brand,
                     self._region,
                 )
                 if electric_status:
@@ -220,7 +218,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
     async def send_command(self, command: RemoteRequestCommand) -> None:
         """Start the engine. Periodically refreshes the vehicle status to determine if the engine is running."""
         await self._client.remote_request_17cyplus(
-            self._vin, self._command_map[command], self._brand, self._region
+            self._vin, self._command_map[command], self._region
         )
 
     #

@@ -9,6 +9,7 @@ GRAPHQL_ENDPOINT = "https://oa-api.telematicsct.com/graphql"
 APPSYNC_API_KEY = "da2-zgeayo2qh5eo7cj6pmdwhwugze"
 RESOLVER_API_KEY = "pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG"
 USER_AGENT = "ToyotaOneApp/3.10.0 (com.toyota.oneapp; build:3100; Android 14) okhttp/4.12.0"
+TRANSPORT_BRAND = "T"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,24 +38,21 @@ GRAPHQL_REFRESH_STATUS = """mutation RefreshVehicleStatus($vin: String!) {
 }"""
 
 
-def _vehicle_headers(vin, brand="T", region="US", **extra):
-    """Build the shared headers for a vehicle-scoped request."""
+def _vehicle_headers(vehicle_vin, region="US", **extra):
+    """Build headers for Toyota's shared North American API transport."""
     return {
-        "VIN": vin,
-        "X-BRAND": brand,
-        "X-APPBRAND": brand,
+        "VIN": vehicle_vin,
+        "X-BRAND": TRANSPORT_BRAND,
         "x-region": region,
         **extra,
     }
 
 
-async def get_telemetry(
-    self, vin, region="US", generation="17CYPLUS", brand="T"
-):
+async def get_telemetry(self, vin, region="US", generation="17CYPLUS"):
     try:
         return await self.api_get(
             "v2/telemetry",
-            _vehicle_headers(vin, brand, region, GENERATION=generation),
+            _vehicle_headers(vin, region, GENERATION=generation),
         )
     except Exception as e:
         _LOGGER.debug("v2/telemetry failed: %s", e)
@@ -66,7 +64,7 @@ async def _auth_headers(self):
         "X-API-KEY": RESOLVER_API_KEY,
         "X-GUID": await self.auth.get_guid(),
         "X-CHANNEL": "ONEAPP",
-        "X-BRAND": "T",
+        "X-BRAND": TRANSPORT_BRAND,
         "x-region": "US",
         "X-APPVERSION": "3.4.0",
         "X-LOCALE": "en-US",
@@ -74,12 +72,12 @@ async def _auth_headers(self):
         "Accept": "application/json",
     }
 
-async def get_vehicle_status_17cyplus(self, vin, brand="T", region="US"):
+async def get_vehicle_status_17cyplus(self, vin, region="US"):
     """Vehicle status (doors, locks, windows, hood, hatch) for 21MM/24MM/17CYPLUS."""
     try:
         res = await self.api_get(
             "v1/global/remote/status",
-            _vehicle_headers(vin, brand, region, vin=vin),
+            _vehicle_headers(vin, region, vin=vin),
         )
         if res and res.get("vehicleStatus"):
             return res
@@ -87,12 +85,12 @@ async def get_vehicle_status_17cyplus(self, vin, brand="T", region="US"):
         _LOGGER.debug("vehicle_status v1/global/remote/status failed: %s", e)
     return None
 
-async def get_engine_status_17cyplus(self, vin, brand="T", region="US"):
+async def get_engine_status_17cyplus(self, vin, region="US"):
     """Engine status for 21MM/24MM/17CYPLUS."""
     try:
         res = await self.api_get(
             "v1/global/remote/engine-status",
-            _vehicle_headers(vin, brand, region, vin=vin),
+            _vehicle_headers(vin, region, vin=vin),
         )
         if res:
             return res
@@ -100,7 +98,7 @@ async def get_engine_status_17cyplus(self, vin, brand="T", region="US"):
         _LOGGER.debug("engine_status v1/global/remote/engine-status failed: %s", e)
     return None
 
-async def send_refresh_request_17cyplus(self, vin, brand="T", region="US"):
+async def send_refresh_request_17cyplus(self, vin, region="US"):
     """Refresh status via v1/global/remote/refresh-status."""
     try:
         return await self.api_post(
@@ -110,43 +108,43 @@ async def send_refresh_request_17cyplus(self, vin, brand="T", region="US"):
                 "deviceId": self.auth.get_device_id(),
                 "vin": vin,
             },
-            _vehicle_headers(vin, brand, region),
+            _vehicle_headers(vin, region),
         )
     except Exception as e:
         _LOGGER.debug("refresh-status failed: %s", e)
     return None
 
-async def remote_request_17cyplus(self, vin, command, brand="T", region="US"):
+async def remote_request_17cyplus(self, vin, command, region="US"):
     """Remote command (lock, unlock, engine start, etc.) via v1/global/remote."""
     return await self.api_post(
         "v1/global/remote/command",
         {"command": command},
-        _vehicle_headers(vin, brand, region),
+        _vehicle_headers(vin, region),
     )
 
-async def get_vehicle_status_17cy(self, vin, brand="T", region="US"):
+async def get_vehicle_status_17cy(self, vin, region="US"):
     """Legacy vehicle status."""
     try:
         return await self.api_get(
             "v2/legacy/remote/status",
-            _vehicle_headers(vin, brand, region),
+            _vehicle_headers(vin, region),
         )
     except Exception as e:
         _LOGGER.debug("v2/legacy/remote/status failed: %s", e)
         return None
 
-async def get_engine_status_17cy(self, vin, brand="T", region="US"):
+async def get_engine_status_17cy(self, vin, region="US"):
     """Legacy engine status."""
     try:
         return await self.api_get(
             "v1/legacy/remote/engine-status",
-            _vehicle_headers(vin, brand, region),
+            _vehicle_headers(vin, region),
         )
     except Exception as e:
         _LOGGER.debug("v1/legacy/remote/engine-status failed: %s", e)
         return None
 
-async def send_refresh_request_17cy(self, vin, brand="T", region="US"):
+async def send_refresh_request_17cy(self, vin, region="US"):
     """Legacy refresh status."""
     try:
         return await self.api_post(
@@ -157,16 +155,14 @@ async def send_refresh_request_17cy(self, vin, brand="T", region="US"):
                 "deviceType": "Android",
                 "vin": vin,
             },
-            _vehicle_headers(vin, brand, region),
+            _vehicle_headers(vin, region),
         )
     except Exception as e:
         _LOGGER.debug("v1/legacy/remote/refresh-status failed: %s", e)
     return None
 
 
-async def remote_request_17cy(
-    self, vin, command, value, brand="T", region="US"
-):
+async def remote_request_17cy(self, vin, command, value, region="US"):
     """Remote command for legacy vehicles."""
     return await self.api_post(
         "v1/legacy/remote/command",
@@ -177,14 +173,14 @@ async def remote_request_17cy(
             "deviceType": "Android",
             "vin": vin,
         },
-        _vehicle_headers(vin, brand, region),
+        _vehicle_headers(vin, region),
     )
 
 async def get_electric_realtime_status(
-    self, vin, generation="17CYPLUS", brand="T", region="US"
+    self, vin, generation="17CYPLUS", region="US"
 ):
     try:
-        headers = _vehicle_headers(vin, brand, region, vin=vin)
+        headers = _vehicle_headers(vin, region, vin=vin)
         headers["device-id"] = self.auth.get_device_id()
         realtime_electric_status = await self.api_post(
             "v2/electric/realtime-status",
@@ -193,15 +189,15 @@ async def get_electric_realtime_status(
         )
         if generation == "17CYPLUS":
             return await self.get_electric_status(
-                vin, realtime_electric_status["appRequestNo"], brand, region
+                vin, realtime_electric_status["appRequestNo"], region
             )
         elif realtime_electric_status["returnCode"] == "ONE-RES-10000":
-            return await self.get_electric_status(vin, brand=brand, region=region)
+            return await self.get_electric_status(vin, region=region)
     except Exception as e:
         _LOGGER.debug("Electric realtime status failed: %s", e)
         return None
 
-async def get_electric_status(self, vin, realtime_status=None, brand="T", region="US"):
+async def get_electric_status(self, vin, realtime_status=None, region="US"):
     try:
         url = "v2/electric/status"
         if realtime_status:
@@ -209,7 +205,7 @@ async def get_electric_status(self, vin, realtime_status=None, brand="T", region
             url += "?" + urlencode(query_params)
 
         electric_status = await self.api_get(
-            url, _vehicle_headers(vin, brand, region)
+            url, _vehicle_headers(vin, region)
         )
         if "vehicleInfo" in electric_status:
             return electric_status
@@ -217,7 +213,7 @@ async def get_electric_status(self, vin, realtime_status=None, brand="T", region
         _LOGGER.debug("Electric status failed: %s", e)
         return None
 
-async def graphql_request(self, operation_name, query, variables, brand="T"):
+async def graphql_request(self, operation_name, query, variables):
     """Make a GraphQL request to the AppSync endpoint."""
     headers = {
         "Content-Type": "application/json",
@@ -227,8 +223,7 @@ async def graphql_request(self, operation_name, query, variables, brand="T"):
         "vin": variables.get("vin", ""),
         "x-guid": await self.auth.get_guid(),
         "x-deviceid": self.auth.get_device_id(),
-        "X-BRAND": brand,
-        "X-APPBRAND": brand,
+        "X-APPBRAND": TRANSPORT_BRAND,
         "x-channel": "ONEAPP",
         "X-APPVERSION": "3.4.0",
         "X-OSNAME": "Android",
@@ -255,29 +250,28 @@ async def graphql_request(self, operation_name, query, variables, brand="T"):
             return result.get("data")
 
 
-async def graphql_pre_wake(self, guid, brand="T"):
+async def graphql_pre_wake(self, guid):
     """Send pre-wake command to wake the vehicle's telematics unit."""
     return await self.graphql_request(
-        "SendPreWakeCommand", GRAPHQL_PRE_WAKE, {"guid": guid}, brand
+        "SendPreWakeCommand", GRAPHQL_PRE_WAKE, {"guid": guid}
     )
 
 
 async def graphql_confirm_subscription(
-    self, vin, backdoor_type="hatch", brand="T"
+    self, vin, backdoor_type="hatch"
 ):
     """Confirm subscription is active for this VIN."""
     return await self.graphql_request(
         "ConfirmSubscriptionStatus",
         GRAPHQL_CONFIRM_SUBSCRIPTION,
         {"vin": vin, "backdoorType": backdoor_type or "hatch"},
-        brand,
     )
 
 
-async def graphql_refresh_status(self, vin, brand="T"):
+async def graphql_refresh_status(self, vin):
     """Request vehicle to upload fresh status via GraphQL."""
     return await self.graphql_request(
-        "RefreshVehicleStatus", GRAPHQL_REFRESH_STATUS, {"vin": vin}, brand
+        "RefreshVehicleStatus", GRAPHQL_REFRESH_STATUS, {"vin": vin}
     )
 
 

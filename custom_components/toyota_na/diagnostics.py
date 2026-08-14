@@ -57,17 +57,16 @@ async def async_get_config_entry_diagnostics(
         user_electric_status = None
         vin = vehicle["vin"]
         generation = endpoint_generation(vehicle["generation"])
-        brand = vehicle.get("brand") or "T"
         region = vehicle.get("region") or "US"
         
         try:
             if generation == "17CY":
                 user_vehicle_status = await client.get_vehicle_status_17cy(
-                    vin, brand, region
+                    vin, region
                 )
             elif generation == "17CYPLUS":
                 user_vehicle_status = await client.get_vehicle_status_17cyplus(
-                    vin, brand, region
+                    vin, region
                 )
         except Exception as err:
             _LOGGER.debug(
@@ -78,7 +77,7 @@ async def async_get_config_entry_diagnostics(
 
         try:
             user_telemetry = await client.get_telemetry(
-                vin, region, generation, brand
+                vin, region, generation
             )
         except Exception as err:
             _LOGGER.debug(
@@ -88,11 +87,11 @@ async def async_get_config_entry_diagnostics(
         try:
             if generation == "17CY":
                 user_engine_status = await client.get_engine_status_17cy(
-                    vin, brand, region
+                    vin, region
                 )
             elif generation == "17CYPLUS":
                 user_engine_status = await client.get_engine_status_17cyplus(
-                    vin, brand, region
+                    vin, region
                 )
         except Exception as err:
             _LOGGER.debug(
@@ -103,7 +102,7 @@ async def async_get_config_entry_diagnostics(
             
         try:
             user_electric_status = await client.get_electric_status(
-                vin, brand=brand, region=region
+                vin, region=region
             )
         except Exception as err:
             _LOGGER.debug(

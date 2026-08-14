@@ -25,6 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 GRAPHQL_WS_ENDPOINT = "wss://oa-api.telematicsct.com/graphql/realtime"
 GRAPHQL_HOST = "oa-api.telematicsct.com"
 APPSYNC_API_KEY = "da2-zgeayo2qh5eo7cj6pmdwhwugze"
+TRANSPORT_BRAND = "T"
 
 # Subscription query from Toyota app v3.1.0 APK (yj/h$i.smali)
 SUBSCRIBE_VEHICLE_STATUS = (
@@ -229,7 +230,6 @@ class ToyotaWebSocketHandler:
                     result = await self._client.graphql_confirm_subscription(
                         vin,
                         context.get("backdoor_type"),
-                        context.get("brand", "T"),
                     )
                     if result is not None:
                         _LOGGER.debug(
@@ -303,8 +303,8 @@ class ToyotaWebSocketHandler:
                         "x-api-key": APPSYNC_API_KEY,
                         "Authorization": f"Bearer {token}",
                         "x-channel": "ONEAPP",
-                        "X-BRAND": context.get("brand", "T"),
-                        "X-APPBRAND": context.get("brand", "T"),
+                        "X-BRAND": TRANSPORT_BRAND,
+                        "X-APPBRAND": TRANSPORT_BRAND,
                         "x-region": context.get("region", "US"),
                         "vin": vin,
                         "x-guid": guid,

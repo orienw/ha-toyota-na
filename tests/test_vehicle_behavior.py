@@ -37,6 +37,7 @@ from custom_components.toyota_na.patch_seventeen_cy_plus import (
 from custom_components.toyota_na.patch_seventeen_cy import SeventeenCYToyotaVehicle
 from custom_components.toyota_na.patch_client import (
     get_telemetry,
+    get_vehicle_status_17cyplus,
     graphql_confirm_subscription,
     remote_request_17cy,
 )
@@ -189,7 +190,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
 
         await vehicle.send_command(RemoteRequestCommand.VehicleFinder)
 
-        self.assertEqual(calls, [("TESTVIN", "find-vehicle", "L", "US")])
+        self.assertEqual(calls, [("TESTVIN", "find-vehicle", "US")])
 
 
 class WakePolicyTests(unittest.TestCase):
@@ -359,9 +360,9 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
             {"type": "start_ack", "id": "subscription"}, None, None
         )
 
-        self.assertEqual(calls, [("TESTVIN", "trunk", "L")])
+        self.assertEqual(calls, [("TESTVIN", "trunk")])
 
-    async def test_subscription_uses_vehicle_brand_and_region(self):
+    async def test_subscription_uses_transport_brand_and_vehicle_region(self):
         sent = []
 
         class WebSocket:
@@ -375,12 +376,29 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
         await handler._subscribe_vin("TESTVIN", "token", "guid")
 
         authorization = sent[0]["payload"]["extensions"]["authorization"]
-        self.assertEqual(authorization["X-BRAND"], "L")
-        self.assertEqual(authorization["X-APPBRAND"], "L")
+        self.assertEqual(authorization["X-BRAND"], "T")
+        self.assertEqual(authorization["X-APPBRAND"], "T")
         self.assertEqual(authorization["x-region"], "US")
 
 
 class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_vehicle_status_uses_toyota_transport_headers(self):
+        calls = []
+
+        class Client:
+            async def api_get(self, *args):
+                calls.append(args)
+                return {"vehicleStatus": [{"category": "Driver Side"}]}
+
+        result = await get_vehicle_status_17cyplus(Client(), "TESTVIN", "US")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(calls[0][0], "v1/global/remote/status")
+        self.assertEqual(calls[0][1]["X-BRAND"], "T")
+        self.assertNotIn("X-APPBRAND", calls[0][1])
+        self.assertEqual(calls[0][1]["VIN"], "TESTVIN")
+        self.assertEqual(calls[0][1]["vin"], "TESTVIN")
+
     async def test_legacy_discovery_keeps_toyota_defaults(self):
         calls = []
         payload = {
@@ -410,8 +428,8 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(vehicles[0].generation, ApiVehicleGeneration.CY17)
         self.assertEqual(vehicles[0].brand, "T")
-        self.assertIn(("status", ("TESTVIN", "T", "US")), calls)
-        self.assertIn(("telemetry", ("TESTVIN", "US", "17CY", "T")), calls)
+        self.assertIn(("status", ("TESTVIN", "US")), calls)
+        self.assertIn(("telemetry", ("TESTVIN", "US", "17CY")), calls)
 
     async def test_rest_wins_without_timestamps_but_push_fills_missing_state(self):
         class WebSocketHandler:
@@ -477,10 +495,10 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vehicles[0].generation, ApiVehicleGeneration.MM21)
         self.assertEqual(vehicles[0].brand, "L")
         self.assertEqual(vehicles[0].backdoor_type, "trunk")
-        self.assertIn(("telemetry", ("TESTVIN", "US", "17CYPLUS", "L")), calls)
-        self.assertIn(("status", ("TESTVIN", "L", "US")), calls)
+        self.assertIn(("telemetry", ("TESTVIN", "US", "17CYPLUS")), calls)
+        self.assertIn(("status", ("TESTVIN", "US")), calls)
 
-    async def test_telemetry_uses_reported_vehicle_headers(self):
+    async def test_lexus_telemetry_uses_toyota_transport_headers(self):
         calls = []
 
         class Client:
@@ -488,13 +506,13 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 calls.append(args)
                 return {}
 
-        await get_telemetry(Client(), "TESTVIN", "US", "17CYPLUS", "L")
+        await get_telemetry(Client(), "TESTVIN", "US", "17CYPLUS")
 
-        self.assertEqual(calls[0][1]["X-BRAND"], "L")
-        self.assertEqual(calls[0][1]["X-APPBRAND"], "L")
+        self.assertEqual(calls[0][1]["X-BRAND"], "T")
+        self.assertNotIn("X-APPBRAND", calls[0][1])
         self.assertEqual(calls[0][1]["x-region"], "US")
 
-    async def test_legacy_command_uses_reported_vehicle_headers(self):
+    async def test_legacy_command_uses_toyota_transport_headers(self):
         calls = []
 
         class Auth:
@@ -511,13 +529,13 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 calls.append(args)
                 return {}
 
-        await remote_request_17cy(Client(), "TESTVIN", "DL", 1, "L", "CA")
+        await remote_request_17cy(Client(), "TESTVIN", "DL", 1, "CA")
 
-        self.assertEqual(calls[0][2]["X-BRAND"], "L")
-        self.assertEqual(calls[0][2]["X-APPBRAND"], "L")
+        self.assertEqual(calls[0][2]["X-BRAND"], "T")
+        self.assertNotIn("X-APPBRAND", calls[0][2])
         self.assertEqual(calls[0][2]["x-region"], "CA")
 
-    async def test_graphql_confirmation_uses_trunk_and_lexus_brand(self):
+    async def test_graphql_confirmation_uses_reported_backdoor_type(self):
         calls = []
 
         class Client:
@@ -525,11 +543,10 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 calls.append(args)
                 return {}
 
-        await graphql_confirm_subscription(Client(), "TESTVIN", "trunk", "L")
+        await graphql_confirm_subscription(Client(), "TESTVIN", "trunk")
 
-        _, _, variables, brand = calls[0]
+        _, _, variables = calls[0]
         self.assertEqual(variables, {"vin": "TESTVIN", "backdoorType": "trunk"})
-        self.assertEqual(brand, "L")
 
 
 if __name__ == "__main__":

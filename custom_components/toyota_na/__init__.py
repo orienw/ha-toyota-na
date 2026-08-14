@@ -231,7 +231,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     }
     vehicle_contexts = {
         vehicle.vin: {
-            "brand": vehicle.brand,
             "region": vehicle.region,
             "backdoor_type": vehicle.backdoor_type,
         }

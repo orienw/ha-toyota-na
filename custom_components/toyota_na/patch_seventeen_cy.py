@@ -112,7 +112,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             if self._has_remote_subscription:
                 # vehicle_health_status
                 vehicle_status = await self._client.get_vehicle_status_17cy(
-                    self._vin, self._brand, self._region
+                    self._vin, self._region
                 )
                 if vehicle_status:
                     self._parse_vehicle_status(vehicle_status)
@@ -126,7 +126,6 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 self._vin,
                 self._region,
                 self.endpoint_generation,
-                self._brand,
             )
             if telemetry:
                 self._parse_telemetry(telemetry)
@@ -137,7 +136,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         try:
             # engine_status
             engine_status = await self._client.get_engine_status_17cy(
-                self._vin, self._brand, self._region
+                self._vin, self._region
             )
             if engine_status:
                 self._parse_engine_status(engine_status)
@@ -149,7 +148,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             if self._has_electric:
                 # electric_status
                 electric_status = await self._client.get_electric_status(
-                    self.vin, brand=self._brand, region=self._region
+                    self.vin, region=self._region
                 )
                 if electric_status:
                     self._parse_electric_status(electric_status)
@@ -161,7 +160,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
         try:
             await self._client.send_refresh_request_17cy(
-                self._vin, self._brand, self._region
+                self._vin, self._region
             )
         except Exception as e:
             _LOGGER.warning("Vehicle refresh request failed: %s", e)
@@ -173,7 +172,6 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 electric_status = await self._client.get_electric_realtime_status(
                     self.vin,
                     self.endpoint_generation,
-                    self._brand,
                     self._region,
                 )
                 if electric_status:
@@ -188,7 +186,6 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             self._vin,
             self._command_map[command],
             self._command_value_map[command],
-            self._brand,
             self._region,
         )
 
