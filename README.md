@@ -65,9 +65,11 @@ Enter your username and password, and then OTP for Toyota One App or Toyota Entu
 
 After setting up, Most information in Toyota One app should be available in Home Assistant.
 
-Use the integration's Configure action to select an automatic vehicle wake
-interval. Manual only disables scheduled wake requests while keeping cloud
-status polling, remote commands, and the Refresh Status button available.
+Use the integration's Configure action to choose how vehicle status is updated.
+Home Assistant keeps checking Toyota's existing cloud data regardless of this
+setting. Cloud updates only disables scheduled wake requests while keeping
+remote commands and the Refresh Status button available. Choose an interval only
+when you want Home Assistant to wake the vehicle proactively for fresh status.
 
 ![image](https://user-images.githubusercontent.com/4755389/147372481-4d280b6e-6f61-434c-a768-f4a089f009c3.png)
 

@@ -26,10 +26,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "Vehicle wake policy",
-        "description": "Choose how often Home Assistant asks Toyota to wake the vehicle and publish fresh status. Manual only still permits the Refresh Status button and remote commands.",
+        "title": "Vehicle status updates",
+        "description": "Home Assistant keeps checking Toyota's cloud for available status without waking the vehicle. Cloud data may remain unchanged until the vehicle contacts Toyota. Choose how often Home Assistant should also wake the vehicle to request fresh status. Select Cloud updates only to disable automatic wakes. Refresh Status and remote commands remain available.",
         "data": {
-          "automatic_wake_interval": "Automatic vehicle wake"
+          "automatic_wake_interval": "Wake vehicle for fresh status"
         }
       }
     }

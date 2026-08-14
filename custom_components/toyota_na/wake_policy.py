@@ -10,7 +10,7 @@ CONF_WAKE_INTERVAL = "automatic_wake_interval"
 LAST_WAKE_AT = "last_refreshed_at"
 
 WAKE_INTERVAL_OPTIONS = {
-    0: "Manual only",
+    0: "Cloud updates only",
     2 * 3600: "Every 2 hours",
     6 * 3600: "Every 6 hours",
     12 * 3600: "Every 12 hours",
