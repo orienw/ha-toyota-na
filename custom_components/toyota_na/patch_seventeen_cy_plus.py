@@ -114,6 +114,15 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         self._last_graphql_status = None
         self._feature_timestamps = {}
 
+    def inherit_state(self, previous: ToyotaVehicle) -> None:
+        """Carry cached responses and source timestamps into a new poll."""
+        super().inherit_state(previous)
+        if not isinstance(previous, SeventeenCYPlusToyotaVehicle):
+            return
+        self._last_vehicle_status = previous._last_vehicle_status
+        self._last_graphql_status = previous._last_graphql_status
+        self._feature_timestamps = dict(previous._feature_timestamps)
+
     async def update(self):
 
         try:

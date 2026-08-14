@@ -14,6 +14,7 @@ from .vehicle_helpers import has_remote_subscription, is_electric_vehicle
 async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
     api_vehicles = await client.get_user_vehicle_list()
     supported_generations = {item.value for item in ApiVehicleGeneration}
+    state_cache = getattr(client, "_vehicle_state_cache", {})
     vehicles = []
 
     for api_vehicle in api_vehicles or []:
@@ -54,7 +55,12 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
         else:
             continue
 
+        previous = state_cache.get(vehicle.vin)
+        if previous is not None:
+            vehicle.inherit_state(previous)
         await vehicle.update()
         vehicles.append(vehicle)
+        state_cache[vehicle.vin] = vehicle
 
+    client._vehicle_state_cache = state_cache
     return vehicles

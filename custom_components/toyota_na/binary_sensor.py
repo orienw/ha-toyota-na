@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .base_entity import ToyotaNABaseEntity
 from .const import BINARY_SENSORS, DOMAIN
+from .entity_discovery import setup_entity_discovery
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,37 +28,39 @@ async def async_setup_entry(
     async_add_devices: AddEntitiesCallback,
 ):
     """Set up the binary_sensor platform."""
-    binary_sensors = []
-
     coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
         config_entry.entry_id
     ]["coordinator"]
 
-    for vehicle in coordinator.data:
-        for feature_sensor in BINARY_SENSORS:
-
-            entity_config = feature_sensor
-
-            if entity_config:
-                if vehicle.electric is False and cast(bool, entity_config["electric"]):
+    def discover_binary_sensors():
+        for vehicle in coordinator.data or []:
+            for entity_config in BINARY_SENSORS:
+                if vehicle.electric is False and cast(
+                    bool, entity_config["electric"]
+                ):
                     continue
-                if vehicle.subscribed is False and cast(bool, entity_config["subscription"]):
+                if vehicle.subscribed is False and cast(
+                    bool, entity_config["subscription"]
+                ):
                     continue
-                feature = vehicle.features.get(cast(VehicleFeatures, feature_sensor["feature"]))
-                if feature is None:
+                feature = cast(VehicleFeatures, entity_config["feature"])
+                if vehicle.features.get(feature) is None:
                     continue
-                binary_sensors.append(
-                    ToyotaBinarySensor(
-                        cast(VehicleFeatures, feature_sensor["feature"]),
-                        cast(str, entity_config["icon"]),
-                        cast(BinarySensorDeviceClass, entity_config["device_class"]),
-                        coordinator,
-                        entity_config["name"],
-                        vehicle.vin,
-                    )
+                yield ToyotaBinarySensor(
+                    feature,
+                    cast(str, entity_config["icon"]),
+                    cast(BinarySensorDeviceClass, entity_config["device_class"]),
+                    coordinator,
+                    entity_config["name"],
+                    vehicle.vin,
                 )
 
-    async_add_devices(binary_sensors, True)
+    setup_entity_discovery(
+        config_entry,
+        coordinator,
+        async_add_devices,
+        discover_binary_sensors,
+    )
 
 
 class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):

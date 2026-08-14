@@ -65,9 +65,22 @@ class DataUpdateCoordinator(Subscriptable):
     def __init__(self, data):
         self.data = data
         self.refreshes = 0
+        self.listeners = []
 
     async def async_request_refresh(self):
         self.refreshes += 1
+
+    def async_add_listener(self, listener):
+        self.listeners.append(listener)
+
+        def remove_listener():
+            self.listeners.remove(listener)
+
+        return remove_listener
+
+    def notify_listeners(self):
+        for listener in list(self.listeners):
+            listener()
 
 
 class ConfigEntry:
@@ -75,6 +88,10 @@ class ConfigEntry:
         self.entry_id = "entry"
         self.data = {}
         self.options = {}
+        self.unload_callbacks = []
+
+    def async_on_unload(self, callback):
+        self.unload_callbacks.append(callback)
 
 
 class LockEntity:
@@ -261,6 +278,32 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         self.vehicle.supported.remove(RemoteRequestCommand.HazardsOn)
 
         self.assertFalse(self.entities[2].available)
+
+    async def test_new_command_capability_adds_button_without_reload(self):
+        vehicle = FakeVehicle({RemoteRequestCommand.EngineStart})
+        coordinator = DataUpdateCoordinator([vehicle])
+        hass = FakeHass(coordinator)
+        config_entry = ConfigEntry()
+        entities = []
+
+        await button.async_setup_entry(
+            hass,
+            config_entry,
+            lambda added, update_before_add: entities.extend(added),
+        )
+        self.assertEqual(
+            [entity.sensor_name for entity in entities],
+            ["Remote Start", "Refresh Status"],
+        )
+
+        vehicle.supported.add(RemoteRequestCommand.EngineStop)
+        coordinator.notify_listeners()
+        coordinator.notify_listeners()
+
+        self.assertEqual(
+            [entity.sensor_name for entity in entities],
+            ["Remote Start", "Refresh Status", "Remote Stop"],
+        )
 
     async def test_lock_command_does_not_issue_an_extra_vehicle_wake(self):
         entities = []

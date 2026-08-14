@@ -1,4 +1,3 @@
-import datetime
 import logging
 from typing import Optional
 
@@ -14,6 +13,8 @@ from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableO
 from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
+
+from .vehicle_helpers import opening_state_from_values, parse_api_timestamp
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,6 +106,13 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             remote_capabilities,
             extended_capabilities,
         )
+        self._feature_timestamps = {}
+
+    def inherit_state(self, previous: ToyotaVehicle) -> None:
+        """Carry source timestamps into a new coordinator poll."""
+        super().inherit_state(previous)
+        if isinstance(previous, SeventeenCYToyotaVehicle):
+            self._feature_timestamps = dict(previous._feature_timestamps)
 
     async def update(self):
         
@@ -158,12 +166,9 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
-        try:
-            await self._client.send_refresh_request_17cy(
-                self._vin, self._region
-            )
-        except Exception as e:
-            _LOGGER.warning("Vehicle refresh request failed: %s", e)
+        await self._client.send_refresh_request_17cy(
+            self._vin, self._region
+        )
 
         """Tell Toyota to refresh electric status if applicable"""
         try:
@@ -229,23 +234,47 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
     # vehicle_health_status
     #
 
-    def _isClosed(self, section) -> bool:
-        values = section.get("values", [])
-        if not values:
-            return False
-        return values[0].get("value", "").lower() == "closed"
+    def _store_opening(self, feature, closed, locked, observed_at=None) -> None:
+        """Merge known opening state without guessing from missing values."""
+        if closed is None and locked is None:
+            return
+        current = self._features.get(feature)
+        current_closed = current.closed if isinstance(current, ToyotaOpening) else None
+        current_locked = (
+            current.locked if isinstance(current, ToyotaLockableOpening) else None
+        )
 
-    def _isLocked(self, section) -> bool:
-        values = section.get("values", [])
-        if len(values) < 2:
-            return False
-        return values[1].get("value", "").lower() == "locked"
+        def merge_component(name, value, previous):
+            if value is None:
+                return previous
+            timestamp = self._feature_timestamps.get((feature, name))
+            if timestamp is not None and (
+                observed_at is None or observed_at < timestamp
+            ):
+                return previous
+            if observed_at is not None:
+                self._feature_timestamps[(feature, name)] = observed_at
+            return value
+
+        closed = merge_component("closed", closed, current_closed)
+        locked = merge_component("locked", locked, current_locked)
+        if locked is None:
+            self._features[feature] = ToyotaOpening(closed=closed)
+        else:
+            self._features[feature] = ToyotaLockableOpening(
+                closed=closed,
+                locked=locked,
+            )
 
     def _parse_vehicle_status(self, vehicle_status: dict) -> None:
         if not vehicle_status:
             return
 
-        # Real-time location is a one-off, so we'll just parse it out here
+        observed_at = parse_api_timestamp(
+            vehicle_status.get("occurrenceDate")
+            or vehicle_status.get("occuranceDate")
+        )
+
         if "latitude" in vehicle_status and "longitude" in vehicle_status:
             self._features[VehicleFeatures.ParkingLocation] = ToyotaLocation(
                 vehicle_status["latitude"], vehicle_status["longitude"]
@@ -266,21 +295,13 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
                 key = f"{category_type} {section_type}"
 
-                # We don't support all features necessarily. So avoid throwing on a key error.
-                if self._vehicle_status_category_map.get(key) is not None:
-                    values = section.get("values", [])
-                    # CLOSED is always the first value entry. So we can use it to determine which subtype to instantiate
-                    if len(values) == 1:
-                        self._features[
-                            self._vehicle_status_category_map[key]
-                        ] = ToyotaOpening(self._isClosed(section))
-                    elif len(values) >= 2:
-                        self._features[
-                            self._vehicle_status_category_map[key]
-                        ] = ToyotaLockableOpening(
-                            closed=self._isClosed(section),
-                            locked=self._isLocked(section),
-                        )
+                feature = self._vehicle_status_category_map.get(key)
+                if feature is None:
+                    continue
+                closed, locked = opening_state_from_values(
+                    section.get("values", [])
+                )
+                self._store_opening(feature, closed, locked, observed_at)
 
     #
     # get_telemetry
@@ -296,12 +317,20 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
             # last time stamp is a primitive
             if key == "lastTimestamp":
-                self._features[VehicleFeatures.LastTimeStamp] = ToyotaNumeric(datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp(), "")
+                observed_at = parse_api_timestamp(value)
+                if observed_at is not None:
+                    self._features[VehicleFeatures.LastTimeStamp] = ToyotaNumeric(
+                        observed_at.timestamp(), ""
+                    )
                 continue
 
             # tire pressure time stamp is a primitive
             if key == "tirePressureTimestamp":
-                self._features[VehicleFeatures.LastTirePressureTimeStamp] = ToyotaNumeric(datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp(), "")
+                observed_at = parse_api_timestamp(value)
+                if observed_at is not None:
+                    self._features[
+                        VehicleFeatures.LastTirePressureTimeStamp
+                    ] = ToyotaNumeric(observed_at.timestamp(), "")
                 continue
 
             # fuel level is a primitive

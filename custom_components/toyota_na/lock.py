@@ -21,6 +21,7 @@ from .const import (
     DOOR_LOCK,
     DOOR_UNLOCK,
 )
+from .entity_discovery import setup_entity_discovery
 from .wake_policy import record_vehicle_wake
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,28 +33,30 @@ async def async_setup_entry(
     async_add_devices: AddEntitiesCallback,
 ):
     """Set up the binary_sensor platform."""
-    locks = []
-
     coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
         config_entry.entry_id
     ]["coordinator"]
 
-    for vehicle in coordinator.data:
-        if vehicle.subscribed is False or not (
-            vehicle.supports_command(COMMAND_MAP[DOOR_LOCK])
-            and vehicle.supports_command(COMMAND_MAP[DOOR_UNLOCK])
-        ):
-            continue
-        locks.append(
-            ToyotaLock(
+    def discover_locks():
+        for vehicle in coordinator.data or []:
+            if vehicle.subscribed is False or not (
+                vehicle.supports_command(COMMAND_MAP[DOOR_LOCK])
+                and vehicle.supports_command(COMMAND_MAP[DOOR_UNLOCK])
+            ):
+                continue
+            yield ToyotaLock(
                 config_entry,
                 coordinator,
                 "",
                 vehicle.vin,
             )
-        )
 
-    async_add_devices(locks, True)
+    setup_entity_discovery(
+        config_entry,
+        coordinator,
+        async_add_devices,
+        discover_locks,
+    )
 
 
 class ToyotaLock(ToyotaNABaseEntity, LockEntity):

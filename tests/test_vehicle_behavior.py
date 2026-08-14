@@ -337,6 +337,24 @@ class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "refresh rejected"):
             await make_24mm_vehicle(Client()).poll_vehicle_refresh()
 
+    async def test_legacy_refresh_failure_is_not_reported_as_success(self):
+        class Client:
+            async def send_refresh_request_17cy(self, *args):
+                raise RuntimeError("legacy refresh rejected")
+
+        vehicle = SeventeenCYToyotaVehicle(
+            client=Client(),
+            has_remote_subscription=True,
+            has_electric=False,
+            model_name="CAMRY",
+            model_year="2018",
+            vin="LEGACYVIN",
+            region="US",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "legacy refresh rejected"):
+            await vehicle.poll_vehicle_refresh()
+
 
 class WakePolicyTests(unittest.TestCase):
     def test_manual_only_never_automatically_wakes(self):
@@ -449,6 +467,70 @@ class WakePolicyTests(unittest.TestCase):
 
 
 class VehicleStateTests(unittest.TestCase):
+    def test_legacy_status_parser_does_not_depend_on_value_order(self):
+        vehicle = SeventeenCYToyotaVehicle(
+            client=object(),
+            has_remote_subscription=True,
+            has_electric=False,
+            model_name="CAMRY",
+            model_year="2018",
+            vin="LEGACYVIN",
+            region="US",
+        )
+
+        vehicle._parse_vehicle_status(
+            {
+                "occurrenceDate": "2026-08-14T12:00:00Z",
+                "vehicleStatus": [
+                    {
+                        "category": "Driver Side",
+                        "sections": [
+                            {
+                                "section": "Door",
+                                "values": [
+                                    {"value": "unlocked"},
+                                    {"value": "closed"},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+        door = vehicle.features[VehicleFeatures.FrontDriverDoor]
+        self.assertTrue(door.closed)
+        self.assertFalse(door.locked)
+
+    def test_legacy_unknown_status_does_not_become_open(self):
+        vehicle = SeventeenCYToyotaVehicle(
+            client=object(),
+            has_remote_subscription=True,
+            has_electric=False,
+            model_name="CAMRY",
+            model_year="2018",
+            vin="LEGACYVIN",
+            region="US",
+        )
+
+        vehicle._parse_vehicle_status(
+            {
+                "vehicleStatus": [
+                    {
+                        "category": "Driver Side",
+                        "sections": [
+                            {
+                                "section": "Door",
+                                "values": [{"value": "unknown"}],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+        self.assertNotIn(VehicleFeatures.FrontDriverDoor, vehicle.features)
+
     def test_24mm_status_parses_state_tires_and_electric_data(self):
         status = json.loads(
             (ROOT / "tests/fixtures/vehicle_24mm.json").read_text()
@@ -859,6 +941,93 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(
             vehicle.features[VehicleFeatures.FrontDriverDoor].locked
+        )
+
+    async def test_vehicle_state_survives_a_partial_followup_poll(self):
+        payload = dict(LEXUS_21MM_COUPE, vin="TESTVIN")
+        status_calls = 0
+
+        class Client:
+            async def get_user_vehicle_list(self):
+                return [payload]
+
+            async def get_telemetry(self, *args):
+                return {}
+
+            async def get_vehicle_status_17cyplus(self, *args):
+                nonlocal status_calls
+                status_calls += 1
+                if status_calls == 1:
+                    return {
+                        "occurrenceDate": "2026-08-14T12:00:00Z",
+                        "vehicleStatus": [
+                            {
+                                "category": "Driver Side",
+                                "sections": [
+                                    {
+                                        "section": "Door",
+                                        "values": [
+                                            {"value": "closed"},
+                                            {"value": "locked"},
+                                        ],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                return None
+
+            async def get_engine_status_17cyplus(self, *args):
+                return None
+
+        client = Client()
+        first = (await get_vehicles(client))[0]
+        second = (await get_vehicles(client))[0]
+
+        self.assertIsNot(first, second)
+        self.assertTrue(
+            second.features[VehicleFeatures.FrontDriverDoor].closed
+        )
+        self.assertTrue(
+            second.features[VehicleFeatures.FrontDriverDoor].locked
+        )
+
+    async def test_state_cache_preserves_source_timestamp_ordering(self):
+        payload = dict(TWENTY_FOUR_MM_PHEV, vin="TESTVIN24")
+        statuses = iter(
+            [
+                {
+                    "telemetry": {
+                        "lastUpdateDateTime": "2026-08-14T12:01:00Z",
+                        "odo": {"value": 2000, "unit": "mi"},
+                    }
+                },
+                {
+                    "telemetry": {
+                        "lastUpdateDateTime": "2026-08-14T12:00:00Z",
+                        "odo": {"value": 1999, "unit": "mi"},
+                    }
+                },
+            ]
+        )
+
+        class Client:
+            async def get_user_vehicle_list(self):
+                return [payload]
+
+            async def get_telemetry(self, *args):
+                return {}
+
+            async def graphql_get_vehicle_status(self, *args):
+                return next(statuses)
+
+        client = Client()
+        await get_vehicles(client)
+        vehicle = (await get_vehicles(client))[0]
+
+        self.assertEqual(
+            2000,
+            vehicle.features[VehicleFeatures.Odometer].value,
         )
 
     async def test_lexus_telemetry_uses_toyota_transport_headers(self):

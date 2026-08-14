@@ -278,6 +278,18 @@ class ToyotaVehicle(ABC):
             return supported is True
         return supported is not False
 
+    def inherit_state(self, previous: "ToyotaVehicle") -> None:
+        """Carry known state across coordinator-created vehicle instances."""
+        if (
+            previous.vin != self.vin
+            or previous.generation != self.generation
+            or previous.region != self.region
+            or previous.subscribed != self.subscribed
+            or previous.electric != self.electric
+        ):
+            return
+        self._features = dict(previous.features)
+
     @property
     def vin(self):
         return self._vin

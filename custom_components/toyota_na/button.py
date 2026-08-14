@@ -12,6 +12,7 @@ from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
 
 from .base_entity import ToyotaNABaseEntity
 from .const import COMMAND_BUTTONS, COMMAND_REFRESH_DELAY, DOMAIN
+from .entity_discovery import setup_entity_discovery
 from .wake_policy import record_vehicle_wake
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,16 +27,15 @@ async def async_setup_entry(
     coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
         config_entry.entry_id
     ]["coordinator"]
-    buttons = []
 
-    for vehicle in coordinator.data or []:
-        if not vehicle.subscribed:
-            continue
-        for config in COMMAND_BUTTONS:
-            command = cast(RemoteRequestCommand, config["command"])
-            if vehicle.supports_command(command):
-                buttons.append(
-                    ToyotaCommandButton(
+    def discover_buttons():
+        for vehicle in coordinator.data or []:
+            if not vehicle.subscribed:
+                continue
+            for config in COMMAND_BUTTONS:
+                command = cast(RemoteRequestCommand, config["command"])
+                if vehicle.supports_command(command):
+                    yield ToyotaCommandButton(
                         command,
                         cast(str, config["icon"]),
                         config_entry,
@@ -43,14 +43,16 @@ async def async_setup_entry(
                         cast(str, config["name"]),
                         vehicle.vin,
                     )
-                )
-        buttons.append(
-            ToyotaRefreshButton(
+            yield ToyotaRefreshButton(
                 config_entry, coordinator, "Refresh Status", vehicle.vin
             )
-        )
 
-    async_add_entities(buttons, True)
+    setup_entity_discovery(
+        config_entry,
+        coordinator,
+        async_add_entities,
+        discover_buttons,
+    )
 
 
 class ToyotaButtonBase(ToyotaNABaseEntity, ButtonEntity):

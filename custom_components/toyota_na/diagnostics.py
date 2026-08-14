@@ -23,6 +23,7 @@ TO_REDACT = {
     CONF_EMAIL,
     CONF_PASSWORD,
     "ctsLinks",  # contains a vin number
+    "device_id",
     "id_token",
     "imei",
     "refresh_token",
@@ -56,11 +57,18 @@ async def async_get_config_entry_diagnostics(
         user_engine_status = None
         user_electric_status = None
         vin = vehicle["vin"]
-        generation = endpoint_generation(vehicle["generation"])
+        api_generation = vehicle["generation"]
+        generation = endpoint_generation(api_generation)
         region = vehicle.get("region") or "US"
         
         try:
-            if generation == "17CY":
+            if api_generation == "24MM":
+                user_vehicle_status = await client.graphql_get_vehicle_status(
+                    vin,
+                    vehicle.get("backdoorType"),
+                    region,
+                )
+            elif generation == "17CY":
                 user_vehicle_status = await client.get_vehicle_status_17cy(
                     vin, region
                 )
@@ -89,7 +97,7 @@ async def async_get_config_entry_diagnostics(
                 user_engine_status = await client.get_engine_status_17cy(
                     vin, region
                 )
-            elif generation == "17CYPLUS":
+            elif generation == "17CYPLUS" and api_generation != "24MM":
                 user_engine_status = await client.get_engine_status_17cyplus(
                     vin, region
                 )
@@ -101,9 +109,10 @@ async def async_get_config_entry_diagnostics(
             )
             
         try:
-            user_electric_status = await client.get_electric_status(
-                vin, region=region
-            )
+            if api_generation != "24MM":
+                user_electric_status = await client.get_electric_status(
+                    vin, region=region
+                )
         except Exception as err:
             _LOGGER.debug(
                 "Electric status diagnostics failed for VIN ...%s: %s",
