@@ -118,20 +118,28 @@ class ToyotaNAOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage vehicle wake options."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(
+                title="",
+                data={
+                    **user_input,
+                    CONF_WAKE_INTERVAL: int(user_input[CONF_WAKE_INTERVAL]),
+                },
+            )
 
         current_interval = automatic_wake_interval(
             self._config_entry.options, REFRESH_STATUS_INTERVAL
         )
-        interval_options = dict(WAKE_INTERVAL_OPTIONS)
-        interval_options.setdefault(current_interval, "Current default")
+        interval_options = {
+            str(interval): label for interval, label in WAKE_INTERVAL_OPTIONS.items()
+        }
+        interval_options.setdefault(str(current_interval), "Current default")
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_WAKE_INTERVAL, default=current_interval
+                        CONF_WAKE_INTERVAL, default=str(current_interval)
                     ): vol.In(interval_options)
                 }
             ),

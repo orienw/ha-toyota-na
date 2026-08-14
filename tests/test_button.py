@@ -289,13 +289,13 @@ class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result["data_schema"]({}),
-            {CONF_WAKE_INTERVAL: 2 * 3600},
+            {CONF_WAKE_INTERVAL: str(2 * 3600)},
         )
 
     async def test_manual_only_is_saved(self):
         result = await config_flow.ToyotaNAOptionsFlow(
             ConfigEntry()
-        ).async_step_init({CONF_WAKE_INTERVAL: 0})
+        ).async_step_init({CONF_WAKE_INTERVAL: "0"})
 
         self.assertEqual(
             result,
@@ -305,6 +305,21 @@ class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
                 "data": {CONF_WAKE_INTERVAL: 0},
             },
         )
+
+    async def test_saved_interval_is_selected_when_reopened(self):
+        for interval in (0, 12 * 3600):
+            with self.subTest(interval=interval):
+                config_entry = ConfigEntry()
+                config_entry.options = {CONF_WAKE_INTERVAL: interval}
+
+                result = await config_flow.ToyotaNAOptionsFlow(
+                    config_entry
+                ).async_step_init()
+
+                self.assertEqual(
+                    result["data_schema"]({}),
+                    {CONF_WAKE_INTERVAL: str(interval)},
+                )
 
 
 if __name__ == "__main__":
