@@ -30,6 +30,26 @@ COMMAND_MAP = {
     REFRESH: RemoteRequestCommand.Refresh,
 }
 
+COMMAND_BUTTONS = (
+    {
+        "command": RemoteRequestCommand.EngineStart,
+        "icon": "mdi:engine-outline",
+        "name": "Remote Start",
+    },
+    {
+        "command": RemoteRequestCommand.EngineStop,
+        "icon": "mdi:engine-off-outline",
+        "name": "Remote Stop",
+    },
+    {
+        "command": RemoteRequestCommand.HazardsOn,
+        "icon": "mdi:hazard-lights",
+        "name": "Flash Hazards",
+    },
+)
+
+COMMAND_REFRESH_DELAY = 10
+
 BINARY_SENSORS = [
     {
         "device_class": BinarySensorDeviceClass.DOOR,
