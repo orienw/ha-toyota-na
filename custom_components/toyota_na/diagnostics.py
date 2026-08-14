@@ -53,7 +53,7 @@ async def async_get_config_entry_diagnostics(
     for (i, vehicle) in enumerate(user_vehicle_list):
         vin=vehicle["vin"]
 
-        if (vehicle["generation"] == "17CYPLUS" or vehicle["generation"] == "21MM"):
+        if (vehicle["generation"] == "17CYPLUS" or vehicle["generation"] == "21MM"  or vehicle["generation"] == "24MM"):
             generation = "17CYPLUS"
         elif vehicle["generation"] == "17CY":
             generation = "17CY"
