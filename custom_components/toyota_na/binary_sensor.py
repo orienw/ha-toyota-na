@@ -91,12 +91,12 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
 
         if isinstance(sensor, ToyotaLockableOpening):
             if self.device_class == BinarySensorDeviceClass.LOCK:
-                return not sensor.locked
-            elif self.device_class == BinarySensorDeviceClass.DOOR:
-                return not sensor.closed
-        elif isinstance(sensor, ToyotaOpening):
-            return not sensor.closed
-        elif isinstance(sensor, ToyotaRemoteStart):
+                return None if sensor.locked is None else not sensor.locked
+            if self.device_class == BinarySensorDeviceClass.DOOR:
+                return None if sensor.closed is None else not sensor.closed
+        if isinstance(sensor, ToyotaOpening):
+            return None if sensor.closed is None else not sensor.closed
+        if isinstance(sensor, ToyotaRemoteStart):
             if self.device_class == BinarySensorDeviceClass.RUNNING:
                 return sensor.on
 
@@ -122,4 +122,17 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
 
     @property
     def available(self):
-        return self.feature(self._vehicle_feature) is not None
+        sensor = self.feature(self._vehicle_feature)
+        if sensor is None:
+            return False
+        if (
+            self.device_class == BinarySensorDeviceClass.LOCK
+            and isinstance(sensor, ToyotaLockableOpening)
+        ):
+            return sensor.locked is not None
+        if (
+            self.device_class == BinarySensorDeviceClass.DOOR
+            and isinstance(sensor, ToyotaOpening)
+        ):
+            return sensor.closed is not None
+        return True

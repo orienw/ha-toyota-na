@@ -44,11 +44,16 @@ class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
         if self.vehicle is not None:
             model = f"{self.vehicle.model_year} {self.vehicle.model_name}"
 
+        brand = self.vehicle.brand if self.vehicle is not None else "T"
+        manufacturer = {
+            "L": "Lexus",
+        }.get(brand, "Toyota Motor North America")
+
         return {
             "identifiers": {(DOMAIN, self.vin)},
             "name": model,
             "model": model,
-            "manufacturer": "Toyota Motor North America",
+            "manufacturer": manufacturer,
         }
 
     @property

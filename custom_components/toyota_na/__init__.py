@@ -1,4 +1,3 @@
-from ctypes import cast
 from datetime import timedelta, datetime
 import logging
 import asyncio
@@ -20,6 +19,7 @@ from .patch_client import (
     get_vehicle_status_17cy,
     get_engine_status_17cy,
     send_refresh_request_17cy,
+    remote_request_17cy,
     graphql_request,
     graphql_pre_wake,
     graphql_confirm_subscription,
@@ -37,6 +37,7 @@ ToyotaOneClient.remote_request_17cyplus = remote_request_17cyplus
 ToyotaOneClient.get_vehicle_status_17cy = get_vehicle_status_17cy
 ToyotaOneClient.get_engine_status_17cy = get_engine_status_17cy
 ToyotaOneClient.send_refresh_request_17cy = send_refresh_request_17cy
+ToyotaOneClient.remote_request_17cy = remote_request_17cy
 ToyotaOneClient.graphql_request = graphql_request
 ToyotaOneClient.graphql_pre_wake = graphql_pre_wake
 ToyotaOneClient.graphql_confirm_subscription = graphql_confirm_subscription
@@ -54,14 +55,16 @@ from .patch_base_vehicle import ToyotaVehicle
 toyota_na.vehicle.base_vehicle.ToyotaVehicle = ToyotaVehicle
 
 # Patch seventeen_cy_plus
-from toyota_na.vehicle.vehicle_generations.seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
-from .patch_seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
-toyota_na.vehicle.vehicle_generations.seventeen_cy_plus.SeventeenCYPlusToyotaVehicle = SeventeenCYPlusToyotaVehicle
+import toyota_na.vehicle.vehicle_generations.seventeen_cy_plus
+from .patch_seventeen_cy_plus import (
+    SeventeenCYPlusToyotaVehicle as PatchedSeventeenCYPlusToyotaVehicle,
+)
+toyota_na.vehicle.vehicle_generations.seventeen_cy_plus.SeventeenCYPlusToyotaVehicle = PatchedSeventeenCYPlusToyotaVehicle
 
 # Patch seventeen_cy
-from toyota_na.vehicle.vehicle_generations.seventeen_cy import SeventeenCYToyotaVehicle
-from .patch_seventeen_cy import SeventeenCYToyotaVehicle
-toyota_na.vehicle.vehicle_generations.seventeen_cy.SeventeenCYToyotaVehicle = SeventeenCYToyotaVehicle
+import toyota_na.vehicle.vehicle_generations.seventeen_cy
+from .patch_seventeen_cy import SeventeenCYToyotaVehicle as PatchedSeventeenCYToyotaVehicle
+toyota_na.vehicle.vehicle_generations.seventeen_cy.SeventeenCYToyotaVehicle = PatchedSeventeenCYToyotaVehicle
 
 from toyota_na.exceptions import AuthError, LoginError
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
@@ -71,7 +74,7 @@ from .patch_vehicle import get_vehicles
 #from toyota_na.vehicle.vehicle import get_vehicles
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr, service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -144,7 +147,15 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
                         await asyncio.sleep(10)
                         await coordinator.async_request_refresh()
                     elif vehicle.vin == vin and vehicle.subscribed:
-                        await vehicle.send_command(COMMAND_MAP[remote_action])
+                        command = COMMAND_MAP[remote_action]
+                        if not vehicle.supports_command(command):
+                            _LOGGER.warning(
+                                "Toyota reports that %s is unsupported for VIN ...%s",
+                                remote_action,
+                                vin[-4:],
+                            )
+                            break
+                        await vehicle.send_command(command)
                         break
 
                 _LOGGER.info("Handling service call %s for %s ", remote_action, vin)
@@ -186,11 +197,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     )
     await coordinator.async_config_entry_first_refresh()
 
-    # Start WebSocket handler for vehicle status push notifications (21MM+)
-    ws_handler = ToyotaWebSocketHandler(client)
-    vins = [v.vin for v in coordinator.data if v.subscribed] if coordinator.data else []
-    if vins:
-        await ws_handler.start(vins)
+    @callback
+    def handle_vehicle_status(vin: str, status: dict) -> None:
+        vehicles = coordinator.data or []
+        vehicle = next((item for item in vehicles if item.vin == vin), None)
+        if vehicle is None or not hasattr(vehicle, "apply_graphql_status"):
+            return
+        if vehicle.apply_graphql_status(status):
+            coordinator.async_set_updated_data(vehicles)
+
+    ws_handler = ToyotaWebSocketHandler(client, handle_vehicle_status)
+    websocket_generations = {
+        ApiVehicleGeneration.MM21,
+        ApiVehicleGeneration.MM24,
+    }
+    vehicle_contexts = {
+        vehicle.vin: {
+            "brand": vehicle.brand,
+            "region": vehicle.region,
+            "backdoor_type": vehicle.backdoor_type,
+        }
+        for vehicle in (coordinator.data or [])
+        if vehicle.subscribed and vehicle.generation in websocket_generations
+    }
+    if vehicle_contexts:
+        await ws_handler.start(vehicle_contexts)
     client._ws_handler = ws_handler
 
     hass.data[DOMAIN][entry.entry_id] = {

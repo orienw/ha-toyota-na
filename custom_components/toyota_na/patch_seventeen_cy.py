@@ -1,5 +1,6 @@
 import datetime
 import logging
+from typing import Optional
 
 from toyota_na.client import ToyotaOneClient
 from toyota_na.vehicle.base_vehicle import (
@@ -81,6 +82,10 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         model_year: str,
         vin: str,
         region: str,
+        brand: str = "T",
+        backdoor_type: Optional[str] = None,
+        remote_capabilities: Optional[dict] = None,
+        extended_capabilities: Optional[dict] = None,
     ):
         self._has_remote_subscription = has_remote_subscription
         self._has_electric = has_electric
@@ -95,6 +100,10 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             vin,
             region,
             ApiVehicleGeneration.CY17,
+            brand,
+            backdoor_type,
+            remote_capabilities,
+            extended_capabilities,
         )
 
     async def update(self):
@@ -102,8 +111,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         try:
             if self._has_remote_subscription:
                 # vehicle_health_status
-                vehicle_status = await self._client.get_vehicle_status(
-                    self._vin, self._generation.value
+                vehicle_status = await self._client.get_vehicle_status_17cy(
+                    self._vin, self._brand, self._region
                 )
                 if vehicle_status:
                     self._parse_vehicle_status(vehicle_status)
@@ -113,7 +122,12 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
         try:
             # telemetry
-            telemetry = await self._client.get_telemetry(self._vin, self._region, self._generation.value)
+            telemetry = await self._client.get_telemetry(
+                self._vin,
+                self._region,
+                self.endpoint_generation,
+                self._brand,
+            )
             if telemetry:
                 self._parse_telemetry(telemetry)
         except Exception as e:
@@ -122,8 +136,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
         try:
             # engine_status
-            engine_status = await self._client.get_engine_status(
-                self._vin, self._generation.value
+            engine_status = await self._client.get_engine_status_17cy(
+                self._vin, self._brand, self._region
             )
             if engine_status:
                 self._parse_engine_status(engine_status)
@@ -134,7 +148,9 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         try:
             if self._has_electric:
                 # electric_status
-                electric_status = await self._client.get_electric_status(self.vin)
+                electric_status = await self._client.get_electric_status(
+                    self.vin, brand=self._brand, region=self._region
+                )
                 if electric_status:
                     self._parse_electric_status(electric_status)
         except Exception as e:
@@ -144,7 +160,9 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
         try:
-            await self._client.send_refresh_status(self._vin, self._generation.value)
+            await self._client.send_refresh_request_17cy(
+                self._vin, self._brand, self._region
+            )
         except Exception as e:
             _LOGGER.warning("Vehicle refresh request failed: %s", e)
 
@@ -152,7 +170,12 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         try:
             if self._has_electric:
                 # electric_status
-                electric_status = await self._client.get_electric_realtime_status(self.vin, self._generation.value)
+                electric_status = await self._client.get_electric_realtime_status(
+                    self.vin,
+                    self.endpoint_generation,
+                    self._brand,
+                    self._region,
+                )
                 if electric_status:
                     self._parse_electric_status(electric_status)
         except Exception as e:
@@ -161,11 +184,12 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
     async def send_command(self, command: RemoteRequestCommand) -> None:
         """Start the engine. Periodically refreshes the vehicle status to determine if the engine is running."""
-        await self._client.remote_request(
+        await self._client.remote_request_17cy(
             self._vin,
             self._command_map[command],
             self._command_value_map[command],
-            self._generation.value,
+            self._brand,
+            self._region,
         )
 
     #

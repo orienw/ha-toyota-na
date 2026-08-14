@@ -1,6 +1,8 @@
 """Diagnostics support for ha-toyota-na."""
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -12,6 +14,9 @@ from homeassistant.core import HomeAssistant
 from toyota_na.client import ToyotaOneClient
 
 from .const import DOMAIN
+from .vehicle_helpers import endpoint_generation
+
+_LOGGER = logging.getLogger(__name__)
 
 TO_REDACT = {
     CONF_ACCESS_TOKEN,
@@ -45,38 +50,67 @@ async def async_get_config_entry_diagnostics(
     engine_status = []
     electric_status = []
 
-    user_vehicle_status = ""
-    user_telemetry = ""
-    user_engine_status = ""
-    user_electric_status = ""
-
-    for (i, vehicle) in enumerate(user_vehicle_list):
-        vin=vehicle["vin"]
-
-        if (vehicle["generation"] == "17CYPLUS" or vehicle["generation"] == "21MM"  or vehicle["generation"] == "24MM"):
-            generation = "17CYPLUS"
-        elif vehicle["generation"] == "17CY":
-            generation = "17CY"
+    for vehicle in user_vehicle_list:
+        user_vehicle_status = None
+        user_telemetry = None
+        user_engine_status = None
+        user_electric_status = None
+        vin = vehicle["vin"]
+        generation = endpoint_generation(vehicle["generation"])
+        brand = vehicle.get("brand") or "T"
+        region = vehicle.get("region") or "US"
         
         try:
-            user_vehicle_status = await client.get_vehicle_status(vin, generation)
-        except Exception:
-            pass
+            if generation == "17CY":
+                user_vehicle_status = await client.get_vehicle_status_17cy(
+                    vin, brand, region
+                )
+            elif generation == "17CYPLUS":
+                user_vehicle_status = await client.get_vehicle_status_17cyplus(
+                    vin, brand, region
+                )
+        except Exception as err:
+            _LOGGER.debug(
+                "Vehicle status diagnostics failed for VIN ...%s: %s",
+                vin[-4:],
+                err,
+            )
 
         try:
-            user_telemetry = await client.get_telemetry(vin, generation)
-        except Exception:
-            pass
+            user_telemetry = await client.get_telemetry(
+                vin, region, generation, brand
+            )
+        except Exception as err:
+            _LOGGER.debug(
+                "Telemetry diagnostics failed for VIN ...%s: %s", vin[-4:], err
+            )
 
         try:
-            user_engine_status = await client.get_engine_status(vin, generation)
-        except Exception:
-            pass
+            if generation == "17CY":
+                user_engine_status = await client.get_engine_status_17cy(
+                    vin, brand, region
+                )
+            elif generation == "17CYPLUS":
+                user_engine_status = await client.get_engine_status_17cyplus(
+                    vin, brand, region
+                )
+        except Exception as err:
+            _LOGGER.debug(
+                "Engine status diagnostics failed for VIN ...%s: %s",
+                vin[-4:],
+                err,
+            )
             
         try:
-            user_electric_status = await client.get_electric_status(vin)
-        except Exception:
-            pass
+            user_electric_status = await client.get_electric_status(
+                vin, brand=brand, region=region
+            )
+        except Exception as err:
+            _LOGGER.debug(
+                "Electric status diagnostics failed for VIN ...%s: %s",
+                vin[-4:],
+                err,
+            )
 
         vehicle_status.append(user_vehicle_status)
         telemetry.append(user_telemetry)

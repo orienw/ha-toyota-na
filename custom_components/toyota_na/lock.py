@@ -1,10 +1,8 @@
 import asyncio
 from typing import Any
 
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 
 from homeassistant.components.lock import (
@@ -33,7 +31,10 @@ async def async_setup_entry(
     ]["coordinator"]
 
     for vehicle in coordinator.data:
-        if vehicle.subscribed is False:
+        if vehicle.subscribed is False or not (
+            vehicle.supports_command(COMMAND_MAP[DOOR_LOCK])
+            and vehicle.supports_command(COMMAND_MAP[DOOR_UNLOCK])
+        ):
             continue
         locks.append(
             ToyotaLock(
@@ -66,16 +67,17 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
         if self.vehicle is None:
             return None
 
-        all_locks = [
-            feature
+        lock_states = [
+            feature.locked
             for feature in self.vehicle.features.values()
             if isinstance(feature, ToyotaLockableOpening)
+            and feature.locked is not None
         ]
 
-        if not all_locks:
+        if not lock_states:
             return None
 
-        return all(lock.locked for lock in all_locks)
+        return all(lock_states)
 
     @property
     def is_locking(self):

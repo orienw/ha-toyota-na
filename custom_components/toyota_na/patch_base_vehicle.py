@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum, auto, unique
-from typing import Union
+from typing import Optional, Union
 
 from toyota_na.client import ToyotaOneClient
 from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
@@ -8,6 +8,9 @@ from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableO
 from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
+
+from .vehicle_helpers import endpoint_generation, first_capability
+
 
 @unique
 class ApiVehicleGeneration(Enum):
@@ -105,6 +108,29 @@ class ToyotaVehicle(ABC):
     _vin: str
     _region: str
 
+    _COMMAND_CAPABILITIES = {
+        RemoteRequestCommand.DoorLock: (
+            "dlockUnlockCapable",
+            "doorLockUnlockCapable",
+        ),
+        RemoteRequestCommand.DoorUnlock: (
+            "dlockUnlockCapable",
+            "doorLockUnlockCapable",
+        ),
+        RemoteRequestCommand.EngineStart: (
+            "estartEnabled",
+            "estartStopCapable",
+            "remoteEngineStartStop",
+        ),
+        RemoteRequestCommand.EngineStop: (
+            "estopEnabled",
+            "estartStopCapable",
+            "remoteEngineStartStop",
+        ),
+        RemoteRequestCommand.HazardsOn: ("hazardCapable",),
+        RemoteRequestCommand.HazardsOff: ("hazardCapable",),
+    }
+
     def __init__(
         self,
         client: ToyotaOneClient,
@@ -115,6 +141,10 @@ class ToyotaVehicle(ABC):
         vin: str,
         region: str,
         generation: ApiVehicleGeneration,
+        brand: str = "T",
+        backdoor_type: Optional[str] = None,
+        remote_capabilities: Optional[dict] = None,
+        extended_capabilities: Optional[dict] = None,
     ):
         """
         Initialize a new vehicle object. Must call `vehicle.update()` to fully populate the object.
@@ -131,6 +161,10 @@ class ToyotaVehicle(ABC):
         self._model_year = model_year
         self._vin = vin
         self._region = region
+        self._brand = brand
+        self._backdoor_type = backdoor_type
+        self._remote_capabilities = remote_capabilities or {}
+        self._extended_capabilities = extended_capabilities or {}
 
     @abstractmethod
     async def poll_vehicle_refresh(self) -> None:
@@ -169,6 +203,10 @@ class ToyotaVehicle(ABC):
         return self._generation
 
     @property
+    def endpoint_generation(self):
+        return endpoint_generation(self._generation.value)
+
+    @property
     def model_name(self):
         return self._model_name
 
@@ -183,6 +221,48 @@ class ToyotaVehicle(ABC):
     @property
     def electric(self):
         return self._has_electric
+
+    @property
+    def brand(self):
+        return self._brand
+
+    @property
+    def region(self):
+        return self._region
+
+    @property
+    def backdoor_type(self):
+        return self._backdoor_type
+
+    @property
+    def remote_capabilities(self):
+        return self._remote_capabilities
+
+    @property
+    def capabilities(self):
+        """Compatibility alias for remote service capabilities."""
+        return self._remote_capabilities
+
+    @property
+    def extended_capabilities(self):
+        return self._extended_capabilities
+
+    @property
+    def api_generation(self):
+        """Return the generation string reported by vehicle discovery."""
+        return self._generation.value
+
+    def supports_command(self, command: RemoteRequestCommand) -> bool:
+        """Return false only when Toyota explicitly reports no support."""
+        keys = self._COMMAND_CAPABILITIES.get(command)
+        if keys is None:
+            return True
+        supported = first_capability(
+            self._remote_capabilities,
+            self._extended_capabilities,
+            keys,
+        )
+        return supported is not False
 
     @property
     def vin(self):
