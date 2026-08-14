@@ -89,6 +89,7 @@ from .const import (
     ENGINE_STOP,
     HAZARDS_ON,
     HAZARDS_OFF,
+    VEHICLE_FINDER,
     DOOR_LOCK,
     DOOR_UNLOCK,
     REFRESH,
@@ -182,6 +183,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
     hass.services.async_register(DOMAIN, ENGINE_STOP, async_service_handle)
     hass.services.async_register(DOMAIN, HAZARDS_ON, async_service_handle)
     hass.services.async_register(DOMAIN, HAZARDS_OFF, async_service_handle)
+    hass.services.async_register(DOMAIN, VEHICLE_FINDER, async_service_handle)
     hass.services.async_register(DOMAIN, DOOR_LOCK, async_service_handle)
     hass.services.async_register(DOMAIN, DOOR_UNLOCK, async_service_handle)
     hass.services.async_register(DOMAIN, REFRESH, async_service_handle)

@@ -83,6 +83,7 @@ class RemoteRequestCommand(Enum):
     EngineStop = auto()
     HazardsOn = auto()
     HazardsOff = auto()
+    VehicleFinder = auto()
     Refresh = auto()
 
 
@@ -107,6 +108,7 @@ class ToyotaVehicle(ABC):
     _generation: ApiVehicleGeneration
     _vin: str
     _region: str
+    _command_map: dict[RemoteRequestCommand, str] = {}
 
     _COMMAND_CAPABILITIES = {
         RemoteRequestCommand.DoorLock: (
@@ -129,6 +131,13 @@ class ToyotaVehicle(ABC):
         ),
         RemoteRequestCommand.HazardsOn: ("hazardCapable",),
         RemoteRequestCommand.HazardsOff: ("hazardCapable",),
+        RemoteRequestCommand.VehicleFinder: (
+            "vehicleFinderCapable",
+            "vehicleFinder",
+        ),
+    }
+    _COMMANDS_REQUIRING_EXPLICIT_CAPABILITY = {
+        RemoteRequestCommand.VehicleFinder,
     }
 
     def __init__(
@@ -253,7 +262,10 @@ class ToyotaVehicle(ABC):
         return self._generation.value
 
     def supports_command(self, command: RemoteRequestCommand) -> bool:
-        """Return false only when Toyota explicitly reports no support."""
+        """Return whether the API transport and vehicle support a command."""
+        if command not in self._command_map:
+            return False
+
         keys = self._COMMAND_CAPABILITIES.get(command)
         if keys is None:
             return True
@@ -262,6 +274,8 @@ class ToyotaVehicle(ABC):
             self._extended_capabilities,
             keys,
         )
+        if command in self._COMMANDS_REQUIRING_EXPLICIT_CAPABILITY:
+            return supported is True
         return supported is not False
 
     @property

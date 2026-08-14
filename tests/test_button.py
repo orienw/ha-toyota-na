@@ -190,6 +190,7 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
                 RemoteRequestCommand.EngineStart,
                 RemoteRequestCommand.EngineStop,
                 RemoteRequestCommand.HazardsOn,
+                RemoteRequestCommand.VehicleFinder,
             }
         )
         self.coordinator = DataUpdateCoordinator([self.vehicle])
@@ -208,7 +209,13 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
     async def test_creates_only_supported_lc_controls(self):
         self.assertEqual(
             [entity.sensor_name for entity in self.entities],
-            ["Remote Start", "Remote Stop", "Flash Hazards", "Refresh Status"],
+            [
+                "Remote Start",
+                "Remote Stop",
+                "Flash Hazards",
+                "Find Vehicle",
+                "Refresh Status",
+            ],
         )
         self.assertEqual(
             [entity.name for entity in self.entities],
@@ -216,6 +223,7 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
                 "Remote Start 2024 LC 500 2-DOOR COUPE",
                 "Remote Stop 2024 LC 500 2-DOOR COUPE",
                 "Flash Hazards 2024 LC 500 2-DOOR COUPE",
+                "Find Vehicle 2024 LC 500 2-DOOR COUPE",
                 "Refresh Status 2024 LC 500 2-DOOR COUPE",
             ],
         )

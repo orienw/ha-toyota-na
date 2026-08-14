@@ -35,6 +35,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         RemoteRequestCommand.EngineStop: "engine-stop",
         RemoteRequestCommand.HazardsOn: "hazard-on",
         RemoteRequestCommand.HazardsOff: "hazard-off",
+        RemoteRequestCommand.VehicleFinder: "find-vehicle",
         RemoteRequestCommand.Refresh: "refresh",
     }
 

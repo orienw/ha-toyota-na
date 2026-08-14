@@ -78,6 +78,7 @@ LEXUS_21MM_COUPE = {
         "estartEnabled": True,
         "estopEnabled": True,
         "hazardCapable": True,
+        "vehicleFinderCapable": True,
     },
     "extendedCapabilities": {
         "rearDriverDoorOpenStatus": True,
@@ -86,6 +87,8 @@ LEXUS_21MM_COUPE = {
         "rearPassengerDoorLockStatus": True,
         "remoteEngineStartStop": True,
         "doorLockUnlockCapable": True,
+        "vehicleFinder": True,
+        "lastParkedCapable": True,
     },
     "backdoorType": "trunk",
     "fuelType": "G",
@@ -129,6 +132,9 @@ class VehicleMetadataTests(unittest.TestCase):
         self.assertTrue(vehicle.supports_command(RemoteRequestCommand.DoorLock))
         self.assertTrue(vehicle.supports_command(RemoteRequestCommand.EngineStart))
         self.assertTrue(vehicle.supports_command(RemoteRequestCommand.HazardsOn))
+        self.assertTrue(
+            vehicle.supports_command(RemoteRequestCommand.VehicleFinder)
+        )
 
         vehicle._remote_capabilities = {"hazardCapable": False}
         vehicle._extended_capabilities = {}
@@ -138,6 +144,29 @@ class VehicleMetadataTests(unittest.TestCase):
         vehicle._remote_capabilities = {"hazardCapable": None}
         self.assertTrue(vehicle.supports_command(RemoteRequestCommand.HazardsOn))
 
+    def test_vehicle_finder_requires_explicit_capability_and_transport(self):
+        vehicle = make_vehicle()
+        vehicle._remote_capabilities = {}
+        vehicle._extended_capabilities = {}
+
+        self.assertFalse(
+            vehicle.supports_command(RemoteRequestCommand.VehicleFinder)
+        )
+
+        legacy = SeventeenCYToyotaVehicle(
+            client=object(),
+            has_remote_subscription=True,
+            has_electric=False,
+            model_name="CAMRY",
+            model_year="2018",
+            vin="TESTVIN",
+            region="US",
+            remote_capabilities={"vehicleFinderCapable": True},
+        )
+        self.assertFalse(
+            legacy.supports_command(RemoteRequestCommand.VehicleFinder)
+        )
+
     def test_explicit_inactive_subscription_takes_precedence(self):
         metadata = {
             "remoteSubscriptionStatus": "INACTIVE",
@@ -146,6 +175,21 @@ class VehicleMetadataTests(unittest.TestCase):
         }
 
         self.assertFalse(has_remote_subscription(metadata))
+
+
+class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_vehicle_finder_uses_newer_remote_command(self):
+        calls = []
+
+        class Client:
+            async def remote_request_17cyplus(self, *args):
+                calls.append(args)
+
+        vehicle = make_vehicle(Client())
+
+        await vehicle.send_command(RemoteRequestCommand.VehicleFinder)
+
+        self.assertEqual(calls, [("TESTVIN", "find-vehicle", "L", "US")])
 
 
 class WakePolicyTests(unittest.TestCase):

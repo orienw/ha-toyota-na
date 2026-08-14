@@ -36,12 +36,14 @@ Services:
 * Lock/Unlock Doors (Remote Subscription Required)
 * Remote Start/Stop Engine (Remote Subscription Required)
 * Hazards On/Off (Remote Subscription Required)
+* Find Vehicle (Remote Subscription and reported vehicle support required)
 * Refresh Data
 
 Native controls:
 * Door lock
 * Remote Start and Remote Stop buttons
 * Flash Hazards button
+* Find Vehicle button, when reported supported
 * Refresh Status button
 
 ## Installation

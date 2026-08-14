@@ -15,6 +15,7 @@ ENGINE_START = "engine_start"
 ENGINE_STOP = "engine_stop"
 HAZARDS_ON = "hazards_on"
 HAZARDS_OFF = "hazards_off"
+VEHICLE_FINDER = "find_vehicle"
 REFRESH = "refresh"
 
 UPDATE_INTERVAL = 600
@@ -27,6 +28,7 @@ COMMAND_MAP = {
     ENGINE_STOP: RemoteRequestCommand.EngineStop,
     HAZARDS_ON: RemoteRequestCommand.HazardsOn,
     HAZARDS_OFF: RemoteRequestCommand.HazardsOff,
+    VEHICLE_FINDER: RemoteRequestCommand.VehicleFinder,
     REFRESH: RemoteRequestCommand.Refresh,
 }
 
@@ -45,6 +47,11 @@ COMMAND_BUTTONS = (
         "command": RemoteRequestCommand.HazardsOn,
         "icon": "mdi:hazard-lights",
         "name": "Flash Hazards",
+    },
+    {
+        "command": RemoteRequestCommand.VehicleFinder,
+        "icon": "mdi:map-marker-radius",
+        "name": "Find Vehicle",
     },
 )
 
