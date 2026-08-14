@@ -1,5 +1,6 @@
 # ruff: noqa: I001
 
+import json
 import sys
 import types
 import unittest
@@ -39,6 +40,7 @@ from custom_components.toyota_na.patch_client import (
     get_telemetry,
     get_vehicle_status_17cyplus,
     graphql_confirm_subscription,
+    graphql_get_vehicle_status,
     remote_request_17cy,
 )
 from custom_components.toyota_na.vehicle_helpers import (
@@ -96,6 +98,28 @@ LEXUS_21MM_COUPE = {
     "evVehicle": False,
 }
 
+TWENTY_FOUR_MM_PHEV = {
+    "modelYear": "2026",
+    "modelName": "RAV4 PLUG-IN HYBRID",
+    "generation": "24MM",
+    "brand": "T",
+    "region": "CA",
+    "remoteSubscriptionStatus": None,
+    "subscriptionStatus": "subscribed",
+    "remoteSubscriptionExists": True,
+    "remoteServiceCapabilities": {
+        "estartStopCapable": True,
+        "dlockUnlockCapable": True,
+    },
+    "extendedCapabilities": {
+        "remoteEngineStartStop": True,
+        "doorLockUnlockCapable": True,
+    },
+    "backdoorType": "hatch",
+    "fuelType": "I",
+    "evVehicle": False,
+}
+
 
 def make_vehicle(client=None):
     return SeventeenCYPlusToyotaVehicle(
@@ -111,6 +135,27 @@ def make_vehicle(client=None):
         backdoor_type=LEXUS_21MM_COUPE["backdoorType"],
         remote_capabilities=LEXUS_21MM_COUPE["remoteServiceCapabilities"],
         extended_capabilities=LEXUS_21MM_COUPE["extendedCapabilities"],
+    )
+
+
+def make_24mm_vehicle(client=None):
+    return SeventeenCYPlusToyotaVehicle(
+        client=client or object(),
+        has_remote_subscription=has_remote_subscription(TWENTY_FOUR_MM_PHEV),
+        has_electric=is_electric_vehicle(TWENTY_FOUR_MM_PHEV),
+        model_name=TWENTY_FOUR_MM_PHEV["modelName"],
+        model_year=TWENTY_FOUR_MM_PHEV["modelYear"],
+        vin="TESTVIN24",
+        region=TWENTY_FOUR_MM_PHEV["region"],
+        generation=ApiVehicleGeneration(TWENTY_FOUR_MM_PHEV["generation"]),
+        brand=TWENTY_FOUR_MM_PHEV["brand"],
+        backdoor_type=TWENTY_FOUR_MM_PHEV["backdoorType"],
+        remote_capabilities=TWENTY_FOUR_MM_PHEV[
+            "remoteServiceCapabilities"
+        ],
+        extended_capabilities=TWENTY_FOUR_MM_PHEV[
+            "extendedCapabilities"
+        ],
     )
 
 
@@ -192,6 +237,104 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(calls, [("TESTVIN", "find-vehicle", "US")])
 
+    async def test_24mm_command_uses_appsync_transport_and_region(self):
+        calls = []
+
+        class Client:
+            async def remote_request_24mm(self, *args):
+                calls.append(args)
+
+            async def remote_request_17cyplus(self, *args):
+                raise AssertionError("24MM must not use the REST command path")
+
+        vehicle = make_24mm_vehicle(Client())
+
+        await vehicle.send_command(RemoteRequestCommand.DoorLock)
+
+        self.assertEqual(calls, [("TESTVIN24", "door-lock", "CA")])
+
+
+class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
+    class Auth:
+        async def get_guid(self):
+            return "guid"
+
+    class Client:
+        def __init__(self):
+            self.auth = VehicleRefreshTransportTests.Auth()
+            self.calls = []
+
+        async def graphql_pre_wake(self, *args):
+            self.calls.append(("pre_wake", args))
+
+        async def graphql_confirm_subscription(self, *args):
+            self.calls.append(("confirm", args))
+
+        async def graphql_refresh_status(self, *args):
+            self.calls.append(("graphql_refresh", args))
+
+        async def send_refresh_request_17cyplus(self, *args):
+            self.calls.append(("rest_refresh", args))
+
+    async def test_17cyplus_refresh_uses_only_rest(self):
+        client = self.Client()
+        vehicle = SeventeenCYPlusToyotaVehicle(
+            client=client,
+            has_remote_subscription=True,
+            has_electric=False,
+            model_name="HIGHLANDER",
+            model_year="2020",
+            vin="RESTVIN",
+            region="US",
+            generation=ApiVehicleGeneration.CY17PLUS,
+        )
+
+        await vehicle.poll_vehicle_refresh()
+
+        self.assertEqual(
+            client.calls,
+            [("rest_refresh", ("RESTVIN", "US"))],
+        )
+
+    async def test_21mm_refresh_keeps_graphql_and_rest(self):
+        client = self.Client()
+        vehicle = make_vehicle(client)
+
+        await vehicle.poll_vehicle_refresh()
+
+        self.assertEqual(
+            client.calls,
+            [
+                ("pre_wake", ("guid", "US")),
+                ("confirm", ("TESTVIN", "trunk", "US")),
+                ("graphql_refresh", ("TESTVIN", "US")),
+                ("rest_refresh", ("TESTVIN", "US")),
+            ],
+        )
+
+    async def test_24mm_refresh_uses_only_graphql(self):
+        client = self.Client()
+        vehicle = make_24mm_vehicle(client)
+
+        await vehicle.poll_vehicle_refresh()
+
+        self.assertEqual(
+            client.calls,
+            [
+                ("pre_wake", ("guid", "CA")),
+                ("confirm", ("TESTVIN24", "hatch", "CA")),
+                ("graphql_refresh", ("TESTVIN24", "CA")),
+            ],
+        )
+
+    async def test_refresh_failure_is_not_reported_as_success(self):
+        class Client(self.Client):
+            async def graphql_refresh_status(self, *args):
+                raise RuntimeError("refresh rejected")
+
+        with self.assertRaisesRegex(RuntimeError, "refresh rejected"):
+            await make_24mm_vehicle(Client()).poll_vehicle_refresh()
+
 
 class WakePolicyTests(unittest.TestCase):
     def test_manual_only_never_automatically_wakes(self):
@@ -227,6 +370,72 @@ class WakePolicyTests(unittest.TestCase):
 
 
 class VehicleStateTests(unittest.TestCase):
+    def test_24mm_status_parses_state_tires_and_electric_data(self):
+        status = json.loads(
+            (ROOT / "tests/fixtures/vehicle_24mm.json").read_text()
+        )
+        vehicle = make_24mm_vehicle()
+
+        self.assertTrue(vehicle.apply_graphql_status(status))
+
+        driver = vehicle.features[VehicleFeatures.FrontDriverDoor]
+        passenger = vehicle.features[VehicleFeatures.FrontPassengerDoor]
+        self.assertTrue(driver.closed)
+        self.assertTrue(driver.locked)
+        self.assertFalse(passenger.closed)
+        self.assertFalse(passenger.locked)
+        self.assertEqual(
+            (35.1, "psi"),
+            (
+                vehicle.features[VehicleFeatures.FrontDriverTire].value,
+                vehicle.features[VehicleFeatures.FrontDriverTire].unit,
+            ),
+        )
+        self.assertEqual(
+            (240, "kPa"),
+            (
+                vehicle.features[VehicleFeatures.SpareTirePressure].value,
+                vehicle.features[VehicleFeatures.SpareTirePressure].unit,
+            ),
+        )
+        self.assertEqual(
+            100,
+            vehicle.features[VehicleFeatures.ChargeLevel].value,
+        )
+        self.assertEqual(
+            48,
+            vehicle.features[VehicleFeatures.ChargeDistance].value,
+        )
+        self.assertFalse(
+            vehicle.features[VehicleFeatures.ChargingStatus].closed
+        )
+        self.assertFalse(
+            vehicle.features[VehicleFeatures.RemoteStartStatus].on
+        )
+
+    def test_newer_rest_telemetry_survives_older_graphql_telemetry(self):
+        vehicle = make_24mm_vehicle()
+        vehicle._parse_telemetry(
+            {
+                "lastTimestamp": "2026-08-14T12:01:00Z",
+                "odometer": {"value": 2000, "unit": "mi"},
+            }
+        )
+
+        vehicle.apply_graphql_status(
+            {
+                "telemetry": {
+                    "lastUpdateDateTime": "2026-08-14T12:00:00Z",
+                    "odo": {"value": 1999, "unit": "mi"},
+                }
+            }
+        )
+
+        self.assertEqual(
+            2000,
+            vehicle.features[VehicleFeatures.Odometer].value,
+        )
+
     def test_placeholder_rear_doors_do_not_create_entities(self):
         vehicle = make_vehicle()
         vehicle.apply_graphql_status(
@@ -257,6 +466,30 @@ class VehicleStateTests(unittest.TestCase):
         self.assertNotIn(VehicleFeatures.RearPassengerDoor, vehicle.features)
         self.assertNotIn(VehicleFeatures.Moonroof, vehicle.features)
         self.assertTrue(vehicle.features[VehicleFeatures.Trunk].closed)
+
+    def test_empty_preferred_backdoor_does_not_hide_reported_trunk(self):
+        vehicle = make_vehicle()
+        vehicle.apply_graphql_status(
+            {
+                "vehicleState": {
+                    "trunk": {"position": {"status": "close"}}
+                }
+            }
+        )
+
+        vehicle.apply_graphql_status(
+            {
+                "vehicleState": {
+                    "hatch": {
+                        "position": {"status": None},
+                        "lock": {"status": None},
+                    },
+                    "trunk": {"position": {"status": "open"}},
+                }
+            }
+        )
+
+        self.assertFalse(vehicle.features[VehicleFeatures.Trunk].closed)
 
     def test_lock_only_rest_state_remains_position_unknown(self):
         vehicle = make_vehicle()
@@ -353,23 +586,34 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
         handler = ToyotaWebSocketHandler(Client())
         handler._subscriptions = {"TESTVIN": "subscription"}
         handler._vehicle_contexts = {
-            "TESTVIN": {"brand": "L", "backdoor_type": "trunk"}
+            "TESTVIN": {
+                "brand": "L",
+                "backdoor_type": "trunk",
+                "region": "CA",
+            }
         }
 
         await handler._handle_message(
             {"type": "start_ack", "id": "subscription"}, None, None
         )
 
-        self.assertEqual(calls, [("TESTVIN", "trunk")])
+        self.assertEqual(calls, [("TESTVIN", "trunk", "CA")])
 
     async def test_subscription_uses_transport_brand_and_vehicle_region(self):
         sent = []
+
+        class Auth:
+            def get_device_id(self):
+                return "device"
+
+        class Client:
+            auth = Auth()
 
         class WebSocket:
             async def send_json(self, payload):
                 sent.append(payload)
 
-        handler = ToyotaWebSocketHandler(object())
+        handler = ToyotaWebSocketHandler(Client())
         handler._ws = WebSocket()
         handler._vehicle_contexts = {"TESTVIN": {"brand": "L", "region": "US"}}
 
@@ -379,6 +623,7 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(authorization["X-BRAND"], "T")
         self.assertEqual(authorization["X-APPBRAND"], "T")
         self.assertEqual(authorization["x-region"], "US")
+        self.assertEqual(authorization["x-deviceid"], "device")
 
 
 class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
@@ -498,6 +743,45 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(("telemetry", ("TESTVIN", "US", "17CYPLUS")), calls)
         self.assertIn(("status", ("TESTVIN", "US")), calls)
 
+    async def test_24mm_update_uses_direct_appsync_status(self):
+        calls = []
+        fixture = json.loads(
+            (ROOT / "tests/fixtures/vehicle_24mm.json").read_text()
+        )
+
+        class Client:
+            async def get_telemetry(self, *args):
+                calls.append(("telemetry", args))
+                return {}
+
+            async def graphql_get_vehicle_status(self, *args):
+                calls.append(("graphql_status", args))
+                return fixture
+
+            async def get_vehicle_status_17cyplus(self, *args):
+                raise AssertionError("24MM must not poll REST remote status")
+
+            async def get_engine_status_17cyplus(self, *args):
+                raise AssertionError("24MM must not poll REST engine status")
+
+            async def get_electric_status(self, *args, **kwargs):
+                raise AssertionError("24MM must not poll legacy EV status")
+
+        vehicle = make_24mm_vehicle(Client())
+
+        await vehicle.update()
+
+        self.assertEqual(
+            calls,
+            [
+                ("telemetry", ("TESTVIN24", "CA", "17CYPLUS")),
+                ("graphql_status", ("TESTVIN24", "hatch", "CA")),
+            ],
+        )
+        self.assertTrue(
+            vehicle.features[VehicleFeatures.FrontDriverDoor].locked
+        )
+
     async def test_lexus_telemetry_uses_toyota_transport_headers(self):
         calls = []
 
@@ -539,14 +823,36 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         calls = []
 
         class Client:
-            async def graphql_request(self, *args):
-                calls.append(args)
+            async def graphql_request(self, *args, **kwargs):
+                calls.append((args, kwargs))
                 return {}
 
-        await graphql_confirm_subscription(Client(), "TESTVIN", "trunk")
+        await graphql_confirm_subscription(
+            Client(), "TESTVIN", "trunk", "CA"
+        )
 
-        _, _, variables = calls[0]
+        args, kwargs = calls[0]
+        _, _, variables = args
         self.assertEqual(variables, {"vin": "TESTVIN", "backdoorType": "trunk"})
+        self.assertEqual(kwargs["region"], "CA")
+        self.assertEqual(kwargs["backdoor_type"], "trunk")
+
+    async def test_24mm_status_query_uses_region_and_backdoor_headers(self):
+        calls = []
+
+        class Client:
+            async def graphql_request(self, *args, **kwargs):
+                calls.append((args, kwargs))
+                return {"getVehicleStatus": {"vin": "TESTVIN24"}}
+
+        result = await graphql_get_vehicle_status(
+            Client(), "TESTVIN24", "hatch", "CA"
+        )
+
+        self.assertEqual(result, {"vin": "TESTVIN24"})
+        _, kwargs = calls[0]
+        self.assertEqual(kwargs["region"], "CA")
+        self.assertEqual(kwargs["backdoor_type"], "hatch")
 
 
 if __name__ == "__main__":

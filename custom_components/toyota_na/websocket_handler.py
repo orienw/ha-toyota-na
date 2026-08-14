@@ -20,12 +20,12 @@ from typing import Optional
 
 import aiohttp
 
-_LOGGER = logging.getLogger(__name__)
+from .patch_client import (
+    GRAPHQL_WS_ENDPOINT,
+    appsync_authorization,
+)
 
-GRAPHQL_WS_ENDPOINT = "wss://oa-api.telematicsct.com/graphql/realtime"
-GRAPHQL_HOST = "oa-api.telematicsct.com"
-APPSYNC_API_KEY = "da2-zgeayo2qh5eo7cj6pmdwhwugze"
-TRANSPORT_BRAND = "T"
+_LOGGER = logging.getLogger(__name__)
 
 # Subscription query from Toyota app v3.1.0 APK (yj/h$i.smali)
 SUBSCRIBE_VEHICLE_STATUS = (
@@ -151,14 +151,18 @@ class ToyotaWebSocketHandler:
         """Connect to AppSync WebSocket, subscribe, and process messages."""
         token = await self._client.auth.get_access_token()
         guid = await self._client.auth.get_guid()
+        device_id = self._client.auth.get_device_id()
 
         # AppSync requires auth headers as base64-encoded URL params
-        auth_header = {
-            "host": GRAPHQL_HOST,
-            "x-api-key": APPSYNC_API_KEY,
-            "Authorization": f"Bearer {token}",
-            "x-channel": "ONEAPP",
-        }
+        first_vin = self._vins[0] if self._vins else ""
+        first_context = self._vehicle_contexts.get(first_vin, {})
+        auth_header = appsync_authorization(
+            token,
+            guid,
+            first_vin,
+            first_context.get("region", "US"),
+            device_id,
+        )
         header_b64 = base64.b64encode(
             json.dumps(auth_header).encode()
         ).decode()
@@ -230,6 +234,7 @@ class ToyotaWebSocketHandler:
                     result = await self._client.graphql_confirm_subscription(
                         vin,
                         context.get("backdoor_type"),
+                        context.get("region", "US"),
                     )
                     if result is not None:
                         _LOGGER.debug(
@@ -286,6 +291,13 @@ class ToyotaWebSocketHandler:
         sub_id = str(uuid.uuid4())
         self._subscriptions[vin] = sub_id
         context = self._vehicle_contexts.get(vin, {})
+        authorization = appsync_authorization(
+            token,
+            guid,
+            vin,
+            context.get("region", "US"),
+            self._client.auth.get_device_id(),
+        )
 
         subscription = {
             "id": sub_id,
@@ -298,17 +310,7 @@ class ToyotaWebSocketHandler:
                     }
                 ),
                 "extensions": {
-                    "authorization": {
-                        "host": GRAPHQL_HOST,
-                        "x-api-key": APPSYNC_API_KEY,
-                        "Authorization": f"Bearer {token}",
-                        "x-channel": "ONEAPP",
-                        "X-BRAND": TRANSPORT_BRAND,
-                        "X-APPBRAND": TRANSPORT_BRAND,
-                        "x-region": context.get("region", "US"),
-                        "vin": vin,
-                        "x-guid": guid,
-                    }
+                    "authorization": authorization
                 },
             },
         }

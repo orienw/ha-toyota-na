@@ -127,45 +127,61 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         except Exception as e:
             _LOGGER.debug("Error fetching telemetry: %s", e)
 
-        try:
-            if self._has_remote_subscription:
-                # Apply cached push data first. REST then wins when neither source
-                # reports timestamps, while newer timestamped data wins either way.
+        if self._has_remote_subscription:
+            try:
+                # Cached push data fills gaps. The polled source below wins when
+                # neither response has timestamps.
                 ws_handler = getattr(self._client, "_ws_handler", None)
                 if ws_handler:
                     self.apply_graphql_status(
                         ws_handler.get_cached_status(self._vin)
                     )
 
-                # REST v1/global/remote/status provides door/lock/window/hood/hatch
-                vehicle_status = await self._client.get_vehicle_status_17cyplus(
-                    self._vin, self._region
-                )
-                if vehicle_status:
-                    self._last_vehicle_status = vehicle_status
-                    self._parse_vehicle_status(vehicle_status)
-                elif self._last_vehicle_status:
-                    self._parse_vehicle_status(self._last_vehicle_status)
-        except Exception as e:
-            _LOGGER.debug("Error fetching vehicle status: %s", e)
-
-        try:
-            if self._has_remote_subscription:
-                # engine_status - use 17cyplus endpoint
-                engine_status = await self._client.get_engine_status_17cyplus(
-                    self._vin, self._region
-                )
-                if engine_status:
-                    _LOGGER.debug("Engine status received for VIN %s", self._vin[-4:])
-                    self._parse_engine_status(engine_status)
+                if self._generation == ApiVehicleGeneration.MM24:
+                    vehicle_status = (
+                        await self._client.graphql_get_vehicle_status(
+                            self._vin,
+                            self._backdoor_type,
+                            self._region,
+                        )
+                    )
+                    if vehicle_status:
+                        self.apply_graphql_status(vehicle_status)
+                    elif self._last_graphql_status:
+                        self._parse_graphql_vehicle_status(
+                            self._last_graphql_status
+                        )
                 else:
-                    _LOGGER.debug("Engine status returned None for VIN %s", self._vin[-4:])
-        except Exception as e:
-            _LOGGER.debug("Error fetching engine status: %s", e)
+                    vehicle_status = (
+                        await self._client.get_vehicle_status_17cyplus(
+                            self._vin, self._region
+                        )
+                    )
+                    if vehicle_status:
+                        self._last_vehicle_status = vehicle_status
+                        self._parse_vehicle_status(vehicle_status)
+                    elif self._last_vehicle_status:
+                        self._parse_vehicle_status(self._last_vehicle_status)
+            except Exception as e:
+                _LOGGER.debug("Error fetching vehicle status: %s", e)
+
+            if self._generation != ApiVehicleGeneration.MM24:
+                try:
+                    engine_status = (
+                        await self._client.get_engine_status_17cyplus(
+                            self._vin, self._region
+                        )
+                    )
+                    if engine_status:
+                        self._parse_engine_status(engine_status)
+                except Exception as e:
+                    _LOGGER.debug("Error fetching engine status: %s", e)
 
         try:
-            if self._has_electric:
-                # electric_status
+            if (
+                self._has_electric
+                and self._generation != ApiVehicleGeneration.MM24
+            ):
                 electric_status = await self._client.get_electric_status(
                     self.vin, region=self._region
                 )
@@ -176,35 +192,64 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
-        # GraphQL refresh flow: pre-wake -> confirm subscription -> refresh
-        try:
-            guid = await self._client.auth.get_guid()
-            await self._client.graphql_pre_wake(guid)
-        except Exception as e:
-            _LOGGER.debug("GraphQL pre-wake failed: %s", e)
+        errors = []
+        refreshed = False
 
-        try:
-            await self._client.graphql_confirm_subscription(
-                self._vin, self._backdoor_type
+        if self._generation in (
+            ApiVehicleGeneration.MM21,
+            ApiVehicleGeneration.MM24,
+        ):
+            try:
+                guid = await self._client.auth.get_guid()
+                await self._client.graphql_pre_wake(guid, self._region)
+            except Exception as e:
+                errors.append(e)
+                _LOGGER.debug("GraphQL pre-wake failed: %s", e)
+
+            try:
+                await self._client.graphql_confirm_subscription(
+                    self._vin,
+                    self._backdoor_type,
+                    self._region,
+                )
+            except Exception as e:
+                errors.append(e)
+                _LOGGER.debug("GraphQL confirm subscription failed: %s", e)
+
+            try:
+                await self._client.graphql_refresh_status(
+                    self._vin, self._region
+                )
+                refreshed = True
+            except Exception as e:
+                errors.append(e)
+                _LOGGER.debug("GraphQL refresh status failed: %s", e)
+
+        if self._generation in (
+            ApiVehicleGeneration.CY17PLUS,
+            ApiVehicleGeneration.MM21,
+        ):
+            try:
+                await self._client.send_refresh_request_17cyplus(
+                    self._vin, self._region
+                )
+                refreshed = True
+            except Exception as e:
+                errors.append(e)
+                _LOGGER.debug("REST refresh request failed: %s", e)
+
+        if not refreshed:
+            if errors:
+                raise errors[-1]
+            raise RuntimeError(
+                f"No refresh transport is available for {self.api_generation}."
             )
-        except Exception as e:
-            _LOGGER.debug("GraphQL confirm subscription failed: %s", e)
 
         try:
-            await self._client.graphql_refresh_status(self._vin)
-        except Exception as e:
-            _LOGGER.debug("GraphQL refresh status failed: %s", e)
-
-        # Also do REST refresh
-        try:
-            await self._client.send_refresh_request_17cyplus(
-                self._vin, self._region
-            )
-        except Exception as e:
-            _LOGGER.debug("REST refresh request failed: %s", e)
-
-        try:
-            if self._has_electric:
+            if (
+                self._has_electric
+                and self._generation != ApiVehicleGeneration.MM24
+            ):
                 electric_status = await self._client.get_electric_realtime_status(
                     self.vin,
                     self.endpoint_generation,
@@ -216,9 +261,15 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             _LOGGER.debug("Error refreshing electric status: %s", e)
 
     async def send_command(self, command: RemoteRequestCommand) -> None:
-        """Start the engine. Periodically refreshes the vehicle status to determine if the engine is running."""
+        """Send a generation-appropriate remote command."""
+        command_name = self._command_map[command]
+        if self._generation == ApiVehicleGeneration.MM24:
+            await self._client.remote_request_24mm(
+                self._vin, command_name, self._region
+            )
+            return
         await self._client.remote_request_17cyplus(
-            self._vin, self._command_map[command], self._region
+            self._vin, command_name, self._region
         )
 
     #
@@ -259,6 +310,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
     def _store_opening(self, feature, closed, locked, observed_at=None) -> bool:
         """Merge known opening state without converting missing values to false."""
+        if closed is None and locked is None:
+            return False
         current = self._features.get(feature)
         current_closed = current.closed if isinstance(current, ToyotaOpening) else None
         current_locked = (
@@ -290,23 +343,82 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             )
         return True
 
+    def _store_numeric(self, feature, value, unit="", observed_at=None) -> bool:
+        """Store a numeric value unless a newer observation already exists."""
+        if value is None:
+            return False
+        timestamp = self._feature_timestamps.get((feature, "value"))
+        if timestamp is not None and (
+            observed_at is None or observed_at < timestamp
+        ):
+            return False
+        if observed_at is not None:
+            self._feature_timestamps[(feature, "value")] = observed_at
+        self._features[feature] = ToyotaNumeric(value, unit)
+        return True
+
+    def _store_location(
+        self, feature, latitude, longitude, observed_at=None
+    ) -> bool:
+        """Store a location unless a newer observation already exists."""
+        if latitude is None or longitude is None:
+            return False
+        timestamp = self._feature_timestamps.get((feature, "location"))
+        if timestamp is not None and (
+            observed_at is None or observed_at < timestamp
+        ):
+            return False
+        if observed_at is not None:
+            self._feature_timestamps[(feature, "location")] = observed_at
+        self._features[feature] = ToyotaLocation(latitude, longitude)
+        return True
+
+    def _store_remote_start(self, running, observed_at=None) -> bool:
+        """Store engine state unless a newer observation already exists."""
+        if isinstance(running, str):
+            normalized = running.lower()
+            if normalized in ("on", "running", "started", "true", "1"):
+                running = True
+            elif normalized in ("off", "stopped", "false", "0"):
+                running = False
+            else:
+                return False
+        if not isinstance(running, bool):
+            return False
+        feature = VehicleFeatures.RemoteStartStatus
+        timestamp = self._feature_timestamps.get((feature, "running"))
+        if timestamp is not None and (
+            observed_at is None or observed_at < timestamp
+        ):
+            return False
+        if observed_at is not None:
+            self._feature_timestamps[(feature, "running")] = observed_at
+        self._features[feature] = ToyotaRemoteStart(
+            date=None,
+            on=running,
+            timer=None,
+        )
+        return True
+
     def _parse_vehicle_status(self, vehicle_status: dict) -> None:
         if not vehicle_status:
-            return
-
-        if "latitude" in vehicle_status and "longitude" in vehicle_status:
-            self._features[VehicleFeatures.ParkingLocation] = ToyotaLocation(
-                vehicle_status["latitude"], vehicle_status["longitude"]
-            )
-
-        categories = vehicle_status.get("vehicleStatus")
-        if not categories:
             return
 
         observed_at = parse_api_timestamp(
             vehicle_status.get("occurrenceDate")
             or vehicle_status.get("occuranceDate")
         )
+        if "latitude" in vehicle_status and "longitude" in vehicle_status:
+            self._store_location(
+                VehicleFeatures.ParkingLocation,
+                vehicle_status["latitude"],
+                vehicle_status["longitude"],
+                observed_at,
+            )
+
+        categories = vehicle_status.get("vehicleStatus")
+        if not categories:
+            return
 
         for category in categories:
             if not category or "sections" not in category:
@@ -346,10 +458,25 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         "rearPassengerSide": VehicleFeatures.RearPassengerWindow,
     }
 
+    _graphql_tire_map = {
+        "frontLeft": VehicleFeatures.FrontDriverTire,
+        "frontRight": VehicleFeatures.FrontPassengerTire,
+        "rearLeft": VehicleFeatures.RearDriverTire,
+        "rearRight": VehicleFeatures.RearPassengerTire,
+        "spare": VehicleFeatures.SpareTirePressure,
+    }
+
     def apply_graphql_status(self, status: dict) -> bool:
         """Apply a pushed AppSync status to this vehicle."""
         if not status or not any(
-            status.get(key) for key in ("vehicleState", "location", "telemetry")
+            status.get(key)
+            for key in (
+                "vehicleState",
+                "location",
+                "telemetry",
+                "tripdetails",
+                "electric",
+            )
         ):
             return False
         self._last_graphql_status = status
@@ -361,15 +488,16 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         if not status:
             return
 
-        # Location
         location = status.get("location")
-        if (
-            location
-            and location.get("latitude") is not None
-            and location.get("longitude") is not None
-        ):
-            self._features[VehicleFeatures.ParkingLocation] = ToyotaLocation(
-                location["latitude"], location["longitude"]
+        if location:
+            self._store_location(
+                VehicleFeatures.ParkingLocation,
+                location.get("latitude"),
+                location.get("longitude"),
+                parse_api_timestamp(
+                    location.get("lastUpdateDateTime")
+                    or status.get("lastUpdateDateTime")
+                ),
             )
 
         vehicle_state = status.get("vehicleState")
@@ -396,6 +524,33 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                     if window:
                         closed, _ = opening_state_from_graphql(window)
                         self._store_opening(feature, closed, None, observed_at)
+
+            tires = vehicle_state.get("tires") or {}
+            tire_observed_at = parse_api_timestamp(
+                tires.get("lastUpdateDateTime")
+                or vehicle_state.get("lastUpdateDateTime")
+                or status.get("lastUpdateDateTime")
+            )
+            for tire_key, feature in self._graphql_tire_map.items():
+                tire = tires.get(tire_key) or {}
+                for pressure_key, default_unit in (
+                    ("psi", "psi"),
+                    ("kpa", "kPa"),
+                    ("bar", "bar"),
+                ):
+                    pressure = tire.get(pressure_key)
+                    if pressure is None:
+                        continue
+                    if isinstance(pressure, dict):
+                        value = pressure.get("value")
+                        unit = pressure.get("unit") or default_unit
+                    else:
+                        value = pressure
+                        unit = default_unit
+                    if self._store_numeric(
+                        feature, value, unit, tire_observed_at
+                    ):
+                        break
 
             for opening_key in backdoor_candidates(self._backdoor_type):
                 opening = vehicle_state.get(opening_key)
@@ -425,34 +580,171 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             # Engine
             engine = vehicle_state.get("engine")
             if engine:
-                running = engine.get("running")
-                if running is not None:
-                    self._features[
-                        VehicleFeatures.RemoteStartStatus
-                    ] = ToyotaRemoteStart(
-                        date=None,
-                        on=bool(running),
-                        timer=None,
-                    )
+                self._store_remote_start(
+                    engine.get("running", engine.get("status")),
+                    parse_api_timestamp(
+                        engine.get("lastUpdateDateTime")
+                        or vehicle_state.get("lastUpdateDateTime")
+                        or status.get("lastUpdateDateTime")
+                    ),
+                )
 
         # Telemetry from GraphQL response
         telemetry = status.get("telemetry")
         if telemetry:
+            telemetry_observed_at = parse_api_timestamp(
+                telemetry.get("lastUpdateDateTime")
+                or status.get("lastUpdateDateTime")
+            )
             odo = telemetry.get("odo")
-            if odo and odo.get("value") is not None:
-                self._features[VehicleFeatures.Odometer] = ToyotaNumeric(
-                    odo["value"], odo.get("unit", "")
+            if odo:
+                self._store_numeric(
+                    VehicleFeatures.Odometer,
+                    odo.get("value"),
+                    odo.get("unit", ""),
+                    telemetry_observed_at,
                 )
             fugage = telemetry.get("fugage")
-            if fugage and fugage.get("value") is not None:
-                self._features[VehicleFeatures.FuelLevel] = ToyotaNumeric(
-                    fugage["value"], fugage.get("unit", "%")
+            if fugage:
+                self._store_numeric(
+                    VehicleFeatures.FuelLevel,
+                    fugage.get("value"),
+                    fugage.get("unit", "%"),
+                    telemetry_observed_at,
                 )
             range_val = telemetry.get("range")
-            if range_val and range_val.get("value") is not None:
-                self._features[VehicleFeatures.DistanceToEmpty] = ToyotaNumeric(
-                    range_val["value"], range_val.get("unit", "")
+            if range_val:
+                self._store_numeric(
+                    VehicleFeatures.DistanceToEmpty,
+                    range_val.get("value"),
+                    range_val.get("unit", ""),
+                    telemetry_observed_at,
                 )
+
+        trip_details = status.get("tripdetails") or {}
+        trip_observed_at = parse_api_timestamp(
+            trip_details.get("lastUpdateDateTime")
+            or status.get("lastUpdateDateTime")
+        )
+        for key, feature in (
+            ("tripA", VehicleFeatures.TripDetailsA),
+            ("tripB", VehicleFeatures.TripDetailsB),
+        ):
+            trip = trip_details.get(key) or {}
+            self._store_numeric(
+                feature,
+                trip.get("value"),
+                trip.get("unit", ""),
+                trip_observed_at,
+            )
+
+        self._parse_graphql_electric_status(status.get("electric"))
+
+    def _parse_graphql_electric_status(self, electric: dict) -> None:
+        """Parse the electric document returned for 24MM EVs and PHEVs."""
+        if not electric:
+            return
+
+        observed_at = parse_api_timestamp(electric.get("lastUpdateDateTime"))
+        battery = electric.get("battery") or {}
+        charge_level = None
+        for key in (
+            "stateOfChargeDisplay",
+            "plugInEnergy",
+            "chargeRemainingAmount",
+        ):
+            measurement = battery.get(key)
+            if measurement and measurement.get("value") is not None:
+                charge_level = measurement
+                break
+        if charge_level:
+            self._store_numeric(
+                VehicleFeatures.ChargeLevel,
+                charge_level.get("value"),
+                charge_level.get("unit", "%"),
+                observed_at,
+            )
+
+        electric_range = battery.get("travelableDistance") or {}
+        if self._store_numeric(
+            VehicleFeatures.ChargeDistance,
+            electric_range.get("value"),
+            electric_range.get("unit", ""),
+            observed_at,
+        ):
+            self._store_numeric(
+                VehicleFeatures.EvTravelableDistance,
+                electric_range.get("value"),
+                electric_range.get("unit", ""),
+                observed_at,
+            )
+
+        electric_range_ac = battery.get("travelableDistanceAC") or {}
+        self._store_numeric(
+            VehicleFeatures.ChargeDistanceAC,
+            electric_range_ac.get("value"),
+            electric_range_ac.get("unit", ""),
+            observed_at,
+        )
+
+        charging = electric.get("charging") or {}
+        if not charging:
+            return
+        charging_observed_at = parse_api_timestamp(
+            charging.get("lastUpdateDateTime")
+        ) or observed_at
+
+        self._store_numeric(
+            VehicleFeatures.ChargeType,
+            charging.get("chargeType"),
+            observed_at=charging_observed_at,
+        )
+        remaining = charging.get("remainingChargeTime") or {}
+        self._store_numeric(
+            VehicleFeatures.RemainingChargeTime,
+            remaining.get("value"),
+            remaining.get("unit", ""),
+            charging_observed_at,
+        )
+
+        connector = charging.get("connector") or {}
+        self._store_numeric(
+            VehicleFeatures.ConnectorStatus,
+            connector.get("status"),
+            observed_at=charging_observed_at,
+        )
+        plug_status = (
+            connector.get("plugStatus")
+            or connector.get("plugInInfo")
+            or charging.get("chargingState")
+        )
+        self._store_numeric(
+            VehicleFeatures.PlugStatus,
+            plug_status,
+            observed_at=charging_observed_at,
+        )
+
+        charging_state = str(charging.get("chargingState") or "").lower()
+        charging_status = str(charging.get("chargingStatus") or "").lower()
+        is_charging = None
+        if charging_state in ("charging", "40", "56"):
+            is_charging = True
+        elif charging_state:
+            is_charging = False
+        elif charging_status:
+            is_charging = charging_status in (
+                "charging",
+                "active",
+                "in_progress",
+                "in-progress",
+            )
+        if is_charging is not None:
+            self._store_opening(
+                VehicleFeatures.ChargingStatus,
+                closed=not is_charging,
+                locked=None,
+                observed_at=charging_observed_at,
+            )
 
     #
     # get_telemetry
@@ -485,13 +777,21 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 
             # fuel level is a primitive
             if key == "fuelLevel":
-                self._features[VehicleFeatures.FuelLevel] = ToyotaNumeric(value, "%")
+                self._store_numeric(
+                    VehicleFeatures.FuelLevel,
+                    value,
+                    "%",
+                    observed_at,
+                )
                 continue
 
             # vehicle_location has a different shape and different target entity class
             if key == "vehicleLocation":
-                self._features[VehicleFeatures.RealTimeLocation] = ToyotaLocation(
-                    value.get("latitude"), value.get("longitude")
+                self._store_location(
+                    VehicleFeatures.RealTimeLocation,
+                    value.get("latitude"),
+                    value.get("longitude"),
+                    observed_at,
                 )
                 continue
 
@@ -506,12 +806,14 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 continue
 
             if self._vehicle_telemetry_map.get(key) is not None:
+                feature = self._vehicle_telemetry_map[key]
                 if isinstance(value, dict) and "value" in value:
-                    self._features[self._vehicle_telemetry_map[key]] = ToyotaNumeric(
-                        value["value"], value.get("unit", "")
+                    self._store_numeric(
+                        feature,
+                        value["value"],
+                        value.get("unit", ""),
+                        observed_at,
                     )
                 else:
-                    self._features[self._vehicle_telemetry_map[key]] = ToyotaNumeric(
-                        value, ""
-                    )
+                    self._store_numeric(feature, value, observed_at=observed_at)
                 continue
