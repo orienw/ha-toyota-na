@@ -706,6 +706,47 @@ class VehicleStateTests(unittest.TestCase):
         window = vehicle.features[VehicleFeatures.FrontDriverWindow]
         self.assertTrue(window.closed)
 
+    def test_telemetry_location_populates_both_location_entities(self):
+        vehicle = make_vehicle()
+
+        vehicle._parse_telemetry(
+            {
+                "lastTimestamp": "2026-08-13T12:01:00Z",
+                "vehicleLocation": {
+                    "latitude": 34.05,
+                    "longitude": -118.25,
+                },
+            }
+        )
+
+        for feature in (
+            VehicleFeatures.RealTimeLocation,
+            VehicleFeatures.ParkingLocation,
+        ):
+            with self.subTest(feature=feature):
+                location = vehicle.features[feature]
+                self.assertEqual(location.lat, 34.05)
+                self.assertEqual(location.value, -118.25)
+
+    def test_legacy_telemetry_location_populates_last_parked(self):
+        vehicle = SeventeenCYToyotaVehicle(
+            client=object(),
+            has_remote_subscription=True,
+            has_electric=False,
+            model_name="CAMRY",
+            model_year="2018",
+            vin="LEGACYVIN",
+            region="US",
+        )
+
+        vehicle._parse_telemetry(
+            {"vehicleLocation": {"latitude": 34.05, "longitude": -118.25}}
+        )
+
+        location = vehicle.features[VehicleFeatures.ParkingLocation]
+        self.assertEqual(location.lat, 34.05)
+        self.assertEqual(location.value, -118.25)
+
     def test_location_only_push_is_applied(self):
         vehicle = make_vehicle()
 
@@ -788,6 +829,20 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_excluded_vehicle_is_not_polled(self):
+        payload = dict(LEXUS_21MM_COUPE, vin="TESTVIN")
+
+        class Client:
+            async def get_user_vehicle_list(self):
+                return [payload]
+
+            async def get_telemetry(self, *args):
+                raise AssertionError("excluded vehicle must not be polled")
+
+        vehicles = await get_vehicles(Client(), exclude_vins={"TESTVIN"})
+
+        self.assertEqual(vehicles, [])
+
     async def test_vehicle_status_uses_toyota_transport_headers(self):
         calls = []
 

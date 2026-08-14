@@ -11,6 +11,11 @@ from homeassistant.helpers.update_coordinator import (
 from .const import DOMAIN
 
 
+def vehicle_entity_unique_id(vin: str, sensor_name: str) -> str:
+    """Return the stable unique ID shared by every vehicle entity."""
+    return f"{vin}.{sensor_name}"
+
+
 class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
     def __init__(
         self,
@@ -30,12 +35,11 @@ class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
 
     @property
     def name(self):
-        if self.vehicle is not None:
-            return f"{self.sensor_name} {self.device_info['name']}"
+        return self.sensor_name
 
     @property
     def unique_id(self):
-        return f"{self.vin}.{self.sensor_name}"
+        return vehicle_entity_unique_id(self.vin, self.sensor_name)
 
     @property
     def device_info(self) -> DeviceInfo:

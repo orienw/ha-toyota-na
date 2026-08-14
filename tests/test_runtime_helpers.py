@@ -117,6 +117,27 @@ class VehicleClaimTests(unittest.TestCase):
             },
         )
 
+    def test_releases_only_selected_claims_owned_by_entry(self):
+        claims = {
+            "EXCLUDEDVIN": "first-entry",
+            "KEPTVIN": "first-entry",
+            "OTHERVIN": "other-entry",
+        }
+
+        vehicle_claims.release_selected_vehicle_claims(
+            claims,
+            "first-entry",
+            {"EXCLUDEDVIN", "OTHERVIN"},
+        )
+
+        self.assertEqual(
+            claims,
+            {
+                "KEPTVIN": "first-entry",
+                "OTHERVIN": "other-entry",
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

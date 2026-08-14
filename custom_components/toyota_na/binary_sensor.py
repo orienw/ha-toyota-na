@@ -12,14 +12,19 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .base_entity import ToyotaNABaseEntity
+from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
 from .const import BINARY_SENSORS, DOMAIN
 from .entity_discovery import setup_entity_discovery
 
 _LOGGER = logging.getLogger(__name__)
+
+_STRUCTURALLY_UNSUPPORTED_BACKDOOR_TYPES = {
+    VehicleFeatures.Trunk: {"tailgate"},
+}
 
 
 async def async_setup_entry(
@@ -31,6 +36,7 @@ async def async_setup_entry(
     coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
         config_entry.entry_id
     ]["coordinator"]
+    registry = er.async_get(hass)
 
     def discover_binary_sensors():
         for vehicle in coordinator.data or []:
@@ -44,6 +50,31 @@ async def async_setup_entry(
                 ):
                     continue
                 feature = cast(VehicleFeatures, entity_config["feature"])
+                unsupported_backdoor_types = (
+                    _STRUCTURALLY_UNSUPPORTED_BACKDOOR_TYPES.get(feature)
+                )
+                if (
+                    unsupported_backdoor_types
+                    and getattr(vehicle, "backdoor_type", None)
+                    in unsupported_backdoor_types
+                ):
+                    stale_entity_id = registry.async_get_entity_id(
+                        "binary_sensor",
+                        DOMAIN,
+                        vehicle_entity_unique_id(
+                            vehicle.vin,
+                            cast(str, entity_config["name"]),
+                        ),
+                    )
+                    if stale_entity_id is not None:
+                        _LOGGER.info(
+                            "Removing %s because it does not apply to "
+                            "backdoor type %s",
+                            stale_entity_id,
+                            vehicle.backdoor_type,
+                        )
+                        registry.async_remove(stale_entity_id)
+                    continue
                 if vehicle.features.get(feature) is None:
                     continue
                 yield ToyotaBinarySensor(

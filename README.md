@@ -47,6 +47,8 @@ Native controls:
 * Refresh Status button
 
 ## Installation
+Requires Home Assistant 2024.11 or newer.
+
 ### HACS
 1. Install HACS: https://hacs.xyz/docs/setup/download
 2. Search and install "Toyota (North America)" in HACS integration store
@@ -70,6 +72,11 @@ Home Assistant keeps checking Toyota's existing cloud data regardless of this
 setting. Cloud updates only disables scheduled wake requests while keeping
 remote commands and the Refresh Status button available. Choose an interval only
 when you want Home Assistant to wake the vehicle proactively for fresh status.
+
+The same Configure dialog lets each Toyota account choose which vehicles it
+manages. When a family-shared vehicle is visible through multiple configured
+accounts, Home Assistant assigns it to one account and creates a Repair notice
+for the other. Uncheck the vehicle under the account that should not manage it.
 
 ![image](https://user-images.githubusercontent.com/4755389/147372481-4d280b6e-6f61-434c-a768-f4a089f009c3.png)
 

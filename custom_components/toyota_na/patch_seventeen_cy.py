@@ -69,7 +69,6 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         "spareTirePressure": VehicleFeatures.SpareTirePressure,
         "tripA": VehicleFeatures.TripDetailsA,
         "tripB": VehicleFeatures.TripDetailsB,
-        "vehicleLocation": VehicleFeatures.ParkingLocation,
         "nextService": VehicleFeatures.NextService,
         "speed": VehicleFeatures.Speed,
     }
@@ -338,11 +337,17 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 self._features[VehicleFeatures.FuelLevel] = ToyotaNumeric(value, "%")
                 continue
 
-            # vehicle_location has a different shape and different target entity class
-            if key == "vehicleLocation":
-                self._features[VehicleFeatures.RealTimeLocation] = ToyotaLocation(
-                    value.get("latitude"), value.get("longitude")
-                )
+            # Toyota labels telemetry vehicleLocation as Last Parked. It is
+            # also the only location available on some accounts, so it backs
+            # both location entities.
+            if key == "vehicleLocation" and isinstance(value, dict):
+                latitude = value.get("latitude")
+                longitude = value.get("longitude")
+                if latitude is None or longitude is None:
+                    continue
+                location = ToyotaLocation(latitude, longitude)
+                self._features[VehicleFeatures.RealTimeLocation] = location
+                self._features[VehicleFeatures.ParkingLocation] = location
                 continue
 
             if self._vehicle_telemetry_map.get(key) is not None:

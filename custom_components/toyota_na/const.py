@@ -9,6 +9,8 @@ from toyota_na.vehicle.base_vehicle import RemoteRequestCommand
 
 DOMAIN = "toyota_na"
 VIN_CLAIMS = "vin_claims"
+OPT_EXCLUDED_VINS = "excluded_vins"
+CONF_MANAGED_VINS = "managed_vins"
 
 DOOR_LOCK = "door_lock"
 DOOR_UNLOCK = "door_unlock"

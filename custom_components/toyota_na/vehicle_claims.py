@@ -26,3 +26,12 @@ def release_vehicle_claims(claims: MutableMapping[str, str], entry_id: str) -> N
     """Release every vehicle owned by a config entry."""
     for vin in [vin for vin, owner in claims.items() if owner == entry_id]:
         del claims[vin]
+
+
+def release_selected_vehicle_claims(
+    claims: MutableMapping[str, str], entry_id: str, vins: set[str]
+) -> None:
+    """Release selected VINs only when they belong to the config entry."""
+    for vin in vins:
+        if claims.get(vin) == entry_id:
+            del claims[vin]

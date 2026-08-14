@@ -103,8 +103,21 @@ from .const import (
     UPDATE_INTERVAL,
     REFRESH_STATUS_INTERVAL,
     VIN_CLAIMS,
+    OPT_EXCLUDED_VINS,
 )
-from .vehicle_claims import claim_vehicles, release_vehicle_claims
+from .shared_vehicles import (
+    async_update_options,
+    clear_entry_conflicts,
+    clear_vehicle_conflict,
+    entry_manages_device,
+    prune_entry_devices,
+    report_vehicle_conflict,
+)
+from .vehicle_claims import (
+    claim_vehicles,
+    release_selected_vehicle_claims,
+    release_vehicle_claims,
+)
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["binary_sensor", "button", "device_tracker", "lock", "sensor"]
@@ -117,6 +130,16 @@ async def _refresh_coordinator_after_command(coordinator) -> None:
         await coordinator.async_request_refresh()
     except Exception as err:
         _LOGGER.debug("Post-command refresh failed: %s", err)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Allow removal only after the entry stops managing the vehicle."""
+    return not entry_manages_device(hass, entry, device_entry)
+
 
 async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
     @service.verify_domain_control(DOMAIN)
@@ -281,9 +304,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             "toyota_na_client": client,
             "coordinator": coordinator,
             "ws_handler": ws_handler,
+            "excluded_vins_snapshot": set(
+                entry.options.get(OPT_EXCLUDED_VINS, [])
+            ),
         }
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        entry.async_on_unload(entry.add_update_listener(async_update_options))
     except Exception:
         if ws_handler is not None:
             try:
@@ -292,6 +319,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 _LOGGER.debug("WebSocket cleanup failed: %s", err)
         claims = hass.data[DOMAIN].get(VIN_CLAIMS, {})
         release_vehicle_claims(claims, entry.entry_id)
+        clear_entry_conflicts(hass, entry.entry_id)
         hass.data[DOMAIN].pop(entry.entry_id, None)
         raise
 
@@ -308,20 +336,33 @@ def update_tokens(tokens: dict[str, str], hass: HomeAssistant, entry: ConfigEntr
 async def update_vehicles_status(hass: HomeAssistant, client: ToyotaOneClient, entry: ConfigEntry):
     try:
         _LOGGER.debug("Updating vehicle status")
-        fetched_vehicles = await get_vehicles(client)
+        excluded_vins = set(entry.options.get(OPT_EXCLUDED_VINS, []))
         claims = hass.data[DOMAIN].setdefault(VIN_CLAIMS, {})
+        release_selected_vehicle_claims(
+            claims,
+            entry.entry_id,
+            excluded_vins,
+        )
+        for vin in excluded_vins:
+            clear_vehicle_conflict(hass, entry.entry_id, vin)
+
+        fetched_vehicles = await get_vehicles(
+            client,
+            exclude_vins=excluded_vins,
+        )
         raw_vehicles, conflicts = claim_vehicles(
             claims, entry.entry_id, fetched_vehicles
         )
         for vehicle in conflicts:
-            _LOGGER.warning(
-                "VIN ...%s (%s %s) is already managed by another loaded "
-                "Toyota account; skipping it for %s",
-                vehicle.vin[-4:],
-                vehicle.model_year,
-                vehicle.model_name,
-                entry.title,
+            report_vehicle_conflict(
+                hass,
+                entry,
+                vehicle,
+                claims[vehicle.vin],
             )
+        for vehicle in raw_vehicles:
+            clear_vehicle_conflict(hass, entry.entry_id, vehicle.vin)
+
         vehicles: list[ToyotaVehicle] = []
         for vehicle in raw_vehicles:
             if vehicle.subscribed is not True:
@@ -346,6 +387,11 @@ async def update_vehicles_status(hass: HomeAssistant, client: ToyotaOneClient, e
                 except Exception as e:
                     _LOGGER.warning("Vehicle refresh failed (%s), continuing without refresh", e)
             vehicles.append(vehicle)
+        prune_entry_devices(
+            hass,
+            entry,
+            excluded_vins | {vehicle.vin for vehicle in conflicts},
+        )
         return vehicles
     except AuthError as e:
         try:
@@ -372,5 +418,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         hass.data[DOMAIN].pop(entry.entry_id)
         claims = hass.data[DOMAIN].get(VIN_CLAIMS, {})
         release_vehicle_claims(claims, entry.entry_id)
+        clear_entry_conflicts(hass, entry.entry_id)
 
     return unload_ok

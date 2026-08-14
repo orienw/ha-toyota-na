@@ -66,7 +66,6 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         "spareTirePressure": VehicleFeatures.SpareTirePressure,
         "tripA": VehicleFeatures.TripDetailsA,
         "tripB": VehicleFeatures.TripDetailsB,
-        "vehicleLocation": VehicleFeatures.ParkingLocation,
         "nextService": VehicleFeatures.NextService,
         "speed": VehicleFeatures.Speed,
 
@@ -794,12 +793,22 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 )
                 continue
 
-            # vehicle_location has a different shape and different target entity class
-            if key == "vehicleLocation":
+            # Toyota labels telemetry vehicleLocation as Last Parked. It is
+            # also the only location available on some accounts, so it backs
+            # both location entities.
+            if key == "vehicleLocation" and isinstance(value, dict):
+                latitude = value.get("latitude")
+                longitude = value.get("longitude")
                 self._store_location(
                     VehicleFeatures.RealTimeLocation,
-                    value.get("latitude"),
-                    value.get("longitude"),
+                    latitude,
+                    longitude,
+                    observed_at,
+                )
+                self._store_location(
+                    VehicleFeatures.ParkingLocation,
+                    latitude,
+                    longitude,
                     observed_at,
                 )
                 continue
