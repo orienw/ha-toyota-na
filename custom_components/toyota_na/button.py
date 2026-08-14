@@ -12,6 +12,7 @@ from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
 
 from .base_entity import ToyotaNABaseEntity
 from .const import COMMAND_BUTTONS, COMMAND_REFRESH_DELAY, DOMAIN
+from .wake_policy import record_vehicle_wake
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,18 +38,27 @@ async def async_setup_entry(
                     ToyotaCommandButton(
                         command,
                         cast(str, config["icon"]),
+                        config_entry,
                         coordinator,
                         cast(str, config["name"]),
                         vehicle.vin,
                     )
                 )
-        buttons.append(ToyotaRefreshButton(coordinator, "Refresh Status", vehicle.vin))
+        buttons.append(
+            ToyotaRefreshButton(
+                config_entry, coordinator, "Refresh Status", vehicle.vin
+            )
+        )
 
     async_add_entities(buttons, True)
 
 
 class ToyotaButtonBase(ToyotaNABaseEntity, ButtonEntity):
     """Shared behavior for vehicle command buttons."""
+
+    def __init__(self, config_entry: ConfigEntry, *args: Any) -> None:
+        super().__init__(*args)
+        self._config_entry = config_entry
 
     def _schedule_refresh(self) -> None:
         self.hass.async_create_task(self._async_refresh_after_delay())
@@ -89,6 +99,7 @@ class ToyotaCommandButton(ToyotaButtonBase):
         if vehicle is None:
             return
         await vehicle.send_command(self._command)
+        record_vehicle_wake(self.hass, self._config_entry)
         self._schedule_refresh()
 
 
@@ -108,4 +119,5 @@ class ToyotaRefreshButton(ToyotaButtonBase):
         if vehicle is None:
             return
         await vehicle.poll_vehicle_refresh()
+        record_vehicle_wake(self.hass, self._config_entry)
         self._schedule_refresh()

@@ -1,21 +1,29 @@
 import asyncio
+import logging
 from typing import Any
-
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-
 
 from homeassistant.components.lock import (
     LockEntity,
 )
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle
+from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
+
 from .base_entity import ToyotaNABaseEntity
-from .const import COMMAND_MAP, DOMAIN, DOOR_LOCK, DOOR_UNLOCK
+from .const import (
+    COMMAND_MAP,
+    COMMAND_REFRESH_DELAY,
+    DOMAIN,
+    DOOR_LOCK,
+    DOOR_UNLOCK,
+)
+from .wake_policy import record_vehicle_wake
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -38,6 +46,7 @@ async def async_setup_entry(
             continue
         locks.append(
             ToyotaLock(
+                config_entry,
                 coordinator,
                 "",
                 vehicle.vin,
@@ -53,10 +62,12 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
 
     def __init__(
         self,
-        vin,
+        config_entry: ConfigEntry,
         *args: Any,
     ):
-        super().__init__(vin, *args)
+        super().__init__(*args)
+        self._config_entry = config_entry
+        self._state_changing = False
 
     @property
     def icon(self):
@@ -101,19 +112,26 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
             self._state_changing = True
             self.async_write_ha_state()
             await self.vehicle.send_command(COMMAND_MAP[command])
+            record_vehicle_wake(self.hass, self._config_entry)
             self.hass.async_create_task(self._background_refresh())
 
     async def _background_refresh(self):
-        """Poll for updated vehicle state after a command, then refresh the coordinator."""
+        """Refresh coordinator state after a remote command."""
         try:
-            await self.vehicle.poll_vehicle_refresh()
-            await asyncio.sleep(10)
+            await asyncio.sleep(COMMAND_REFRESH_DELAY)
             self._state_changing = False
             await self.coordinator.async_request_refresh()
-        except Exception:
+        except Exception as err:  # noqa: BLE001
             self._state_changing = False
             self.async_write_ha_state()
+            _LOGGER.debug("Post-command refresh failed: %s", err)
 
     @property
     def available(self):
-        return self.vehicle is not None
+        vehicle = self.vehicle
+        return (
+            vehicle is not None
+            and vehicle.subscribed
+            and vehicle.supports_command(COMMAND_MAP[DOOR_LOCK])
+            and vehicle.supports_command(COMMAND_MAP[DOOR_UNLOCK])
+        )

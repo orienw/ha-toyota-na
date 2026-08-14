@@ -1,4 +1,4 @@
-from datetime import timedelta, datetime
+from datetime import timedelta
 import logging
 import asyncio
 
@@ -80,6 +80,7 @@ from homeassistant.helpers import device_registry as dr, service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .websocket_handler import ToyotaWebSocketHandler
+from .wake_policy import automatic_wake_due, record_vehicle_wake
 
 from .const import (
     COMMAND_MAP,
@@ -117,6 +118,8 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             _LOGGER.warning("Device missing config entry")
             return
 
+        coordinator = None
+        config_entry = None
         for entry_id in device.config_entries:
             if entry_id not in hass.data[DOMAIN]:
                 _LOGGER.warning("Config entry not found")
@@ -126,12 +129,17 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
                 _LOGGER.warning("Coordinator not found")
                 continue
 
-            coordinator = hass.data[DOMAIN][entry_id]["coordinator"]
-            if coordinator.data is None:
+            candidate = hass.data[DOMAIN][entry_id]["coordinator"]
+            if candidate.data is None:
                 _LOGGER.warning("No coordinator data")
+                continue
 
-        if coordinator.data is None:
-            _LOGGER.warning("No coordinator data")
+            coordinator = candidate
+            config_entry = hass.config_entries.async_get_entry(entry_id)
+            break
+
+        if coordinator is None:
+            _LOGGER.warning("No loaded coordinator found for device")
             return
 
         for identifier in device.identifiers:
@@ -139,8 +147,14 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
 
                 vin = identifier[1]
                 for vehicle in coordinator.data:
-                    if vehicle.vin == vin and remote_action.upper() == "REFRESH" and vehicle.subscribed:
+                    if (
+                        vehicle.vin == vin
+                        and remote_action.upper() == "REFRESH"
+                        and vehicle.subscribed
+                    ):
                         await vehicle.poll_vehicle_refresh()
+                        if config_entry is not None:
+                            record_vehicle_wake(hass, config_entry)
                         # TODO: This works great and prevents us from unnecessarily hitting Toyota. But we can and should
                         # probably do stuff like this in the library where we can better control which APIs we hit to refresh our in-memory data.
                         coordinator.async_set_updated_data(coordinator.data)
@@ -156,6 +170,8 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
                             )
                             break
                         await vehicle.send_command(command)
+                        if config_entry is not None:
+                            record_vehicle_wake(hass, config_entry)
                         break
 
                 _LOGGER.info("Handling service call %s for %s ", remote_action, vin)
@@ -243,10 +259,11 @@ def update_tokens(tokens: dict[str, str], hass: HomeAssistant, entry: ConfigEntr
 
 
 async def update_vehicles_status(hass: HomeAssistant, client: ToyotaOneClient, entry: ConfigEntry):
-    need_refresh = False
-    need_refresh_before = datetime.utcnow().timestamp() - REFRESH_STATUS_INTERVAL
-    if "last_refreshed_at" not in entry.data or entry.data["last_refreshed_at"] < need_refresh_before:
-        need_refresh = True
+    need_refresh = automatic_wake_due(
+        entry.data,
+        entry.options,
+        REFRESH_STATUS_INTERVAL,
+    )
     try:
         _LOGGER.debug("Updating vehicle status")
         raw_vehicles = await get_vehicles(client)
@@ -267,10 +284,8 @@ async def update_vehicles_status(hass: HomeAssistant, client: ToyotaOneClient, e
                 except Exception as e:
                     _LOGGER.warning("Vehicle refresh failed (%s), continuing without refresh", e)
             vehicles.append(vehicle)
-        entry_data = dict(entry.data)
         if need_refresh:
-            entry_data["last_refreshed_at"] = datetime.utcnow().timestamp()
-        hass.config_entries.async_update_entry(entry, data=entry_data)
+            record_vehicle_wake(hass, entry)
         return vehicles
     except AuthError as e:
         try:

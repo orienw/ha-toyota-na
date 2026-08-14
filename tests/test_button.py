@@ -71,19 +71,45 @@ class DataUpdateCoordinator(Subscriptable):
 
 
 class ConfigEntry:
-    entry_id = "entry"
+    def __init__(self):
+        self.entry_id = "entry"
+        self.data = {}
+        self.options = {}
+
+
+class LockEntity:
+    def async_write_ha_state(self):
+        pass
+
+
+class ConfigFlow:
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__()
+
+
+class OptionsFlow:
+    def async_create_entry(self, *, title, data):
+        return {"type": "create_entry", "title": title, "data": data}
+
+    def async_show_form(self, *, step_id, data_schema):
+        return {"type": "form", "step_id": step_id, "data_schema": data_schema}
 
 
 binary_sensor = module("homeassistant.components.binary_sensor")
 binary_sensor.BinarySensorDeviceClass = BinarySensorDeviceClass
 button_component = module("homeassistant.components.button")
 button_component.ButtonEntity = type("ButtonEntity", (), {})
+lock_component = module("homeassistant.components.lock")
+lock_component.LockEntity = LockEntity
 sensor = module("homeassistant.components.sensor")
 sensor.SensorStateClass = SensorStateClass
 
 config_entries = module("homeassistant.config_entries")
 config_entries.ConfigEntry = ConfigEntry
+config_entries.ConfigFlow = ConfigFlow
+config_entries.OptionsFlow = OptionsFlow
 core = module("homeassistant.core")
+core.callback = lambda function: function
 core.HomeAssistant = type("HomeAssistant", (), {})
 ha_const = module("homeassistant.const")
 ha_const.PERCENTAGE = "%"
@@ -110,7 +136,10 @@ upstream_base.ToyotaVehicle = ToyotaVehicle
 upstream_base.VehicleFeatures = VehicleFeatures
 
 from custom_components.toyota_na import button
+from custom_components.toyota_na import config_flow
+from custom_components.toyota_na import lock as lock_platform
 from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.wake_policy import CONF_WAKE_INTERVAL, LAST_WAKE_AT
 
 
 class FakeVehicle:
@@ -139,18 +168,25 @@ class FakeHass:
     def __init__(self, coordinator):
         self.data = {DOMAIN: {"entry": {"coordinator": coordinator}}}
         self.tasks = []
+        self.config_entries = self
 
     def async_create_task(self, coroutine):
         task = asyncio.create_task(coroutine)
         self.tasks.append(task)
         return task
 
+    def async_update_entry(self, entry, *, data):
+        entry.data = data
+
 
 class ButtonTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         button.COMMAND_REFRESH_DELAY = 0
+        lock_platform.COMMAND_REFRESH_DELAY = 0
         self.vehicle = FakeVehicle(
             {
+                RemoteRequestCommand.DoorLock,
+                RemoteRequestCommand.DoorUnlock,
                 RemoteRequestCommand.EngineStart,
                 RemoteRequestCommand.EngineStop,
                 RemoteRequestCommand.HazardsOn,
@@ -158,11 +194,12 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         )
         self.coordinator = DataUpdateCoordinator([self.vehicle])
         self.hass = FakeHass(self.coordinator)
+        self.config_entry = ConfigEntry()
         self.entities = []
 
         await button.async_setup_entry(
             self.hass,
-            ConfigEntry(),
+            self.config_entry,
             lambda entities, update_before_add: self.entities.extend(entities),
         )
         for entity_instance in self.entities:
@@ -190,6 +227,7 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.vehicle.sent, [RemoteRequestCommand.EngineStart])
         self.assertEqual(self.vehicle.refresh_requests, 0)
         self.assertEqual(self.coordinator.refreshes, 1)
+        self.assertIn(LAST_WAKE_AT, self.config_entry.data)
 
     async def test_refresh_button_explicitly_requests_vehicle_status(self):
         await self.entities[-1].async_press()
@@ -197,11 +235,68 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.vehicle.refresh_requests, 1)
         self.assertEqual(self.coordinator.refreshes, 1)
+        self.assertIn(LAST_WAKE_AT, self.config_entry.data)
 
     async def test_capability_change_marks_command_unavailable(self):
         self.vehicle.supported.remove(RemoteRequestCommand.HazardsOn)
 
         self.assertFalse(self.entities[2].available)
+
+    async def test_lock_command_does_not_issue_an_extra_vehicle_wake(self):
+        entities = []
+        await lock_platform.async_setup_entry(
+            self.hass,
+            self.config_entry,
+            lambda added, update_before_add: entities.extend(added),
+        )
+        lock = entities[0]
+        lock.hass = self.hass
+
+        await lock.async_lock()
+        await asyncio.gather(*self.hass.tasks)
+
+        self.assertEqual(self.vehicle.sent, [RemoteRequestCommand.DoorLock])
+        self.assertEqual(self.vehicle.refresh_requests, 0)
+        self.assertEqual(self.coordinator.refreshes, 1)
+        self.assertIn(LAST_WAKE_AT, self.config_entry.data)
+
+    async def test_lock_availability_tracks_capabilities(self):
+        entities = []
+        await lock_platform.async_setup_entry(
+            self.hass,
+            self.config_entry,
+            lambda added, update_before_add: entities.extend(added),
+        )
+
+        self.vehicle.supported.remove(RemoteRequestCommand.DoorUnlock)
+
+        self.assertFalse(entities[0].available)
+
+
+class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_default_preserves_existing_two_hour_behavior(self):
+        result = await config_flow.ToyotaNAOptionsFlow(
+            ConfigEntry()
+        ).async_step_init()
+
+        self.assertEqual(
+            result["data_schema"]({}),
+            {CONF_WAKE_INTERVAL: 2 * 3600},
+        )
+
+    async def test_manual_only_is_saved(self):
+        result = await config_flow.ToyotaNAOptionsFlow(
+            ConfigEntry()
+        ).async_step_init({CONF_WAKE_INTERVAL: 0})
+
+        self.assertEqual(
+            result,
+            {
+                "type": "create_entry",
+                "title": "",
+                "data": {CONF_WAKE_INTERVAL: 0},
+            },
+        )
 
 
 if __name__ == "__main__":

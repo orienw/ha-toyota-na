@@ -44,6 +44,11 @@ from custom_components.toyota_na.vehicle_helpers import (
     has_remote_subscription,
     is_electric_vehicle,
 )
+from custom_components.toyota_na.wake_policy import (
+    CONF_WAKE_INTERVAL,
+    automatic_wake_due,
+    automatic_wake_interval,
+)
 from custom_components.toyota_na.websocket_handler import ToyotaWebSocketHandler
 
 import toyota_na.vehicle.vehicle_generations.seventeen_cy as upstream_17cy
@@ -141,6 +146,39 @@ class VehicleMetadataTests(unittest.TestCase):
         }
 
         self.assertFalse(has_remote_subscription(metadata))
+
+
+class WakePolicyTests(unittest.TestCase):
+    def test_manual_only_never_automatically_wakes(self):
+        self.assertFalse(
+            automatic_wake_due(
+                {},
+                {CONF_WAKE_INTERVAL: 0},
+                2 * 3600,
+                now=100_000,
+            )
+        )
+
+    def test_missing_or_expired_timestamp_is_due(self):
+        self.assertTrue(automatic_wake_due({}, {}, 2 * 3600, now=100_000))
+        self.assertTrue(
+            automatic_wake_due(
+                {"last_refreshed_at": 92_800}, {}, 2 * 3600, now=100_000
+            )
+        )
+
+    def test_recent_timestamp_is_not_due(self):
+        self.assertFalse(
+            automatic_wake_due(
+                {"last_refreshed_at": 99_000}, {}, 2 * 3600, now=100_000
+            )
+        )
+
+    def test_invalid_interval_uses_source_default(self):
+        self.assertEqual(
+            automatic_wake_interval({CONF_WAKE_INTERVAL: "never"}, 2 * 3600),
+            2 * 3600,
+        )
 
 
 class VehicleStateTests(unittest.TestCase):
