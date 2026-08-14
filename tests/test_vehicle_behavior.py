@@ -49,8 +49,10 @@ from custom_components.toyota_na.vehicle_helpers import (
 )
 from custom_components.toyota_na.wake_policy import (
     CONF_WAKE_INTERVAL,
+    LAST_VEHICLE_WAKES,
     automatic_wake_due,
     automatic_wake_interval,
+    record_vehicle_wake,
 )
 from custom_components.toyota_na.websocket_handler import ToyotaWebSocketHandler
 
@@ -366,6 +368,83 @@ class WakePolicyTests(unittest.TestCase):
         self.assertEqual(
             automatic_wake_interval({CONF_WAKE_INTERVAL: "never"}, 2 * 3600),
             2 * 3600,
+        )
+
+    def test_legacy_timestamp_applies_during_per_vehicle_migration(self):
+        self.assertFalse(
+            automatic_wake_due(
+                {"last_refreshed_at": 99_000},
+                {},
+                2 * 3600,
+                vin="LEGACYVIN",
+                now=100_000,
+            )
+        )
+
+    def test_one_vehicle_wake_does_not_delay_another_vehicle(self):
+        class Entry:
+            data = {}
+
+        class ConfigEntries:
+            @staticmethod
+            def async_update_entry(entry, *, data):
+                entry.data = data
+
+        class Hass:
+            config_entries = ConfigEntries()
+
+        entry = Entry()
+        record_vehicle_wake(Hass(), entry, "FIRSTVIN", now=100_000)
+
+        self.assertFalse(
+            automatic_wake_due(
+                entry.data,
+                {},
+                2 * 3600,
+                vin="FIRSTVIN",
+                now=100_001,
+            )
+        )
+        self.assertTrue(
+            automatic_wake_due(
+                entry.data,
+                {},
+                2 * 3600,
+                vin="SECONDVIN",
+                now=100_001,
+            )
+        )
+        self.assertEqual(
+            entry.data[LAST_VEHICLE_WAKES],
+            [{"vin": "FIRSTVIN", "timestamp": 100_000}],
+        )
+
+    def test_recording_same_vehicle_replaces_its_timestamp(self):
+        class Entry:
+            data = {
+                LAST_VEHICLE_WAKES: [
+                    {"vin": "FIRSTVIN", "timestamp": 90_000},
+                    {"vin": "SECONDVIN", "timestamp": 91_000},
+                ]
+            }
+
+        class ConfigEntries:
+            @staticmethod
+            def async_update_entry(entry, *, data):
+                entry.data = data
+
+        class Hass:
+            config_entries = ConfigEntries()
+
+        entry = Entry()
+        record_vehicle_wake(Hass(), entry, "FIRSTVIN", now=100_000)
+
+        self.assertEqual(
+            entry.data[LAST_VEHICLE_WAKES],
+            [
+                {"vin": "SECONDVIN", "timestamp": 91_000},
+                {"vin": "FIRSTVIN", "timestamp": 100_000},
+            ],
         )
 
 

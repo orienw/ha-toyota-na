@@ -99,7 +99,7 @@ class ToyotaCommandButton(ToyotaButtonBase):
         if vehicle is None:
             return
         await vehicle.send_command(self._command)
-        record_vehicle_wake(self.hass, self._config_entry)
+        record_vehicle_wake(self.hass, self._config_entry, self.vin)
         self._schedule_refresh()
 
 
@@ -119,5 +119,5 @@ class ToyotaRefreshButton(ToyotaButtonBase):
         if vehicle is None:
             return
         await vehicle.poll_vehicle_refresh()
-        record_vehicle_wake(self.hass, self._config_entry)
+        record_vehicle_wake(self.hass, self._config_entry, self.vin)
         self._schedule_refresh()

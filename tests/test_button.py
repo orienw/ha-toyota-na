@@ -139,12 +139,16 @@ from custom_components.toyota_na import button
 from custom_components.toyota_na import config_flow
 from custom_components.toyota_na import lock as lock_platform
 from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.wake_policy import CONF_WAKE_INTERVAL, LAST_WAKE_AT
+from custom_components.toyota_na.wake_policy import (
+    CONF_WAKE_INTERVAL,
+    LAST_VEHICLE_WAKES,
+    LAST_WAKE_AT,
+)
 
 
 class FakeVehicle:
-    def __init__(self, supported):
-        self.vin = "TESTVIN"
+    def __init__(self, supported, vin="TESTVIN"):
+        self.vin = vin
         self.subscribed = True
         self.supported = set(supported)
         self.sent = []
@@ -236,6 +240,10 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.vehicle.refresh_requests, 0)
         self.assertEqual(self.coordinator.refreshes, 1)
         self.assertIn(LAST_WAKE_AT, self.config_entry.data)
+        self.assertEqual(
+            self.config_entry.data[LAST_VEHICLE_WAKES],
+            [{"vin": "TESTVIN", "timestamp": self.config_entry.data[LAST_WAKE_AT]}],
+        )
 
     async def test_refresh_button_explicitly_requests_vehicle_status(self):
         await self.entities[-1].async_press()
@@ -244,6 +252,10 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.vehicle.refresh_requests, 1)
         self.assertEqual(self.coordinator.refreshes, 1)
         self.assertIn(LAST_WAKE_AT, self.config_entry.data)
+        self.assertEqual(
+            self.config_entry.data[LAST_VEHICLE_WAKES][0]["vin"],
+            "TESTVIN",
+        )
 
     async def test_capability_change_marks_command_unavailable(self):
         self.vehicle.supported.remove(RemoteRequestCommand.HazardsOn)
@@ -267,6 +279,27 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.vehicle.refresh_requests, 0)
         self.assertEqual(self.coordinator.refreshes, 1)
         self.assertIn(LAST_WAKE_AT, self.config_entry.data)
+
+    async def test_failed_lock_command_clears_transition_state(self):
+        async def fail_command(command):
+            raise RuntimeError("command rejected")
+
+        self.vehicle.send_command = fail_command
+        entities = []
+        await lock_platform.async_setup_entry(
+            self.hass,
+            self.config_entry,
+            lambda added, update_before_add: entities.extend(added),
+        )
+        lock = entities[0]
+        lock.hass = self.hass
+
+        with self.assertRaisesRegex(RuntimeError, "command rejected"):
+            await lock.async_lock()
+
+        self.assertFalse(lock._state_changing)
+        self.assertNotIn(LAST_WAKE_AT, self.config_entry.data)
+        self.assertEqual(self.hass.tasks, [])
 
     async def test_lock_availability_tracks_capabilities(self):
         entities = []

@@ -111,20 +111,25 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
         if self.vehicle is not None:
             self._state_changing = True
             self.async_write_ha_state()
-            await self.vehicle.send_command(COMMAND_MAP[command])
-            record_vehicle_wake(self.hass, self._config_entry)
+            try:
+                await self.vehicle.send_command(COMMAND_MAP[command])
+            except Exception:
+                self._state_changing = False
+                self.async_write_ha_state()
+                raise
+            record_vehicle_wake(self.hass, self._config_entry, self.vin)
             self.hass.async_create_task(self._background_refresh())
 
     async def _background_refresh(self):
         """Refresh coordinator state after a remote command."""
         try:
             await asyncio.sleep(COMMAND_REFRESH_DELAY)
-            self._state_changing = False
             await self.coordinator.async_request_refresh()
         except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Post-command refresh failed: %s", err)
+        finally:
             self._state_changing = False
             self.async_write_ha_state()
-            _LOGGER.debug("Post-command refresh failed: %s", err)
 
     @property
     def available(self):

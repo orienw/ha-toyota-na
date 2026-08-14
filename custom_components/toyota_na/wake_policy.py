@@ -8,6 +8,8 @@ from typing import Any
 
 CONF_WAKE_INTERVAL = "automatic_wake_interval"
 LAST_WAKE_AT = "last_refreshed_at"
+LAST_VEHICLE_WAKES = "last_vehicle_wakes"
+VEHICLE_WAKE_TIMESTAMP = "timestamp"
 
 WAKE_INTERVAL_OPTIONS = {
     0: "Cloud updates only",
@@ -33,6 +35,7 @@ def automatic_wake_due(
     options: Mapping[str, Any],
     default_interval: int,
     *,
+    vin: str | None = None,
     now: float | None = None,
 ) -> bool:
     """Return whether Home Assistant should request a vehicle wake."""
@@ -40,7 +43,18 @@ def automatic_wake_due(
     if interval == 0:
         return False
 
-    last_wake_at = entry_data.get(LAST_WAKE_AT)
+    last_wake_at = None
+    vehicle_wakes = entry_data.get(LAST_VEHICLE_WAKES)
+    if vin is not None and isinstance(vehicle_wakes, list):
+        for record in vehicle_wakes:
+            if isinstance(record, Mapping) and record.get("vin") == vin:
+                last_wake_at = record.get(VEHICLE_WAKE_TIMESTAMP)
+                break
+    else:
+        # Entries created before per-vehicle tracking retain their previous
+        # schedule until the first vehicle-specific wake is recorded.
+        last_wake_at = entry_data.get(LAST_WAKE_AT)
+
     if not isinstance(last_wake_at, (int, float)) or isinstance(last_wake_at, bool):
         return True
 
@@ -48,8 +62,31 @@ def automatic_wake_due(
     return last_wake_at <= current_time - interval
 
 
-def record_vehicle_wake(hass: Any, entry: Any, *, now: float | None = None) -> None:
+def record_vehicle_wake(
+    hass: Any,
+    entry: Any,
+    vin: str | None = None,
+    *,
+    now: float | None = None,
+) -> None:
     """Persist when a vehicle wake was last requested."""
+    timestamp = time.time() if now is None else now
     entry_data = dict(entry.data)
-    entry_data[LAST_WAKE_AT] = time.time() if now is None else now
+    entry_data[LAST_WAKE_AT] = timestamp
+
+    if vin is not None:
+        vehicle_wakes = []
+        stored_wakes = entry_data.get(LAST_VEHICLE_WAKES)
+        for record in stored_wakes if isinstance(stored_wakes, list) else ():
+            if (
+                isinstance(record, Mapping)
+                and isinstance(record.get("vin"), str)
+                and record.get("vin") != vin
+            ):
+                vehicle_wakes.append(dict(record))
+        vehicle_wakes.append(
+            {"vin": vin, VEHICLE_WAKE_TIMESTAMP: timestamp}
+        )
+        entry_data[LAST_VEHICLE_WAKES] = vehicle_wakes
+
     hass.config_entries.async_update_entry(entry, data=entry_data)

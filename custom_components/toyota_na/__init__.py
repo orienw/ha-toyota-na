@@ -161,7 +161,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
                     ):
                         await vehicle.poll_vehicle_refresh()
                         if config_entry is not None:
-                            record_vehicle_wake(hass, config_entry)
+                            record_vehicle_wake(hass, config_entry, vin)
                         # TODO: This works great and prevents us from unnecessarily hitting Toyota. But we can and should
                         # probably do stuff like this in the library where we can better control which APIs we hit to refresh our in-memory data.
                         coordinator.async_set_updated_data(coordinator.data)
@@ -178,7 +178,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
                             break
                         await vehicle.send_command(command)
                         if config_entry is not None:
-                            record_vehicle_wake(hass, config_entry)
+                            record_vehicle_wake(hass, config_entry, vin)
                         break
 
                 _LOGGER.info("Handling service call %s for %s ", remote_action, vin)
@@ -266,11 +266,6 @@ def update_tokens(tokens: dict[str, str], hass: HomeAssistant, entry: ConfigEntr
 
 
 async def update_vehicles_status(hass: HomeAssistant, client: ToyotaOneClient, entry: ConfigEntry):
-    need_refresh = automatic_wake_due(
-        entry.data,
-        entry.options,
-        REFRESH_STATUS_INTERVAL,
-    )
     try:
         _LOGGER.debug("Updating vehicle status")
         raw_vehicles = await get_vehicles(client)
@@ -280,6 +275,12 @@ async def update_vehicles_status(hass: HomeAssistant, client: ToyotaOneClient, e
                 _LOGGER.warning(
                     f"Your {vehicle.model_year} {vehicle.model_name} needs a remote services subscription to fully work with Home Assistant."
                 )
+            need_refresh = automatic_wake_due(
+                entry.data,
+                entry.options,
+                REFRESH_STATUS_INTERVAL,
+                vin=vehicle.vin,
+            )
             if need_refresh and vehicle.subscribed:
                 try:
                     _LOGGER.info(
@@ -288,11 +289,10 @@ async def update_vehicles_status(hass: HomeAssistant, client: ToyotaOneClient, e
                         vehicle.model_name,
                     )
                     await vehicle.poll_vehicle_refresh()
+                    record_vehicle_wake(hass, entry, vehicle.vin)
                 except Exception as e:
                     _LOGGER.warning("Vehicle refresh failed (%s), continuing without refresh", e)
             vehicles.append(vehicle)
-        if need_refresh:
-            record_vehicle_wake(hass, entry)
         return vehicles
     except AuthError as e:
         try:
