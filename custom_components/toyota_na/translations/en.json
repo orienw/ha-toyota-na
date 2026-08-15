@@ -26,24 +26,12 @@
   "options": {
     "step": {
       "init": {
-        "title": "Vehicle settings",
-        "description": "Home Assistant keeps checking Toyota's cloud for available status without waking the vehicle. Cloud data may remain unchanged until the vehicle contacts Toyota. Choose how often Home Assistant should also wake the vehicle to request fresh status. Select Cloud updates only to disable automatic wakes. Refresh Status and remote commands remain available.\n\nChoose which vehicles this account should manage. Uncheck a vehicle only when another Toyota account connected to Home Assistant should manage it.",
+        "title": "Vehicle status updates",
+        "description": "Home Assistant keeps checking Toyota's cloud for available status without waking the vehicle. Cloud data may remain unchanged until the vehicle contacts Toyota. Choose how often Home Assistant should also wake the vehicle to request fresh status. Select Cloud updates only to disable automatic wakes. Refresh Status and remote commands remain available.",
         "data": {
-          "automatic_wake_interval": "Wake vehicle for fresh status",
-          "managed_vins": "Vehicles managed by this account"
+          "automatic_wake_interval": "Wake vehicle for fresh status"
         }
       }
-    },
-    "abort": {
-      "entry_not_loaded": "This integration entry is not loaded, so its vehicle list cannot be fetched. Reload the entry and try again.",
-      "cannot_fetch_vehicles": "The vehicle list could not be fetched from Toyota. Try again in a moment.",
-      "no_vehicles": "This account has no supported vehicles to configure."
-    }
-  },
-  "issues": {
-    "shared_vehicle": {
-      "title": "A vehicle is shared with another Toyota account",
-      "description": "{vehicle} is visible to more than one Toyota account connected to Home Assistant. It is currently managed by {managing_account}, not {this_account}. Use Configure for this integration to choose which account should manage the vehicle."
     }
   }
 }

@@ -1,5 +1,3 @@
-from collections.abc import Collection
-
 from toyota_na.client import ToyotaOneClient
 from toyota_na.vehicle.base_vehicle import (
     ApiVehicleGeneration,
@@ -13,19 +11,15 @@ from toyota_na.vehicle.vehicle_generations.seventeen_cy_plus import (
 from .vehicle_helpers import has_remote_subscription, is_electric_vehicle
 
 
-async def get_vehicles(
-    client: ToyotaOneClient,
-    exclude_vins: Collection[str] = (),
-) -> list[ToyotaVehicle]:
+async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
     api_vehicles = await client.get_user_vehicle_list()
     supported_generations = {item.value for item in ApiVehicleGeneration}
     state_cache = getattr(client, "_vehicle_state_cache", {})
-    excluded = set(exclude_vins)
     vehicles = []
 
     for api_vehicle in api_vehicles or []:
         vin = api_vehicle.get("vin")
-        if not vin or vin in excluded:
+        if not vin:
             continue
         generation_name = api_vehicle.get("generation")
         if generation_name not in supported_generations:

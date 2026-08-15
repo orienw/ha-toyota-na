@@ -265,6 +265,36 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 locked=locked,
             )
 
+    def _store_numeric(self, feature, value, unit="", observed_at=None) -> bool:
+        """Store a numeric value unless a newer observation already exists."""
+        if value is None:
+            return False
+        timestamp = self._feature_timestamps.get((feature, "value"))
+        if timestamp is not None and (
+            observed_at is None or observed_at < timestamp
+        ):
+            return False
+        if observed_at is not None:
+            self._feature_timestamps[(feature, "value")] = observed_at
+        self._features[feature] = ToyotaNumeric(value, unit)
+        return True
+
+    def _store_location(
+        self, feature, latitude, longitude, observed_at=None
+    ) -> bool:
+        """Store a location unless a newer observation already exists."""
+        if latitude is None or longitude is None:
+            return False
+        timestamp = self._feature_timestamps.get((feature, "location"))
+        if timestamp is not None and (
+            observed_at is None or observed_at < timestamp
+        ):
+            return False
+        if observed_at is not None:
+            self._feature_timestamps[(feature, "location")] = observed_at
+        self._features[feature] = ToyotaLocation(latitude, longitude)
+        return True
+
     def _parse_vehicle_status(self, vehicle_status: dict) -> None:
         if not vehicle_status:
             return
@@ -275,8 +305,11 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         )
 
         if "latitude" in vehicle_status and "longitude" in vehicle_status:
-            self._features[VehicleFeatures.ParkingLocation] = ToyotaLocation(
-                vehicle_status["latitude"], vehicle_status["longitude"]
+            self._store_location(
+                VehicleFeatures.ParkingLocation,
+                vehicle_status["latitude"],
+                vehicle_status["longitude"],
+                observed_at,
             )
 
         if "vehicleStatus" not in vehicle_status or vehicle_status["vehicleStatus"] is None:
@@ -309,32 +342,37 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
     def _parse_telemetry(self, telemetry: dict) -> None:
         if not telemetry:
             return
-            
+
+        observed_at = parse_api_timestamp(telemetry.get("lastTimestamp"))
+        if observed_at is not None:
+            self._features[VehicleFeatures.LastTimeStamp] = ToyotaNumeric(
+                observed_at.timestamp(), ""
+            )
+
         for key, value in telemetry.items():
             if value is None:
                 continue
 
-            # last time stamp is a primitive
             if key == "lastTimestamp":
-                observed_at = parse_api_timestamp(value)
-                if observed_at is not None:
-                    self._features[VehicleFeatures.LastTimeStamp] = ToyotaNumeric(
-                        observed_at.timestamp(), ""
-                    )
                 continue
 
             # tire pressure time stamp is a primitive
             if key == "tirePressureTimestamp":
-                observed_at = parse_api_timestamp(value)
-                if observed_at is not None:
+                tire_observed_at = parse_api_timestamp(value)
+                if tire_observed_at is not None:
                     self._features[
                         VehicleFeatures.LastTirePressureTimeStamp
-                    ] = ToyotaNumeric(observed_at.timestamp(), "")
+                    ] = ToyotaNumeric(tire_observed_at.timestamp(), "")
                 continue
 
             # fuel level is a primitive
             if key == "fuelLevel":
-                self._features[VehicleFeatures.FuelLevel] = ToyotaNumeric(value, "%")
+                self._store_numeric(
+                    VehicleFeatures.FuelLevel,
+                    value,
+                    "%",
+                    observed_at,
+                )
                 continue
 
             # Toyota labels telemetry vehicleLocation as Last Parked. It is
@@ -343,20 +381,29 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             if key == "vehicleLocation" and isinstance(value, dict):
                 latitude = value.get("latitude")
                 longitude = value.get("longitude")
-                if latitude is None or longitude is None:
-                    continue
-                location = ToyotaLocation(latitude, longitude)
-                self._features[VehicleFeatures.RealTimeLocation] = location
-                self._features[VehicleFeatures.ParkingLocation] = location
+                self._store_location(
+                    VehicleFeatures.RealTimeLocation,
+                    latitude,
+                    longitude,
+                    observed_at,
+                )
+                self._store_location(
+                    VehicleFeatures.ParkingLocation,
+                    latitude,
+                    longitude,
+                    observed_at,
+                )
                 continue
 
             if self._vehicle_telemetry_map.get(key) is not None:
+                feature = self._vehicle_telemetry_map[key]
                 if isinstance(value, dict) and "value" in value:
-                    self._features[self._vehicle_telemetry_map[key]] = ToyotaNumeric(
-                        value["value"], value.get("unit", "")
+                    self._store_numeric(
+                        feature,
+                        value["value"],
+                        value.get("unit", ""),
+                        observed_at,
                     )
                 else:
-                    self._features[self._vehicle_telemetry_map[key]] = ToyotaNumeric(
-                        value, ""
-                    )
+                    self._store_numeric(feature, value, observed_at=observed_at)
                 continue

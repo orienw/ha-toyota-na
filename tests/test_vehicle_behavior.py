@@ -747,6 +747,59 @@ class VehicleStateTests(unittest.TestCase):
         self.assertEqual(location.lat, 34.05)
         self.assertEqual(location.value, -118.25)
 
+    def test_legacy_timestamp_merge_rejects_older_values(self):
+        vehicle = SeventeenCYToyotaVehicle(
+            client=object(),
+            has_remote_subscription=True,
+            has_electric=False,
+            model_name="CAMRY",
+            model_year="2018",
+            vin="LEGACYVIN",
+            region="US",
+        )
+        vehicle._parse_telemetry(
+            {
+                "lastTimestamp": "2026-08-14T12:01:00Z",
+                "fuelLevel": 50,
+                "odometer": {"value": 2000, "unit": "mi"},
+                "vehicleLocation": {
+                    "latitude": 34.05,
+                    "longitude": -118.25,
+                },
+            }
+        )
+
+        vehicle._parse_telemetry(
+            {
+                "lastTimestamp": "2026-08-14T12:00:00Z",
+                "fuelLevel": 40,
+                "odometer": {"value": 1999, "unit": "mi"},
+                "vehicleLocation": {
+                    "latitude": 33.95,
+                    "longitude": -118.35,
+                },
+            }
+        )
+        vehicle._parse_vehicle_status(
+            {
+                "occurrenceDate": "2026-08-14T11:59:00Z",
+                "latitude": 33.85,
+                "longitude": -118.45,
+                "vehicleStatus": [],
+            }
+        )
+
+        self.assertEqual(vehicle.features[VehicleFeatures.FuelLevel].value, 50)
+        self.assertEqual(vehicle.features[VehicleFeatures.Odometer].value, 2000)
+        for feature in (
+            VehicleFeatures.RealTimeLocation,
+            VehicleFeatures.ParkingLocation,
+        ):
+            with self.subTest(feature=feature):
+                location = vehicle.features[feature]
+                self.assertEqual(location.lat, 34.05)
+                self.assertEqual(location.value, -118.25)
+
     def test_location_only_push_is_applied(self):
         vehicle = make_vehicle()
 
@@ -829,20 +882,6 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
-    async def test_excluded_vehicle_is_not_polled(self):
-        payload = dict(LEXUS_21MM_COUPE, vin="TESTVIN")
-
-        class Client:
-            async def get_user_vehicle_list(self):
-                return [payload]
-
-            async def get_telemetry(self, *args):
-                raise AssertionError("excluded vehicle must not be polled")
-
-        vehicles = await get_vehicles(Client(), exclude_vins={"TESTVIN"})
-
-        self.assertEqual(vehicles, [])
-
     async def test_vehicle_status_uses_toyota_transport_headers(self):
         calls = []
 
@@ -933,7 +972,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
         self.assertFalse(vehicle.features[VehicleFeatures.FrontPassengerWindow].closed)
 
-    async def test_discovery_preserves_metadata_for_shared_vehicle_class(self):
+    async def test_discovery_preserves_metadata_for_common_vehicle_class(self):
         calls = []
         payload = dict(LEXUS_21MM_COUPE, vin="TESTVIN")
 

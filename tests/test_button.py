@@ -2,13 +2,12 @@
 
 import asyncio
 from enum import Enum
+import importlib.util
 from pathlib import Path
 import sys
 import types
 import unittest
-
-import voluptuous as vol
-
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENTS = ROOT / "custom_components"
@@ -46,6 +45,10 @@ class BinarySensorDeviceClass(Enum):
 class SensorStateClass(Enum):
     MEASUREMENT = "measurement"
     TOTAL_INCREASING = "total_increasing"
+
+
+class SourceType(Enum):
+    GPS = "gps"
 
 
 class UnitOfPressure:
@@ -125,6 +128,9 @@ button_component = module("homeassistant.components.button")
 button_component.ButtonEntity = type("ButtonEntity", (), {})
 lock_component = module("homeassistant.components.lock")
 lock_component.LockEntity = LockEntity
+device_tracker_component = module("homeassistant.components.device_tracker")
+device_tracker_component.SourceType = SourceType
+device_tracker_component.TrackerEntity = type("TrackerEntity", (), {})
 sensor = module("homeassistant.components.sensor")
 sensor.SensorStateClass = SensorStateClass
 
@@ -135,54 +141,26 @@ config_entries.OptionsFlow = OptionsFlow
 core = module("homeassistant.core")
 core.callback = lambda function: function
 core.HomeAssistant = type("HomeAssistant", (), {})
+core.ServiceCall = type("ServiceCall", (), {})
+exceptions = module("homeassistant.exceptions")
+exceptions.ConfigEntryAuthFailed = type("ConfigEntryAuthFailed", (Exception,), {})
 ha_const = module("homeassistant.const")
 ha_const.PERCENTAGE = "%"
 ha_const.UnitOfPressure = UnitOfPressure
 entity = module("homeassistant.helpers.entity")
 entity.DeviceInfo = dict
 device_registry = module("homeassistant.helpers.device_registry")
-device_registry.DeviceEntry = object
 device_registry.async_get = lambda hass: hass.device_registry
-device_registry.async_entries_for_config_entry = (
-    lambda registry, entry_id: [
-        device
-        for device in registry.devices
-        if entry_id in device.config_entries
-    ]
-)
 entity_registry = module("homeassistant.helpers.entity_registry")
 entity_registry.async_get = lambda hass: hass.entity_registry
-issue_registry = module("homeassistant.helpers.issue_registry")
-issue_registry.IssueSeverity = type("IssueSeverity", (), {"WARNING": "warning"})
-issue_registry.async_get = lambda hass: hass.issue_registry
-issue_registry.async_create_issue = (
-    lambda hass, domain, issue_id, **kwargs: hass.issue_registry.create(
-        domain, issue_id, kwargs
-    )
-)
-issue_registry.async_delete_issue = (
-    lambda hass, domain, issue_id: hass.issue_registry.delete(domain, issue_id)
-)
 entity_platform = module("homeassistant.helpers.entity_platform")
 entity_platform.AddEntitiesCallback = object
-config_validation = module("homeassistant.helpers.config_validation")
-
-
-def multi_select(options):
-    def validate(value):
-        if not isinstance(value, list):
-            raise vol.Invalid("expected a list")
-        if any(item not in options for item in value):
-            raise vol.Invalid("unknown selection")
-        return value
-
-    return validate
-
-
-config_validation.multi_select = multi_select
+service = module("homeassistant.helpers.service")
+service.verify_domain_control = lambda domain: lambda function: function
 update_coordinator = module("homeassistant.helpers.update_coordinator")
 update_coordinator.CoordinatorEntity = CoordinatorEntity
 update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
+update_coordinator.UpdateFailed = type("UpdateFailed", (Exception,), {})
 
 import toyota_na.vehicle.base_vehicle as upstream_base
 from custom_components.toyota_na.patch_base_vehicle import (
@@ -200,18 +178,24 @@ upstream_base.VehicleFeatures = VehicleFeatures
 from custom_components.toyota_na import button
 from custom_components.toyota_na import binary_sensor as binary_sensor_platform
 from custom_components.toyota_na import config_flow
+from custom_components.toyota_na import device_tracker as device_tracker_platform
 from custom_components.toyota_na import lock as lock_platform
-from custom_components.toyota_na import shared_vehicles
-from custom_components.toyota_na.const import (
-    CONF_MANAGED_VINS,
-    DOMAIN,
-    OPT_EXCLUDED_VINS,
-)
+from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.wake_policy import (
     CONF_WAKE_INTERVAL,
     LAST_VEHICLE_WAKES,
     LAST_WAKE_AT,
 )
+from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
+
+
+runtime_spec = importlib.util.spec_from_file_location(
+    "custom_components.toyota_na.integration_runtime",
+    INTEGRATION / "__init__.py",
+)
+integration_runtime = importlib.util.module_from_spec(runtime_spec)
+sys.modules[runtime_spec.name] = integration_runtime
+runtime_spec.loader.exec_module(integration_runtime)
 
 
 class FakeVehicle:
@@ -244,10 +228,6 @@ class FakeHass:
         self.tasks = []
         self.config_entries = self
         self.entity_registry = FakeEntityRegistry()
-        self.device_registry = FakeDeviceRegistry()
-        self.issue_registry = FakeIssueRegistry()
-        self.entries = {}
-        self.reloads = []
 
     def async_create_task(self, coroutine):
         task = asyncio.create_task(coroutine)
@@ -256,12 +236,6 @@ class FakeHass:
 
     def async_update_entry(self, entry, *, data):
         entry.data = data
-
-    def async_get_entry(self, entry_id):
-        return self.entries.get(entry_id)
-
-    async def async_reload(self, entry_id):
-        self.reloads.append(entry_id)
 
 
 class FakeEntityRegistry:
@@ -274,26 +248,6 @@ class FakeEntityRegistry:
 
     def async_remove(self, entity_id):
         self.removed.append(entity_id)
-
-
-class FakeDeviceRegistry:
-    def __init__(self):
-        self.devices = []
-        self.updated = []
-
-    def async_update_device(self, device_id, *, remove_config_entry_id):
-        self.updated.append((device_id, remove_config_entry_id))
-
-
-class FakeIssueRegistry:
-    def __init__(self):
-        self.issues = {}
-
-    def create(self, domain, issue_id, data):
-        self.issues[(domain, issue_id)] = data
-
-    def delete(self, domain, issue_id):
-        self.issues.pop((domain, issue_id), None)
 
 
 class ButtonTests(unittest.IsolatedAsyncioTestCase):
@@ -343,6 +297,9 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
                 "Find Vehicle",
                 "Refresh Status",
             ],
+        )
+        self.assertTrue(
+            all(entity._attr_has_entity_name for entity in self.entities)
         )
 
     async def test_command_button_does_not_issue_an_extra_vehicle_wake(self):
@@ -448,9 +405,14 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
             lambda added, update_before_add: entities.extend(added),
         )
 
+        lock = entities[0]
+        self.assertTrue(lock._attr_has_entity_name)
+        self.assertIsNone(lock.name)
+        self.assertEqual(lock.unique_id, "TESTVIN.")
+
         self.vehicle.supported.remove(RemoteRequestCommand.DoorUnlock)
 
-        self.assertFalse(entities[0].available)
+        self.assertFalse(lock.available)
 
 
 class BinarySensorCleanupTests(unittest.IsolatedAsyncioTestCase):
@@ -488,186 +450,92 @@ class BinarySensorCleanupTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-class SharedVehicleLifecycleTests(unittest.TestCase):
-    def test_conflict_creates_entry_scoped_repair(self):
-        hass = FakeHass(DataUpdateCoordinator([]))
-        losing_entry = ConfigEntry()
-        losing_entry.entry_id = "losing-entry"
-        managing_entry = ConfigEntry()
-        managing_entry.entry_id = "managing-entry"
-        managing_entry.title = "manager@example.com"
-        hass.entries[managing_entry.entry_id] = managing_entry
+class DeviceTrackerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unsubscribed_vehicle_exposes_both_location_entities(self):
         vehicle = FakeVehicle(set())
-
-        with self.assertLogs(shared_vehicles._LOGGER, level="WARNING"):
-            shared_vehicles.report_vehicle_conflict(
-                hass,
-                losing_entry,
-                vehicle,
-                managing_entry.entry_id,
-            )
-
-        issue_id = shared_vehicles.shared_vehicle_issue_id(
-            vehicle.vin,
-            losing_entry.entry_id,
-        )
-        issue = hass.issue_registry.issues[(DOMAIN, issue_id)]
-        self.assertEqual(issue["translation_key"], "shared_vehicle")
-        self.assertEqual(
-            issue["translation_placeholders"]["managing_account"],
-            "manager@example.com",
-        )
-
-    def test_clears_only_repairs_owned_by_entry(self):
-        hass = FakeHass(DataUpdateCoordinator([]))
-        owned = (DOMAIN, "shared_vehicle_TESTVIN_losing-entry")
-        other = (DOMAIN, "shared_vehicle_TESTVIN_other-entry")
-        unrelated = (DOMAIN, "another_issue_losing-entry")
-        hass.issue_registry.issues = {
-            owned: {},
-            other: {},
-            unrelated: {},
+        vehicle.subscribed = False
+        location = ToyotaLocation(34.05, -118.25)
+        vehicle.features = {
+            VehicleFeatures.ParkingLocation: location,
+            VehicleFeatures.RealTimeLocation: location,
         }
+        coordinator = DataUpdateCoordinator([vehicle])
+        hass = FakeHass(coordinator)
+        entities = []
 
-        shared_vehicles.clear_entry_conflicts(hass, "losing-entry")
-
-        self.assertEqual(
-            set(hass.issue_registry.issues),
-            {other, unrelated},
-        )
-
-    def test_prunes_only_confirmed_vehicle_devices(self):
-        hass = FakeHass(DataUpdateCoordinator([]))
-        entry = ConfigEntry()
-        hass.device_registry.devices = [
-            types.SimpleNamespace(
-                id="excluded-device",
-                identifiers={(DOMAIN, "EXCLUDEDVIN")},
-                config_entries={entry.entry_id},
-            ),
-            types.SimpleNamespace(
-                id="kept-device",
-                identifiers={(DOMAIN, "KEPTVIN")},
-                config_entries={entry.entry_id},
-            ),
-        ]
-
-        shared_vehicles.prune_entry_devices(
+        await device_tracker_platform.async_setup_entry(
             hass,
-            entry,
-            {"EXCLUDEDVIN"},
+            ConfigEntry(),
+            lambda added, update_before_add: entities.extend(added),
         )
 
         self.assertEqual(
-            hass.device_registry.updated,
-            [("excluded-device", entry.entry_id)],
+            [entity.sensor_name for entity in entities],
+            ["Last Parked Location", "Current Location"],
         )
 
-    def test_active_vehicle_device_cannot_be_removed_as_orphaned(self):
-        vehicle = FakeVehicle(set())
-        hass = FakeHass(DataUpdateCoordinator([vehicle]))
+
+class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_automatic_wakes_schedule_one_followup_poll(self):
+        vehicles = [
+            FakeVehicle(set(), vin="FIRSTVIN"),
+            FakeVehicle(set(), vin="SECONDVIN"),
+        ]
+        coordinator = DataUpdateCoordinator(vehicles)
+        hass = FakeHass(coordinator)
         entry = ConfigEntry()
-        active_device = types.SimpleNamespace(
-            identifiers={(DOMAIN, vehicle.vin)}
+
+        with (
+            mock.patch.object(
+                integration_runtime,
+                "get_vehicles",
+                mock.AsyncMock(return_value=vehicles),
+            ),
+            mock.patch.object(
+                integration_runtime,
+                "automatic_wake_due",
+                return_value=True,
+            ),
+            mock.patch.object(
+                integration_runtime,
+                "COMMAND_REFRESH_DELAY",
+                0,
+            ),
+        ):
+            result = await integration_runtime.update_vehicles_status(
+                hass,
+                object(),
+                entry,
+                coordinator,
+            )
+            await asyncio.gather(*hass.tasks)
+
+        self.assertEqual(result, vehicles)
+        self.assertEqual(
+            [vehicle.refresh_requests for vehicle in vehicles],
+            [1, 1],
         )
-        orphaned_device = types.SimpleNamespace(
-            identifiers={(DOMAIN, "SOLDVIN")}
-        )
-
-        self.assertTrue(
-            shared_vehicles.entry_manages_device(hass, entry, active_device)
-        )
-        self.assertFalse(
-            shared_vehicles.entry_manages_device(hass, entry, orphaned_device)
-        )
-
-
-class SharedVehicleOptionsTests(unittest.IsolatedAsyncioTestCase):
-    async def test_wake_policy_change_does_not_reload_entry(self):
-        hass = FakeHass(DataUpdateCoordinator([]))
-        entry = ConfigEntry()
-        hass.data[DOMAIN][entry.entry_id]["excluded_vins_snapshot"] = set()
-        entry.options = {CONF_WAKE_INTERVAL: 0}
-
-        await shared_vehicles.async_update_options(hass, entry)
-
-        self.assertEqual(hass.reloads, [])
-
-    async def test_vehicle_assignment_change_reloads_entry(self):
-        hass = FakeHass(DataUpdateCoordinator([]))
-        entry = ConfigEntry()
-        hass.data[DOMAIN][entry.entry_id]["excluded_vins_snapshot"] = set()
-        entry.options = {OPT_EXCLUDED_VINS: ["TESTVIN"]}
-
-        await shared_vehicles.async_update_options(hass, entry)
-
-        self.assertEqual(hass.reloads, [entry.entry_id])
+        self.assertEqual(len(hass.tasks), 1)
+        self.assertEqual(coordinator.refreshes, 1)
 
 
 class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
-    def make_flow(self, *, options=None, vehicles=None):
-        class Client:
-            async def get_user_vehicle_list(self):
-                if vehicles is not None:
-                    return vehicles
-                return [
-                    {
-                        "vin": "TESTVIN",
-                        "modelYear": "2024",
-                        "modelName": "LC 500 2-DOOR COUPE",
-                        "generation": "21MM",
-                    }
-                ]
-
+    def make_flow(self, *, options=None):
         config_entry = ConfigEntry()
         config_entry.options = options or {}
-        hass = FakeHass(DataUpdateCoordinator([]))
-        hass.data[DOMAIN][config_entry.entry_id]["toyota_na_client"] = Client()
-        flow = config_flow.ToyotaNAOptionsFlow()
-        flow.config_entry = config_entry
-        flow.hass = hass
-        return flow
+        return config_flow.ToyotaNAOptionsFlow(config_entry)
 
     async def test_default_preserves_existing_two_hour_behavior(self):
         result = await self.make_flow().async_step_init()
 
         self.assertEqual(
             result["data_schema"]({}),
-            {
-                CONF_WAKE_INTERVAL: str(2 * 3600),
-                CONF_MANAGED_VINS: ["TESTVIN"],
-            },
-        )
-
-    async def test_unloaded_entry_aborts_cleanly(self):
-        config_entry = ConfigEntry()
-        hass = FakeHass(DataUpdateCoordinator([]))
-        hass.data[DOMAIN][config_entry.entry_id].pop("coordinator")
-        flow = config_flow.ToyotaNAOptionsFlow()
-        flow.config_entry = config_entry
-        flow.hass = hass
-
-        result = await flow.async_step_init()
-
-        self.assertEqual(
-            result,
-            {"type": "abort", "reason": "entry_not_loaded"},
-        )
-
-    async def test_account_without_supported_vehicles_aborts_cleanly(self):
-        result = await self.make_flow(vehicles=[]).async_step_init()
-
-        self.assertEqual(
-            result,
-            {"type": "abort", "reason": "no_vehicles"},
+            {CONF_WAKE_INTERVAL: str(2 * 3600)},
         )
 
     async def test_manual_only_is_saved(self):
         result = await self.make_flow().async_step_init(
-            {
-                CONF_WAKE_INTERVAL: "0",
-                CONF_MANAGED_VINS: ["TESTVIN"],
-            }
+            {CONF_WAKE_INTERVAL: "0"}
         )
 
         self.assertEqual(
@@ -675,10 +543,7 @@ class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
             {
                 "type": "create_entry",
                 "title": "",
-                "data": {
-                    CONF_WAKE_INTERVAL: 0,
-                    OPT_EXCLUDED_VINS: [],
-                },
+                "data": {CONF_WAKE_INTERVAL: 0},
             },
         )
 
@@ -691,33 +556,8 @@ class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(
                     result["data_schema"]({}),
-                    {
-                        CONF_WAKE_INTERVAL: str(interval),
-                        CONF_MANAGED_VINS: ["TESTVIN"],
-                    },
+                    {CONF_WAKE_INTERVAL: str(interval)},
                 )
-
-    async def test_unchecked_vehicle_is_excluded(self):
-        result = await self.make_flow().async_step_init(
-            {
-                CONF_WAKE_INTERVAL: str(2 * 3600),
-                CONF_MANAGED_VINS: [],
-            }
-        )
-
-        self.assertEqual(result["data"][OPT_EXCLUDED_VINS], ["TESTVIN"])
-
-    async def test_exclusion_survives_a_partial_vehicle_list(self):
-        result = await self.make_flow(
-            options={OPT_EXCLUDED_VINS: ["MISSINGVIN"]}
-        ).async_step_init(
-            {
-                CONF_WAKE_INTERVAL: str(2 * 3600),
-                CONF_MANAGED_VINS: ["TESTVIN"],
-            }
-        )
-
-        self.assertEqual(result["data"][OPT_EXCLUDED_VINS], ["MISSINGVIN"])
 
 
 if __name__ == "__main__":

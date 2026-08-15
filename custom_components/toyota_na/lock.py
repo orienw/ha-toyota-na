@@ -63,6 +63,11 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
 
     _state_changing = False
 
+    @property
+    def name(self):
+        """Use the vehicle name for its primary lock entity."""
+        return None
+
     def __init__(
         self,
         config_entry: ConfigEntry,

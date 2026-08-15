@@ -17,6 +17,8 @@ def vehicle_entity_unique_id(vin: str, sensor_name: str) -> str:
 
 
 class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: DataUpdateCoordinator[list[ToyotaVehicle]],

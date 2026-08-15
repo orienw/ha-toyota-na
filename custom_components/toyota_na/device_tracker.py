@@ -41,11 +41,6 @@ async def async_setup_entry(
                 )
                 feature = vehicle.features.get(vehicle_feature)
                 if isinstance(feature, ToyotaLocation):
-                    if (
-                        vehicle.subscribed is False
-                        and entity_config["name"] == "Last Parked Location"
-                    ):
-                        continue
                     yield ToyotaDeviceTracker(
                         vehicle_feature,
                         coordinator,
