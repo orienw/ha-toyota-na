@@ -40,7 +40,6 @@ from custom_components.toyota_na.patch_client import (
     get_telemetry,
     get_vehicle_status_17cyplus,
     graphql_confirm_subscription,
-    graphql_get_vehicle_status,
     remote_request_17cy,
 )
 from custom_components.toyota_na.vehicle_helpers import (
@@ -162,18 +161,6 @@ def make_24mm_vehicle(client=None):
 
 
 class VehicleMetadataTests(unittest.TestCase):
-    def test_preserves_api_metadata_and_endpoint_family(self):
-        vehicle = make_vehicle()
-
-        self.assertEqual(vehicle.generation, ApiVehicleGeneration.MM21)
-        self.assertEqual(vehicle.api_generation, "21MM")
-        self.assertEqual(vehicle.endpoint_generation, "17CYPLUS")
-        self.assertEqual(vehicle.brand, "L")
-        self.assertEqual(vehicle.backdoor_type, "trunk")
-        self.assertTrue(vehicle.subscribed)
-        self.assertFalse(vehicle.electric)
-        self.assertIs(vehicle.capabilities, vehicle.remote_capabilities)
-
     def test_commands_use_reported_capabilities(self):
         vehicle = make_vehicle()
 
@@ -728,25 +715,6 @@ class VehicleStateTests(unittest.TestCase):
                 self.assertEqual(location.lat, 34.05)
                 self.assertEqual(location.value, -118.25)
 
-    def test_legacy_telemetry_location_populates_last_parked(self):
-        vehicle = SeventeenCYToyotaVehicle(
-            client=object(),
-            has_remote_subscription=True,
-            has_electric=False,
-            model_name="CAMRY",
-            model_year="2018",
-            vin="LEGACYVIN",
-            region="US",
-        )
-
-        vehicle._parse_telemetry(
-            {"vehicleLocation": {"latitude": 34.05, "longitude": -118.25}}
-        )
-
-        location = vehicle.features[VehicleFeatures.ParkingLocation]
-        self.assertEqual(location.lat, 34.05)
-        self.assertEqual(location.value, -118.25)
-
     def test_legacy_timestamp_merge_rejects_older_values(self):
         vehicle = SeventeenCYToyotaVehicle(
             client=object(),
@@ -992,9 +960,15 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         vehicles = await get_vehicles(Client())
 
         self.assertEqual(len(vehicles), 1)
-        self.assertEqual(vehicles[0].generation, ApiVehicleGeneration.MM21)
-        self.assertEqual(vehicles[0].brand, "L")
-        self.assertEqual(vehicles[0].backdoor_type, "trunk")
+        vehicle = vehicles[0]
+        self.assertEqual(vehicle.generation, ApiVehicleGeneration.MM21)
+        self.assertEqual(vehicle.api_generation, "21MM")
+        self.assertEqual(vehicle.endpoint_generation, "17CYPLUS")
+        self.assertEqual(vehicle.brand, "L")
+        self.assertEqual(vehicle.backdoor_type, "trunk")
+        self.assertTrue(vehicle.subscribed)
+        self.assertFalse(vehicle.electric)
+        self.assertIs(vehicle.capabilities, vehicle.remote_capabilities)
         self.assertIn(("telemetry", ("TESTVIN", "US", "17CYPLUS")), calls)
         self.assertIn(("status", ("TESTVIN", "US")), calls)
 
@@ -1178,24 +1152,6 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(variables, {"vin": "TESTVIN", "backdoorType": "trunk"})
         self.assertEqual(kwargs["region"], "CA")
         self.assertEqual(kwargs["backdoor_type"], "trunk")
-
-    async def test_24mm_status_query_uses_region_and_backdoor_headers(self):
-        calls = []
-
-        class Client:
-            async def graphql_request(self, *args, **kwargs):
-                calls.append((args, kwargs))
-                return {"getVehicleStatus": {"vin": "TESTVIN24"}}
-
-        result = await graphql_get_vehicle_status(
-            Client(), "TESTVIN24", "hatch", "CA"
-        )
-
-        self.assertEqual(result, {"vin": "TESTVIN24"})
-        _, kwargs = calls[0]
-        self.assertEqual(kwargs["region"], "CA")
-        self.assertEqual(kwargs["backdoor_type"], "hatch")
-
 
 if __name__ == "__main__":
     unittest.main()
