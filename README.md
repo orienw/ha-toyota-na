@@ -47,6 +47,8 @@ Native controls:
 * Refresh Status button
 
 ## Installation
+Requires Home Assistant 2022.11 or newer.
+
 ### HACS
 1. Install HACS: https://hacs.xyz/docs/setup/download
 2. Search and install "Toyota (North America)" in HACS integration store
