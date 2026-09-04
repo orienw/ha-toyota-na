@@ -5,10 +5,11 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfLength
+from homeassistant.const import UnitOfLength, UnitOfPressure
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util.unit_conversion import PressureConverter
 
 from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN, SENSORS
@@ -85,6 +86,13 @@ class ToyotaNumericSensor(ToyotaNABaseEntity):
     def state(self):
         feat = cast(ToyotaNumeric, self.feature(self._vehicle_feature))
         if feat:
+            if (
+                self._unit_of_measurement == UnitOfPressure.PSI
+                and feat.value is not None
+                and feat.unit
+                and feat.unit != UnitOfPressure.PSI
+            ):
+                return PressureConverter.convert(feat.value, feat.unit, UnitOfPressure.PSI)
             return feat.value
 
     @property

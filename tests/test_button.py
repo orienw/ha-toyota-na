@@ -147,6 +147,10 @@ exceptions.ConfigEntryAuthFailed = type("ConfigEntryAuthFailed", (Exception,), {
 ha_const = module("homeassistant.const")
 ha_const.PERCENTAGE = "%"
 ha_const.UnitOfPressure = UnitOfPressure
+ha_const.UnitOfLength = types.SimpleNamespace(MILES="mi", KILOMETERS="km")
+module("homeassistant.util")
+unit_conversion = module("homeassistant.util.unit_conversion")
+unit_conversion.PressureConverter = types.SimpleNamespace(convert=mock.Mock())
 entity = module("homeassistant.helpers.entity")
 entity.DeviceInfo = dict
 device_registry = module("homeassistant.helpers.device_registry")
@@ -180,6 +184,7 @@ from custom_components.toyota_na import binary_sensor as binary_sensor_platform
 from custom_components.toyota_na import config_flow
 from custom_components.toyota_na import device_tracker as device_tracker_platform
 from custom_components.toyota_na import lock as lock_platform
+from custom_components.toyota_na import sensor as sensor_platform
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.wake_policy import (
     CONF_WAKE_INTERVAL,
@@ -189,6 +194,7 @@ from custom_components.toyota_na.wake_policy import (
 from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
+from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 
 
 runtime_spec = importlib.util.spec_from_file_location(
@@ -483,6 +489,51 @@ class BinarySensorCleanupTests(unittest.IsolatedAsyncioTestCase):
                 "binary_sensor.testvin_trunk_door_lock",
             ],
         )
+
+
+class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_pressure_sensor_converts_reported_units_to_psi(self):
+        for value, unit, expected in (
+            (240, "kPa", 34.809058),
+            (2.4, "bar", 34.809058),
+            (0, "kPa", 0),
+        ):
+            with self.subTest(value=value, unit=unit):
+                vehicle = FakeVehicle(set())
+                vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(value, unit)
+                coordinator = DataUpdateCoordinator([vehicle])
+                entities = []
+                await sensor_platform.async_setup_entry(
+                    FakeHass(coordinator),
+                    ConfigEntry(),
+                    lambda added, update: entities.extend(added),
+                )
+                pressure = entities[0]
+                with mock.patch.object(
+                    unit_conversion.PressureConverter, "convert", return_value=expected
+                ) as convert:
+                    self.assertEqual(pressure.state, expected)
+                    self.assertEqual(pressure.unit_of_measurement, "psi")
+                    convert.assert_called_once_with(value, unit, "psi")
+
+    async def test_native_and_missing_pressure_values_do_not_need_conversion(self):
+        vehicle = FakeVehicle(set())
+        coordinator = DataUpdateCoordinator([vehicle])
+        pressure = sensor_platform.ToyotaNumericSensor(
+            VehicleFeatures.SpareTirePressure,
+            "mdi:car-tire-alert",
+            "psi",
+            SensorStateClass.MEASUREMENT,
+            coordinator,
+            "Spare Tire Pressure",
+            vehicle.vin,
+        )
+        for value, unit in ((35, "psi"), (35, ""), (35, None), (None, "kPa")):
+            with self.subTest(value=value, unit=unit):
+                vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(value, unit)
+                with mock.patch.object(unit_conversion.PressureConverter, "convert") as convert:
+                    self.assertEqual(pressure.state, value)
+                    convert.assert_not_called()
 
 
 class DeviceTrackerTests(unittest.IsolatedAsyncioTestCase):
