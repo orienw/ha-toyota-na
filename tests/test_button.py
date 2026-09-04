@@ -187,6 +187,8 @@ from custom_components.toyota_na.wake_policy import (
     LAST_WAKE_AT,
 )
 from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
+from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
+from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 
 
 runtime_spec = importlib.util.spec_from_file_location(
@@ -416,6 +418,39 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BinarySensorCleanupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_position_only_door_does_not_report_lock_state(self):
+        for closed in (True, False):
+            with self.subTest(closed=closed):
+                vehicle = FakeVehicle(set())
+                vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaOpening(closed)
+                coordinator = DataUpdateCoordinator([vehicle])
+                entities = []
+                await binary_sensor_platform.async_setup_entry(
+                    FakeHass(coordinator),
+                    ConfigEntry(),
+                    lambda added, update: entities.extend(added),
+                )
+                lock = next(
+                    entity for entity in entities
+                    if entity.device_class == BinarySensorDeviceClass.LOCK
+                )
+                door = next(
+                    entity for entity in entities
+                    if entity.device_class == BinarySensorDeviceClass.DOOR
+                )
+                self.assertIsNone(lock.is_on)
+                self.assertFalse(lock.available)
+                self.assertEqual(door.is_on, not closed)
+                self.assertTrue(door.available)
+
+                vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaLockableOpening(
+                    closed=None, locked=True
+                )
+                self.assertFalse(lock.is_on)
+                self.assertTrue(lock.available)
+                self.assertIsNone(door.is_on)
+                self.assertFalse(door.available)
+
     async def test_tailgate_removes_stale_trunk_entities(self):
         vehicle = FakeVehicle(set())
         vehicle.backdoor_type = "tailgate"
