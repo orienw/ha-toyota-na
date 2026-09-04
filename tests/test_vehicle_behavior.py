@@ -455,6 +455,85 @@ class WakePolicyTests(unittest.TestCase):
 
 
 class VehicleStateTests(unittest.TestCase):
+    def test_telemetry_tires_use_their_measurement_timestamp(self):
+        legacy = SeventeenCYToyotaVehicle(
+            client=object(),
+            has_remote_subscription=True,
+            has_electric=False,
+            model_name="CAMRY",
+            model_year="2018",
+            vin="LEGACYVIN",
+            region="US",
+        )
+        for vehicle in (legacy, make_vehicle()):
+            with self.subTest(generation=vehicle.generation):
+                vehicle._parse_telemetry(
+                    {
+                        "lastTimestamp": "2026-08-14T12:02:00Z",
+                        "flTirePressure": {"value": 35, "unit": "psi"},
+                        "spareTirePressure": 35,
+                        "tirePressureTimestamp": "2026-08-14T12:01:00Z",
+                    }
+                )
+                tire_timestamp = vehicle.features[VehicleFeatures.LastTirePressureTimeStamp].value
+                vehicle._parse_telemetry(
+                    {
+                        "lastTimestamp": "2026-08-14T12:03:00Z",
+                        "flTirePressure": {"value": 20, "unit": "psi"},
+                        "spareTirePressure": 20,
+                        "tirePressureTimestamp": "2026-08-14T12:00:00Z",
+                        "fuelLevel": 50,
+                    }
+                )
+                self.assertEqual(vehicle.features[VehicleFeatures.FrontDriverTire].value, 35)
+                self.assertEqual(vehicle.features[VehicleFeatures.SpareTirePressure].value, 35)
+                self.assertEqual(vehicle.features[VehicleFeatures.FuelLevel].value, 50)
+                self.assertEqual(
+                    vehicle.features[VehicleFeatures.LastTirePressureTimeStamp].value,
+                    tire_timestamp,
+                )
+
+                vehicle._parse_telemetry(
+                    {
+                        "lastTimestamp": "2026-08-14T12:04:00Z",
+                        "flTirePressure": {"value": 36, "unit": "psi"},
+                    }
+                )
+                self.assertEqual(vehicle.features[VehicleFeatures.FrontDriverTire].value, 36)
+
+    def test_older_rest_tires_do_not_override_or_block_newer_appsync_tires(self):
+        vehicle = make_24mm_vehicle()
+        vehicle.apply_graphql_status(
+            {
+                "vehicleState": {
+                    "tires": {
+                        "lastUpdateDateTime": "2026-08-14T12:01:00Z",
+                        "frontLeft": {"psi": 35},
+                    }
+                }
+            }
+        )
+        vehicle._parse_telemetry(
+            {
+                "lastTimestamp": "2026-08-14T12:03:00Z",
+                "tirePressureTimestamp": "2026-08-14T12:00:00Z",
+                "flTirePressure": {"value": 20, "unit": "psi"},
+            }
+        )
+        self.assertEqual(vehicle.features[VehicleFeatures.FrontDriverTire].value, 35)
+
+        vehicle.apply_graphql_status(
+            {
+                "vehicleState": {
+                    "tires": {
+                        "lastUpdateDateTime": "2026-08-14T12:02:00Z",
+                        "frontLeft": {"psi": 36},
+                    }
+                }
+            }
+        )
+        self.assertEqual(vehicle.features[VehicleFeatures.FrontDriverTire].value, 36)
+
     def test_changed_vehicle_context_does_not_inherit_observations(self):
         previous = make_vehicle()
         previous._parse_telemetry(

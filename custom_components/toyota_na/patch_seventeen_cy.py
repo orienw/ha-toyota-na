@@ -348,6 +348,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             return
 
         observed_at = parse_api_timestamp(telemetry.get("lastTimestamp"))
+        tire_observed_at = parse_api_timestamp(telemetry.get("tirePressureTimestamp"))
         if observed_at is not None:
             self._features[VehicleFeatures.LastTimeStamp] = ToyotaNumeric(
                 observed_at.timestamp(), ""
@@ -362,11 +363,12 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
             # tire pressure time stamp is a primitive
             if key == "tirePressureTimestamp":
-                tire_observed_at = parse_api_timestamp(value)
                 if tire_observed_at is not None:
-                    self._features[
-                        VehicleFeatures.LastTirePressureTimeStamp
-                    ] = ToyotaNumeric(tire_observed_at.timestamp(), "")
+                    self._store_numeric(
+                        VehicleFeatures.LastTirePressureTimeStamp,
+                        tire_observed_at.timestamp(),
+                        observed_at=tire_observed_at,
+                    )
                 continue
 
             # fuel level is a primitive
@@ -401,13 +403,16 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
             if self._vehicle_telemetry_map.get(key) is not None:
                 feature = self._vehicle_telemetry_map[key]
+                feature_observed_at = observed_at
+                if key.endswith("TirePressure") and tire_observed_at is not None:
+                    feature_observed_at = tire_observed_at
                 if isinstance(value, dict) and "value" in value:
                     self._store_numeric(
                         feature,
                         value["value"],
                         value.get("unit", ""),
-                        observed_at,
+                        feature_observed_at,
                     )
                 else:
-                    self._store_numeric(feature, value, observed_at=observed_at)
+                    self._store_numeric(feature, value, observed_at=feature_observed_at)
                 continue
