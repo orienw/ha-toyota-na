@@ -107,11 +107,15 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         )
         self._feature_timestamps = {}
 
-    def inherit_state(self, previous: ToyotaVehicle) -> None:
+    def inherit_state(self, previous: ToyotaVehicle) -> bool:
         """Carry source timestamps into a new coordinator poll."""
-        super().inherit_state(previous)
-        if isinstance(previous, SeventeenCYToyotaVehicle):
-            self._feature_timestamps = dict(previous._feature_timestamps)
+        if not (
+            isinstance(previous, SeventeenCYToyotaVehicle)
+            and super().inherit_state(previous)
+        ):
+            return False
+        self._feature_timestamps = previous._feature_timestamps
+        return True
 
     async def update(self):
         

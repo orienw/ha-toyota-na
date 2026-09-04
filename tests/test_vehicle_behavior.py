@@ -1,5 +1,6 @@
 # ruff: noqa: I001
 
+import asyncio
 import json
 import sys
 import types
@@ -454,6 +455,30 @@ class WakePolicyTests(unittest.TestCase):
 
 
 class VehicleStateTests(unittest.TestCase):
+    def test_changed_vehicle_context_does_not_inherit_observations(self):
+        previous = make_vehicle()
+        previous._parse_telemetry(
+            {"lastTimestamp": "2026-08-14T12:02:00Z", "fuelLevel": 75}
+        )
+        for attribute, value in (
+            ("_vin", "OTHERVIN"),
+            ("_region", "CA"),
+            ("_generation", ApiVehicleGeneration.MM24),
+            ("_has_remote_subscription", False),
+            ("_has_electric", True),
+        ):
+            with self.subTest(attribute=attribute):
+                vehicle = make_vehicle()
+                setattr(vehicle, attribute, value)
+                vehicle.inherit_state(previous)
+                self.assertEqual(vehicle.features, {})
+
+                vehicle._parse_telemetry(
+                    {"lastTimestamp": "2026-08-14T12:00:00Z", "fuelLevel": 50}
+                )
+                self.assertEqual(vehicle.features[VehicleFeatures.FuelLevel].value, 50)
+                self.assertEqual(previous.features[VehicleFeatures.FuelLevel].value, 75)
+
     def test_legacy_status_parser_does_not_depend_on_value_order(self):
         vehicle = SeventeenCYToyotaVehicle(
             client=object(),
@@ -850,6 +875,107 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_pushes_survive_an_inflight_status_poll(self):
+        rest_status = {
+            "occurrenceDate": "2026-08-14T12:00:00Z",
+            "vehicleStatus": [
+                {
+                    "category": "Driver Side",
+                    "sections": [
+                        {
+                            "section": "Door",
+                            "values": [{"value": "closed"}, {"value": "locked"}],
+                        }
+                    ],
+                }
+            ],
+        }
+        graphql_status = {
+            "vehicleState": {
+                "lastUpdateDateTime": "2026-08-14T12:00:00Z",
+                "doors": {
+                    "driverSide": {
+                        "position": {"status": "close"},
+                        "lock": {"status": "lock"},
+                    }
+                },
+            }
+        }
+
+        for metadata, status in (
+            (LEXUS_21MM_COUPE, rest_status),
+            (TWENTY_FOUR_MM_PHEV, graphql_status),
+        ):
+            with self.subTest(generation=metadata["generation"]):
+                polling = asyncio.Event()
+                resume = asyncio.Event()
+
+                class Client:
+                    block = False
+
+                    async def get_user_vehicle_list(self):
+                        return [dict(metadata, vin="TESTVIN")]
+
+                    async def get_telemetry(self, *args):
+                        return {}
+
+                    async def get_engine_status_17cyplus(self, *args):
+                        return None
+
+                    async def get_status(self, *args):
+                        if self.block:
+                            polling.set()
+                            await resume.wait()
+                        return status
+
+                    get_vehicle_status_17cyplus = get_status
+                    graphql_get_vehicle_status = get_status
+
+                client = Client()
+                current = (await get_vehicles(client))[0]
+                handler = ToyotaWebSocketHandler(
+                    client, lambda vin, pushed: current.apply_graphql_status(pushed)
+                )
+                client._ws_handler = handler
+                client.block = True
+                task = asyncio.create_task(get_vehicles(client))
+                try:
+                    await asyncio.wait_for(polling.wait(), timeout=1)
+                    for pushed in (
+                        {
+                            "vin": "TESTVIN",
+                            "vehicleState": {
+                                "lastUpdateDateTime": "2026-08-14T12:01:00Z",
+                                "doors": {
+                                    "driverSide": {"lock": {"status": "unlock"}}
+                                },
+                            },
+                        },
+                        {
+                            "vin": "TESTVIN",
+                            "location": {
+                                "latitude": 34.05,
+                                "longitude": -118.25,
+                                "lastUpdateDateTime": "2026-08-14T12:02:00Z",
+                            },
+                        },
+                    ):
+                        await handler._handle_message(
+                            {
+                                "type": "data",
+                                "payload": {"data": {"onVehicleStatusUpdated": pushed}},
+                            },
+                            "token",
+                            "guid",
+                        )
+                finally:
+                    resume.set()
+                    vehicles = await task
+
+                vehicle = vehicles[0]
+                self.assertFalse(vehicle.features[VehicleFeatures.FrontDriverDoor].locked)
+                self.assertEqual(vehicle.features[VehicleFeatures.ParkingLocation].lat, 34.05)
+
     async def test_vehicle_status_uses_toyota_transport_headers(self):
         calls = []
 
