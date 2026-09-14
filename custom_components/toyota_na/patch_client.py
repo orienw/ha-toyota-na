@@ -713,7 +713,21 @@ async def api_request(self, method, endpoint, header_params=None, **kwargs):
                     "Toyota API error: %s %s -> %d %s | Response: %s",
                     method, url, resp.status, resp.reason, body[:500]
                 )
-            resp.raise_for_status()
+                try:
+                    resp.raise_for_status()
+                except aiohttp.ClientResponseError as err:
+                    try:
+                        message = json.loads(body)["status"]["messages"][0]
+                    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                        message = {}
+                    if isinstance(message, dict):
+                        detail = message.get("detailedDescription") or message.get("description")
+                        code = message.get("responseCode")
+                        if isinstance(detail, str) and detail:
+                            err.message = detail
+                        if isinstance(code, str) and code:
+                            err.message = f"{err.message} [{code}]"
+                    raise
             try:
                 resp_json = await resp.json()
                 if "payload" in resp_json:

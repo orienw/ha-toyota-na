@@ -1,6 +1,7 @@
 """REST routing through the integration and upstream client wrappers."""
 
 import importlib.util
+import json
 from pathlib import Path
 import types
 import unittest
@@ -131,12 +132,60 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["headers"]["X-GENERATION"], "21MM")
         self.assertEqual(kwargs["headers"]["x-region"], "CA")
 
-    async def test_rejected_21mm_command_raises(self):
+    async def test_rejected_21mm_command_preserves_toyota_error_details(self):
         self.response.status = 400
-        self.response.text.return_value = "rejected"
-        self.response.raise_for_status.side_effect = aiohttp.ClientResponseError(
-            MagicMock(), (), status=400,
-        )
+        for message, expected in (
+            (
+                {
+                    "detailedDescription": "Remote command invocation(Spec-B) failed",
+                    "description": "Command failed",
+                    "responseCode": "ONE-GLOBAL-RS-40009",
+                },
+                "Remote command invocation(Spec-B) failed [ONE-GLOBAL-RS-40009]",
+            ),
+            (
+                {"description": "Command failed", "responseCode": "ONE-GLOBAL-RS-40009"},
+                "Command failed [ONE-GLOBAL-RS-40009]",
+            ),
+            ({"description": "Command failed"}, "Command failed"),
+            ({"responseCode": "ONE-GLOBAL-RS-40009"}, "Bad Request [ONE-GLOBAL-RS-40009]"),
+        ):
+            with self.subTest(message=message):
+                self.response.text.return_value = json.dumps({"status": {"messages": [message]}})
+                error = aiohttp.ClientResponseError(
+                    MagicMock(), (), status=400, message="Bad Request",
+                )
+                self.response.raise_for_status.side_effect = error
 
-        with self.assertRaises(aiohttp.ClientResponseError):
-            await client_module.remote_request_21mm(Client(), "TESTVIN", "engine-start")
+                with self.assertRaises(aiohttp.ClientResponseError) as caught:
+                    await client_module.remote_request_21mm(Client(), "TESTVIN", "engine-start")
+
+                self.assertIs(caught.exception, error)
+                self.assertEqual(caught.exception.message, expected)
+
+    async def test_rejected_21mm_command_preserves_http_error_without_toyota_details(self):
+        self.response.status = 400
+        for body in (
+            "rejected",
+            '<html>Bad Request</html>',
+            '{"status":',
+            'null',
+            '[]',
+            '{}',
+            '{"status": null}',
+            '{"status": {"messages": []}}',
+            '{"status": {"messages": [null]}}',
+            '{"status": {"messages": [{"description": 123, "responseCode": null}]}}',
+        ):
+            with self.subTest(body=body):
+                self.response.text.return_value = body
+                error = aiohttp.ClientResponseError(
+                    MagicMock(), (), status=400, message="Bad Request",
+                )
+                self.response.raise_for_status.side_effect = error
+
+                with self.assertRaises(aiohttp.ClientResponseError) as caught:
+                    await client_module.remote_request_21mm(Client(), "TESTVIN", "engine-start")
+
+                self.assertIs(caught.exception, error)
+                self.assertEqual(caught.exception.message, "Bad Request")
