@@ -11,8 +11,6 @@ Report problems and request features in [this fork's issue tracker](https://gith
 
 [![GitHub release](https://img.shields.io/github/v/release/orienw/ha-toyota-na?include_prereleases&style=for-the-badge)](https://github.com/orienw/ha-toyota-na/releases)
 
-The current release of the maintained code is [v2.8.0b5](https://github.com/orienw/ha-toyota-na/releases/tag/v2.8.0b5), a beta.
-
 ## Current features
 Certain entities and services require the Remote Subscription.
 
@@ -62,8 +60,9 @@ If you already use the upstream integration, follow [Switching from upstream](#s
 
 1. Open HACS, select the three-dot menu, then **Custom repositories**.
 2. Add `https://github.com/orienw/ha-toyota-na` with type **Integration**.
-3. Open this fork's entry and select **Download**. Enable beta versions and select
-   **v2.8.0b5** under **Need a different version?**.
+3. Open this fork's entry and select **Download**. Choose the latest version on
+   the [releases page](https://github.com/orienw/ha-toyota-na/releases).
+   Enable beta versions in HACS if that release is a prerelease.
 4. Restart Home Assistant, then add **Toyota (North America)** under
    **Settings > Devices & services**.
 
@@ -78,7 +77,7 @@ device, and entity identifiers. Keep your Toyota integration entry under
    keeping the related Home Assistant data.
 2. Add `https://github.com/orienw/ha-toyota-na` as a custom repository with type
    **Integration**.
-3. Download **v2.8.0b5** from this fork, enabling beta versions if needed.
+3. Download this fork's latest release, enabling beta versions if needed.
    Complete the download before restarting Home Assistant.
 4. Restart Home Assistant and open your existing Toyota integration to check its
    vehicles and entities.
@@ -86,12 +85,12 @@ device, and entity identifiers. Keep your Toyota integration entry under
 Confirm HACS lists `orienw/ha-toyota-na` as downloaded. Both repositories install
 to `custom_components/toyota_na`, so only one can be installed at a time.
 
-Vehicles with a tailgate have obsolete trunk entities removed by this beta.
+This integration removes obsolete trunk entities on vehicles with a tailgate.
 Update any automations that still reference those entities.
 
 ### Manual installation
 
-1. Download `ha_toyota_na.zip` from the [v2.8.0b5 release](https://github.com/orienw/ha-toyota-na/releases/tag/v2.8.0b5).
+1. Download `ha_toyota_na.zip` from the latest release on the [releases page](https://github.com/orienw/ha-toyota-na/releases).
 2. Extract its contents into `custom_components/toyota_na` in your Home Assistant
    configuration directory.
 3. Restart Home Assistant. For a new installation, add **Toyota (North America)**
@@ -114,6 +113,9 @@ when you want Home Assistant to wake the vehicle proactively for fresh status.
 ![image](https://user-images.githubusercontent.com/4755389/147372481-4d280b6e-6f61-434c-a768-f4a089f009c3.png)
 
 ## Credits
-Thanks @DurgNomis-drol for making the the original [Toyota Integration](https://github.com/DurgNomis-drol/ha_toyota) and bringing up the discussion thread at https://github.com/DurgNomis-drol/mytoyota/issues/7.
+
+Thanks @widewing and the upstream contributors for the [Toyota North America integration](https://github.com/widewing/ha-toyota-na).
+
+Thanks @DurgNomis-drol for making the original [Toyota Integration](https://github.com/DurgNomis-drol/ha_toyota) and bringing up the discussion thread at https://github.com/DurgNomis-drol/mytoyota/issues/7.
 
 Thanks @visualage for finding the way to authenticate headlessly.
