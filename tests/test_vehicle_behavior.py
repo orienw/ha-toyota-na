@@ -41,6 +41,7 @@ from custom_components.toyota_na.patch_seventeen_cy import SeventeenCYToyotaVehi
 from custom_components.toyota_na.patch_client import (
     get_telemetry,
     get_vehicle_status_17cyplus,
+    get_vehicle_status_21mm,
     graphql_confirm_subscription,
     remote_request_17cy,
 )
@@ -1232,6 +1233,46 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_21mm_route_status_populates_doors_and_trunk(self):
+        status = {
+            "occurrenceDate": "2026-09-14T12:00:00Z",
+            "vehicleStatus": [
+                {
+                    "category": "Driver Side",
+                    "sections": [
+                        {
+                            "section": "Door",
+                            "values": [{"value": "closed"}, {"value": "locked"}],
+                        },
+                    ],
+                },
+                {
+                    "category": "Other",
+                    "sections": [
+                        {"section": "Trunk", "values": [{"value": "open"}]},
+                    ],
+                },
+            ],
+        }
+
+        class Client:
+            get_vehicle_status_21mm = get_vehicle_status_21mm
+            api_get = AsyncMock(return_value={"status": status})
+            get_telemetry = AsyncMock(return_value=None)
+            get_engine_status_21mm = AsyncMock(return_value=None)
+
+        vehicle = make_vehicle(Client())
+
+        await vehicle.update()
+
+        door = vehicle.features.get(VehicleFeatures.FrontDriverDoor)
+        trunk = vehicle.features.get(VehicleFeatures.Trunk)
+        self.assertIsNotNone(door)
+        self.assertIsNotNone(trunk)
+        self.assertTrue(door.closed)
+        self.assertTrue(door.locked)
+        self.assertFalse(trunk.closed)
+
     async def test_pushes_survive_an_inflight_status_poll(self):
         rest_status = {
             "occurrenceDate": "2026-08-14T12:00:00Z",

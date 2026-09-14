@@ -208,10 +208,11 @@ async def get_vehicle_status_17cyplus(self, vin, region="US"):
     return None
 
 async def get_vehicle_status_21mm(self, vin, region="US"):
-    return await self.api_get(
+    res = await self.api_get(
         REMOTE_ROUTE + "status",
         _vehicle_headers(vin, region, **{"X-GENERATION": "21MM"}),
     )
+    return res.get("status", res) if res else res
 
 async def get_engine_status_17cyplus(self, vin, region="US"):
     """Engine status for 17CYPLUS vehicles."""
