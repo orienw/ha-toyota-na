@@ -1,5 +1,5 @@
 {
-  "name": "Toyota (North America)",
+  "name": "Toyota (North America) - orienw",
   "domains": ["device_tracker", "sensor"],
   "homeassistant": "2022.11.0",
   "iot_class": ["Cloud Polling"],

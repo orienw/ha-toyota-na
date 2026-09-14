@@ -1,10 +1,17 @@
 # ha-toyota-na
 
 ## Introduction
-This is a Home Assistant integration for Toyota North America.
+This is a Home Assistant integration for Toyota and Lexus connected services in
+North America, maintained by [@orienw](https://github.com/orienw). It is a fork of
+[widewing/ha-toyota-na](https://github.com/widewing/ha-toyota-na).
 
-## Stable
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/widewing/ha-toyota-na?style=for-the-badge) ![GitHub Release Date](https://img.shields.io/github/release-date/widewing/ha-toyota-na?style=for-the-badge) ![GitHub Releases](https://img.shields.io/github/downloads/widewing/ha-toyota-na/latest/total?color=purple&label=%20release%20Downloads&style=for-the-badge) 
+Report problems and request features in [this fork's issue tracker](https://github.com/orienw/ha-toyota-na/issues).
+
+## Releases
+
+[![GitHub release](https://img.shields.io/github/v/release/orienw/ha-toyota-na?include_prereleases&style=for-the-badge)](https://github.com/orienw/ha-toyota-na/releases)
+
+The current release of the maintained code is [v2.8.0b5](https://github.com/orienw/ha-toyota-na/releases/tag/v2.8.0b5), a beta.
 
 ## Current features
 Certain entities and services require the Remote Subscription.
@@ -50,15 +57,46 @@ Native controls:
 Requires Home Assistant 2022.11 or newer.
 
 ### HACS
-1. Install HACS: https://hacs.xyz/docs/setup/download
-2. Search and install "Toyota (North America)" in HACS integration store
 
-### Manual installation:
-1. Download this repo by either of the following method
-- `git clone https://github.com/widewing/ha-toyota-na`
-- Download https://github.com/widewing/ha-toyota-na/archive/refs/heads/master.zip
-2. Copy or link this repo into Home Assistant "custome_components" directory
-- `ln -s ha-toyota-na/custom_components/toyota_na ~/.homeassistant/custom_components/`
+If you already use the upstream integration, follow [Switching from upstream](#switching-from-upstream) first.
+
+1. Open HACS, select the three-dot menu, then **Custom repositories**.
+2. Add `https://github.com/orienw/ha-toyota-na` with type **Integration**.
+3. Open this fork's entry and select **Download**. Enable beta versions and select
+   **v2.8.0b5** under **Need a different version?**.
+4. Restart Home Assistant, then add **Toyota (North America)** under
+   **Settings > Devices & services**.
+
+### Switching from upstream
+
+This fork uses the same `toyota_na` integration domain and existing account,
+device, and entity identifiers. Keep your Toyota integration entry under
+**Settings > Devices & services** so its configuration and automations can be reused.
+
+1. In **HACS**, open the downloaded entry for `widewing/ha-toyota-na` and select
+   **Remove** from its three-dot menu. HACS removes the component files while
+   keeping the related Home Assistant data.
+2. Add `https://github.com/orienw/ha-toyota-na` as a custom repository with type
+   **Integration**.
+3. Download **v2.8.0b5** from this fork, enabling beta versions if needed.
+   Complete the download before restarting Home Assistant.
+4. Restart Home Assistant and open your existing Toyota integration to check its
+   vehicles and entities.
+
+Confirm HACS lists `orienw/ha-toyota-na` as downloaded. Both repositories install
+to `custom_components/toyota_na`, so only one can be installed at a time.
+
+Vehicles with a tailgate have obsolete trunk entities removed by this beta.
+Update any automations that still reference those entities.
+
+### Manual installation
+
+1. Download `ha_toyota_na.zip` from the [v2.8.0b5 release](https://github.com/orienw/ha-toyota-na/releases/tag/v2.8.0b5).
+2. Extract its contents into `custom_components/toyota_na` in your Home Assistant
+   configuration directory.
+3. Restart Home Assistant. For a new installation, add **Toyota (North America)**
+   under **Settings > Devices & services**. For an existing installation, keep
+   using the configured Toyota entry.
 
 ## Configuration
 Click "Add integration" from Home Assistant, search "Toyota (North America)", click to add.
