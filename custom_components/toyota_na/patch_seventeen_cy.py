@@ -14,7 +14,12 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
-from .vehicle_helpers import opening_state_from_values, parse_api_timestamp
+from .vehicle_helpers import (
+    normalize_charging_state,
+    normalize_engine_state,
+    opening_state_from_values,
+    parse_api_timestamp,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -159,7 +164,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             if self._has_electric:
                 # electric_status
                 electric_status = await self._client.get_electric_status(
-                    self.vin, region=self._region
+                    self.vin, region=self._region, generation=self.api_generation
                 )
                 if electric_status:
                     self._parse_electric_status(electric_status)
@@ -179,7 +184,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 # electric_status
                 electric_status = await self._client.get_electric_realtime_status(
                     self.vin,
-                    self.endpoint_generation,
+                    self.api_generation,
                     self._region,
                 )
                 if electric_status:
@@ -205,10 +210,16 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         if not engine_status or "status" not in engine_status:
             return
 
+        running = normalize_engine_state(engine_status["status"])
+        if running is None:
+            return
         self._features[VehicleFeatures.RemoteStartStatus] = ToyotaRemoteStart(
-            date=engine_status.get("date"),
-            on=engine_status["status"] == "1",
+            date=None,
+            on=running,
             timer=engine_status.get("timer"),
+        )
+        self._features[VehicleFeatures.RemoteStartStatus].start_time = parse_api_timestamp(
+            engine_status.get("date")
         )
 
     #
@@ -216,22 +227,31 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
     #
 
     def _parse_electric_status(self, electric_status: dict) -> None:
-        if not electric_status or "vehicleInfo" not in electric_status:
+        if not electric_status:
             return
-        
-        chargeInfo = electric_status["vehicleInfo"].get("chargeInfo", {})
-        if not chargeInfo:
+        vehicle_info = electric_status.get("vehicleInfo") or {}
+        charge_info = vehicle_info.get("chargeInfo") or {}
+        if not charge_info:
             return
 
-        self._features[VehicleFeatures.ChargeDistance] = ToyotaNumeric(chargeInfo.get("evDistance"), chargeInfo.get("evDistanceUnit"))
-        self._features[VehicleFeatures.ChargeDistanceAC] = ToyotaNumeric(chargeInfo.get("evDistanceAC"), chargeInfo.get("evDistanceUnit"))
-        self._features[VehicleFeatures.ChargeLevel] = ToyotaNumeric(chargeInfo.get("chargeRemainingAmount"), "%")
-        self._features[VehicleFeatures.PlugStatus] = ToyotaNumeric(chargeInfo.get("plugStatus"), "")
-        self._features[VehicleFeatures.RemainingChargeTime] = ToyotaNumeric(chargeInfo.get("remainingChargeTime"), "")
-        self._features[VehicleFeatures.EvTravelableDistance] = ToyotaNumeric(chargeInfo.get("evTravelableDistance"), "")
-        self._features[VehicleFeatures.ChargeType] = ToyotaNumeric(chargeInfo.get("chargeType"), "")
-        self._features[VehicleFeatures.ConnectorStatus] = ToyotaNumeric(chargeInfo.get("connectorStatus"), "")
-        self._features[VehicleFeatures.ChargingStatus] = ToyotaOpening(chargeInfo.get("connectorStatus") != 5)
+        observed_at = parse_api_timestamp(vehicle_info.get("acquisitionDatetime"))
+        distance_unit = charge_info.get("evDistanceUnit", "")
+        for key, feature, unit in (
+            ("evDistance", VehicleFeatures.ChargeDistance, distance_unit),
+            ("evDistanceAC", VehicleFeatures.ChargeDistanceAC, distance_unit),
+            ("chargeRemainingAmount", VehicleFeatures.ChargeLevel, "%"),
+            ("plugStatus", VehicleFeatures.PlugStatus, ""),
+            ("remainingChargeTime", VehicleFeatures.RemainingChargeTime, ""),
+            ("evTravelableDistance", VehicleFeatures.EvTravelableDistance, ""),
+            ("chargeType", VehicleFeatures.ChargeType, ""),
+            ("connectorStatus", VehicleFeatures.ConnectorStatus, ""),
+        ):
+            self._store_numeric(feature, charge_info.get(key), unit, observed_at)
+        charging = normalize_charging_state(charge_info.get("plugStatus"))
+        if charging is not None:
+            self._store_opening(
+                VehicleFeatures.ChargingStatus, not charging, None, observed_at
+            )
 
     #
     # vehicle_health_status

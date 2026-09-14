@@ -68,12 +68,6 @@ async def authorize(self, username, password, otp=None):
                     elif cb_type == "HiddenValueCallback":
                         pass  # devicePrint etc — pass through unchanged
 
-                    elif cb_type == "TextOutputCallback":
-                        msg = cb["output"][0].get("value", "")
-                        if msg == "Invalid OTP":
-                            _LOGGER.error("Invalid OTP")
-                            raise LoginError()
-
             if otp_brake:
                 self.otp_callbacks = data # Store callback to restart auth loop when we have the otp
                 _LOGGER.debug("Fetching otp...")
@@ -84,6 +78,14 @@ async def authorize(self, username, password, otp=None):
                     _LOGGER.info(await resp.text())
                     raise LoginError()
                 data = await resp.json()
+                if any(
+                    cb["type"] == "TextOutputCallback"
+                    and any(output.get("value") == "Invalid OTP" for output in cb.get("output", []))
+                    for cb in data.get("callbacks", [])
+                ):
+                    self.otp_callbacks = data
+                    _LOGGER.error("Invalid OTP")
+                    raise LoginError()
                 if "tokenId" in data:
                     break
 
@@ -102,7 +104,7 @@ async def authorize(self, username, password, otp=None):
         AUTHORIZE_URL_QS = f"{ToyotaOneAuth.AUTHORIZE_URL}?{urlencode(auth_params)}"
         async with session.get(AUTHORIZE_URL_QS, headers=headers, allow_redirects=False) as resp:
             if resp.status != 302:
-                _LOGGER.error(resp.text())
+                _LOGGER.error(await resp.text())
                 raise LoginError()
             redir = resp.headers["Location"]
             query = parse_qs(urlparse(redir).query)

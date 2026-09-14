@@ -43,8 +43,7 @@ GRAPHQL_REFRESH_STATUS = """mutation RefreshVehicleStatus($vin: String!) {
   }
 }"""
 
-GRAPHQL_GET_VEHICLE_STATUS = """query GetVehicleStatus($vin: String!) {
-  getVehicleStatus(vin: $vin) {
+GRAPHQL_VEHICLE_STATUS_FIELDS = """
     vin lastUpdateDateTime
     vehicleState {
       lastUpdateDateTime driverPosition
@@ -118,8 +117,13 @@ GRAPHQL_GET_VEHICLE_STATUS = """query GetVehicleStatus($vin: String!) {
         travelableDistance { unit value }
       }
     }
-  }
-}"""
+"""
+
+GRAPHQL_GET_VEHICLE_STATUS = (
+    "query GetVehicleStatus($vin: String!) { getVehicleStatus(vin: $vin) {"
+    + GRAPHQL_VEHICLE_STATUS_FIELDS
+    + "} }"
+)
 
 GRAPHQL_REMOTE_COMMAND_STATUS = """subscription ReceiveRemoteCommandStatus($vin: String!) {
   onPostRemoteCallback(vin: $vin) {
@@ -333,30 +337,33 @@ async def get_electric_realtime_status(
     try:
         headers = _vehicle_headers(vin, region, vin=vin)
         headers["device-id"] = self.auth.get_device_id()
+        headers["X-GENERATION"] = generation
+        headers["X-CORRELATIONID"] = str(uuid.uuid4())
         realtime_electric_status = await self.api_post(
             "v2/electric/realtime-status",
             {},
             headers,
         )
-        if generation == "17CYPLUS":
+        if generation != "17CY":
             return await self.get_electric_status(
-                vin, realtime_electric_status["appRequestNo"], region
+                vin, realtime_electric_status["appRequestNo"], region, generation
             )
         elif realtime_electric_status["returnCode"] == "ONE-RES-10000":
-            return await self.get_electric_status(vin, region=region)
+            return await self.get_electric_status(vin, region=region, generation=generation)
     except Exception as e:
         _LOGGER.debug("Electric realtime status failed: %s", e)
         return None
 
-async def get_electric_status(self, vin, realtime_status=None, region="US"):
+async def get_electric_status(self, vin, realtime_status=None, region="US", generation="17CYPLUS"):
     try:
-        url = "v2/electric/status"
+        version = "v2" if generation == "17CY" else "v3"
+        url = f"{version}/electric/status"
         if realtime_status:
             query_params = {"realtime-status": realtime_status}
             url += "?" + urlencode(query_params)
 
         electric_status = await self.api_get(
-            url, _vehicle_headers(vin, region)
+            url, {**_vehicle_headers(vin, region), "X-GENERATION": generation}
         )
         if "vehicleInfo" in electric_status:
             return electric_status

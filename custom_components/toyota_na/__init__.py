@@ -80,7 +80,7 @@ import toyota_na.vehicle.vehicle_generations.seventeen_cy
 from .patch_seventeen_cy import SeventeenCYToyotaVehicle as PatchedSeventeenCYToyotaVehicle
 toyota_na.vehicle.vehicle_generations.seventeen_cy.SeventeenCYToyotaVehicle = PatchedSeventeenCYToyotaVehicle
 
-from toyota_na.exceptions import AuthError, LoginError
+from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
 
 #Patch get_vehicles
@@ -269,21 +269,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 coordinator.async_set_updated_data(vehicles)
 
         ws_handler = ToyotaWebSocketHandler(client, handle_vehicle_status)
-        websocket_generations = {
-            ApiVehicleGeneration.MM21,
-            ApiVehicleGeneration.MM24,
-        }
-        vehicle_contexts = {
-            vehicle.vin: {
-                "region": vehicle.region,
-                "backdoor_type": vehicle.backdoor_type,
-            }
-            for vehicle in (coordinator.data or [])
-            if vehicle.subscribed
-            and vehicle.generation in websocket_generations
-        }
-        if vehicle_contexts:
-            await ws_handler.start(vehicle_contexts)
+        await ws_handler.start(_websocket_contexts(coordinator.data or []))
         client._ws_handler = ws_handler
 
         hass.data[DOMAIN][entry.entry_id] = {
@@ -312,6 +298,22 @@ def update_tokens(tokens: dict[str, str], hass: HomeAssistant, entry: ConfigEntr
     hass.config_entries.async_update_entry(entry, data=data)
 
 
+def _websocket_contexts(vehicles):
+    websocket_generations = {
+        ApiVehicleGeneration.MM21,
+        ApiVehicleGeneration.MM24,
+    }
+    return {
+        vehicle.vin: {
+            "region": vehicle.region,
+            "backdoor_type": vehicle.backdoor_type,
+        }
+        for vehicle in vehicles
+        if vehicle.subscribed
+        and vehicle.generation in websocket_generations
+    }
+
+
 async def update_vehicles_status(
     hass: HomeAssistant,
     client: ToyotaOneClient,
@@ -321,6 +323,9 @@ async def update_vehicles_status(
     try:
         _LOGGER.debug("Updating vehicle status")
         raw_vehicles = await get_vehicles(client)
+        ws_handler = getattr(client, "_ws_handler", None)
+        if ws_handler is not None:
+            await ws_handler.update_vehicle_contexts(_websocket_contexts(raw_vehicles))
         wake_requested = False
         vehicles: list[ToyotaVehicle] = []
         for vehicle in raw_vehicles:
@@ -353,11 +358,7 @@ async def update_vehicles_status(
             )
         return vehicles
     except AuthError as e:
-        try:
-            client.auth.login(entry.data["username"], entry.data["password"])
-        except LoginError:
-            _LOGGER.exception("Error logging in")
-            raise ConfigEntryAuthFailed(e) from e
+        raise ConfigEntryAuthFailed(e) from e
     except Exception as e:
         _LOGGER.exception("Error fetching data")
         raise UpdateFailed(e) from e

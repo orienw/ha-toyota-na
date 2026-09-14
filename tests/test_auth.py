@@ -1,0 +1,137 @@
+"""Login continuation and expired-credential recovery."""
+
+import copy
+import types
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import test_button as platform
+from custom_components.toyota_na import patch_auth
+from toyota_na.exceptions import LoginError
+
+
+class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.auth = types.SimpleNamespace(
+            authorize=AsyncMock(),
+            request_tokens=AsyncMock(),
+            get_id_info=AsyncMock(return_value={"email": "owner@example.com"}),
+            get_tokens=lambda: {"access_token": "token"},
+        )
+        self.flow = platform.config_flow.ToyotaNAConfigFlow()
+        self.flow.async_show_form = lambda **kwargs: {"type": "form", **kwargs}
+        self.flow.async_set_unique_id = AsyncMock(return_value=None)
+        self.flow.async_create_entry = lambda **kwargs: {"type": "create_entry", **kwargs}
+        client_patch = patch.object(
+            platform.config_flow, "ToyotaOneClient",
+            return_value=types.SimpleNamespace(auth=self.auth),
+        )
+        client_patch.start()
+        self.addCleanup(client_patch.stop)
+        self.credentials = {"username": "owner", "password": "password"}
+
+    async def test_authorized_login_finishes_without_asking_for_otp(self):
+        self.auth.authorize.return_value = "authorization-code"
+
+        result = await self.flow.async_step_user(self.credentials)
+
+        self.assertEqual(result["type"], "create_entry")
+        self.assertEqual(result["data"]["tokens"], {"access_token": "token"})
+        self.auth.authorize.assert_awaited_once_with("owner", "password")
+        self.auth.request_tokens.assert_awaited_once_with("authorization-code")
+
+    async def test_otp_can_be_retried_before_finishing_login(self):
+        self.auth.authorize.side_effect = [{"callbacks": []}, LoginError(), "code"]
+
+        result = await self.flow.async_step_user(self.credentials)
+        self.assertEqual(result["step_id"], "otp")
+        self.auth.request_tokens.assert_not_awaited()
+        with self.assertLogs(platform.config_flow.__name__, level="ERROR"):
+            result = await self.flow.async_step_otp({"code": "wrong"})
+        self.assertEqual(result["step_id"], "otp")
+        self.assertEqual(result["errors"], {"base": "otp_not_logged_in"})
+        self.auth.request_tokens.assert_not_awaited()
+
+        result = await self.flow.async_step_otp({"code": "correct"})
+
+        self.assertEqual(result["type"], "create_entry")
+        self.auth.authorize.assert_awaited_with("owner", "password", "correct")
+        self.auth.request_tokens.assert_awaited_once_with("code")
+
+    async def test_expired_credentials_request_home_assistant_reauthentication(self):
+        client = types.SimpleNamespace(auth=types.SimpleNamespace(login=AsyncMock()))
+        entry = platform.ConfigEntry()
+        entry.data = self.credentials
+        with patch.object(
+            platform.integration_runtime, "get_vehicles", AsyncMock(side_effect=LoginError())
+        ):
+            with self.assertRaises(platform.exceptions.ConfigEntryAuthFailed):
+                await platform.integration_runtime.update_vehicles_status(
+                    None, client, entry, None,
+                )
+        client.auth.login.assert_not_called()
+
+    async def test_reauthentication_keeps_device_id_and_updates_existing_entry(self):
+        entry = platform.ConfigEntry()
+        entry.data = {"device_id": "existing-device", "tokens": {"access_token": "expired"}}
+        self.auth.authorize.return_value = "code"
+        self.flow.async_set_unique_id.return_value = entry
+        entries = types.SimpleNamespace(async_update_entry=MagicMock(), async_reload=AsyncMock())
+        self.flow.hass = types.SimpleNamespace(config_entries=entries)
+        self.flow.async_abort = lambda **kwargs: {"type": "abort", **kwargs}
+
+        result = await self.flow.async_step_user(self.credentials)
+
+        self.assertEqual(result, {"type": "abort", "reason": "reauth_successful"})
+        saved = entries.async_update_entry.call_args.kwargs["data"]
+        self.assertEqual(saved["device_id"], "existing-device")
+        self.assertEqual(saved["tokens"], {"access_token": "token"})
+        entries.async_reload.assert_awaited_once_with(entry.entry_id)
+
+
+class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_invalid_otp_retry_uses_the_latest_server_challenge(self):
+        def challenge(auth_id):
+            return {
+                "authId": auth_id,
+                "callbacks": [{
+                    "type": "PasswordCallback",
+                    "output": [{"name": "prompt", "value": "One Time Password"}],
+                    "input": [{"name": "IDToken1", "value": ""}],
+                }],
+            }
+
+        rejected = challenge("retry-auth-id")
+        rejected["callbacks"].append({
+            "type": "TextOutputCallback",
+            "output": [{"name": "message", "value": "Invalid OTP"}],
+        })
+        response = AsyncMock()
+        response.status = 200
+        response.json.side_effect = [challenge("first-auth-id"), rejected, {"tokenId": "session"}]
+        response.__aenter__.return_value = response
+        redirect = AsyncMock()
+        redirect.status = 302
+        redirect.headers = {"Location": "com.toyota.oneapp:/oauth2Callback?code=code"}
+        redirect.__aenter__.return_value = redirect
+        sent = []
+        session = MagicMock()
+        session.__aenter__.return_value = session
+
+        def post(url, *, json, headers):
+            sent.append(copy.deepcopy(json))
+            return response
+
+        session.post.side_effect = post
+        session.get.return_value = redirect
+        auth = types.SimpleNamespace()
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            await patch_auth.authorize(auth, "owner", "password")
+            with self.assertLogs(patch_auth.__name__, level="ERROR"):
+                with self.assertRaises(LoginError):
+                    await patch_auth.authorize(auth, "owner", "password", "wrong")
+            code = await patch_auth.authorize(auth, "owner", "password", "correct")
+
+        self.assertEqual(code, "code")
+        self.assertEqual(sent[-1]["authId"], "retry-auth-id")
+        self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], "correct")

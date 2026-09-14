@@ -203,7 +203,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 and self._generation != ApiVehicleGeneration.MM24
             ):
                 electric_status = await self._client.get_electric_status(
-                    self.vin, region=self._region
+                    self.vin, region=self._region, generation=self.api_generation
                 )
                 if electric_status:
                     self._parse_electric_status(electric_status)
@@ -277,7 +277,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             ):
                 electric_status = await self._client.get_electric_realtime_status(
                     self.vin,
-                    self.endpoint_generation,
+                    self.api_generation,
                     self._region,
                 )
                 if electric_status:

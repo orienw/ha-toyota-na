@@ -142,6 +142,12 @@ def make_vehicle(client=None):
     )
 
 
+def make_17cy_vehicle(client=None):
+    return SeventeenCYToyotaVehicle(
+        client or object(), True, True, "PRIUS PRIME", "2018", "TESTVIN", "CA",
+    )
+
+
 def make_24mm_vehicle(client=None):
     return SeventeenCYPlusToyotaVehicle(
         client=client or object(),
@@ -310,14 +316,15 @@ class EngineStatusTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
 
     def test_unknown_engine_status_does_not_report_stopped(self):
-        vehicle = make_vehicle()
-        vehicle._parse_engine_status({"status": "unknown"})
-        self.assertNotIn(VehicleFeatures.RemoteStartStatus, vehicle.features)
-        vehicle._parse_engine_status({"status": "started"})
-        for status in (None, "unknown", "", "unavailable"):
-            with self.subTest(status=status):
-                vehicle._parse_engine_status({"status": status})
-                self.assertTrue(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
+        for make in (make_vehicle, make_17cy_vehicle):
+            vehicle = make()
+            vehicle._parse_engine_status({"status": "unknown"})
+            self.assertNotIn(VehicleFeatures.RemoteStartStatus, vehicle.features)
+            vehicle._parse_engine_status({"status": "started"})
+            for status in (None, "unknown", "", "unavailable"):
+                with self.subTest(status=status):
+                    vehicle._parse_engine_status({"status": status})
+                    self.assertTrue(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
 
     async def test_poll_uses_generation_specific_engine_status(self):
         for generation in (ApiVehicleGeneration.MM21, ApiVehicleGeneration.CY17PLUS):
@@ -348,18 +355,42 @@ class EngineStatusTests(unittest.IsolatedAsyncioTestCase):
                     client.get_engine_status_21mm.assert_not_awaited()
 
     def test_numeric_and_word_engine_statuses(self):
-        vehicle = make_vehicle()
-        for status, expected in [("1", True), ("0", False), ("started", True), ("stopped", False)]:
-            with self.subTest(status=status):
-                vehicle._parse_engine_status({
-                    "status": status, "date": "2026-09-14T07:00:00Z", "timer": 20,
-                })
-                feature = vehicle.features[VehicleFeatures.RemoteStartStatus]
-                self.assertEqual(feature.on, expected)
-                self.assertEqual(feature.timer, 20)
+        for make in (make_vehicle, make_17cy_vehicle):
+            vehicle = make()
+            for status, expected in [("1", True), ("0", False), ("started", True), ("stopped", False)]:
+                with self.subTest(status=status):
+                    vehicle._parse_engine_status({
+                        "status": status, "date": "2026-09-14T07:00:00Z", "timer": 20,
+                    })
+                    feature = vehicle.features[VehicleFeatures.RemoteStartStatus]
+                    self.assertEqual(feature.on, expected)
+                    self.assertEqual(feature.timer, 20)
 
 
 class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_electric_poll_and_refresh_pass_actual_vehicle_generation(self):
+        for generation in (ApiVehicleGeneration.CY17, ApiVehicleGeneration.CY17PLUS, ApiVehicleGeneration.MM21):
+            with self.subTest(generation=generation):
+                client = types.SimpleNamespace(auth=types.SimpleNamespace(get_guid=AsyncMock(return_value="guid")))
+                for method in (
+                    "get_telemetry", "get_electric_status", "get_electric_realtime_status",
+                    "graphql_pre_wake", "graphql_confirm_subscription", "graphql_refresh_status",
+                    "get_vehicle_status_17cy", "get_vehicle_status_17cyplus", "get_vehicle_status_21mm",
+                    "get_engine_status_17cy", "get_engine_status_17cyplus", "get_engine_status_21mm",
+                    "send_refresh_request_17cy", "send_refresh_request_17cyplus", "send_refresh_request_21mm",
+                ):
+                    setattr(client, method, AsyncMock(return_value=None))
+                vehicle = make_17cy_vehicle(client) if generation == ApiVehicleGeneration.CY17 else make_vehicle(client)
+                vehicle._generation = generation
+                vehicle._has_electric = True
+                vehicle._region = "CA"
+
+                await vehicle.update()
+                await vehicle.poll_vehicle_refresh()
+
+                client.get_electric_status.assert_awaited_once_with("TESTVIN", region="CA", generation=generation.value)
+                client.get_electric_realtime_status.assert_awaited_once_with("TESTVIN", generation.value, "CA")
+
     class Auth:
         async def get_guid(self):
             return "guid"
@@ -590,32 +621,37 @@ class VehicleStateTests(unittest.TestCase):
         self.assertEqual((location.lat, location.value), (34.05, -118.25))
 
     def test_rest_charging_state_distinguishes_waiting_and_completion(self):
-        for plug_status, charging in ((40, True), (56, True), (36, False), (45, False), (60, False)):
-            with self.subTest(plug_status=plug_status):
-                vehicle = make_vehicle()
-                vehicle._parse_electric_status({
-                    "vehicleInfo": {"chargeInfo": {"plugStatus": plug_status, "connectorStatus": 5}},
-                })
-                self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
+        for make in (make_vehicle, make_17cy_vehicle):
+            for plug_status, charging in ((40, True), (56, True), (36, False), (45, False), (60, False)):
+                with self.subTest(plug_status=plug_status):
+                    vehicle = make()
+                    vehicle._parse_electric_status({
+                        "vehicleInfo": {"chargeInfo": {"plugStatus": plug_status, "connectorStatus": 5}},
+                    })
+                    self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
 
     def test_partial_electric_status_preserves_existing_values(self):
-        vehicle = make_vehicle()
-        vehicle._parse_electric_status({
-            "vehicleInfo": {"chargeInfo": {
-                "plugStatus": 40, "chargeRemainingAmount": 65,
-                "evDistance": 30, "evDistanceUnit": "mi",
-            }},
-        })
-        vehicle._parse_electric_status({
-            "vehicleInfo": {"chargeInfo": {"connectorStatus": 5}},
-        })
-        self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 65)
-        self.assertEqual(vehicle.features[VehicleFeatures.ChargeDistance].value, 30)
-        self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
-        self.assertNotIn(VehicleFeatures.RemainingChargeTime, vehicle.features)
+        for make in (make_vehicle, make_17cy_vehicle):
+            vehicle = make()
+            vehicle._parse_electric_status({
+                "vehicleInfo": {"chargeInfo": {
+                    "plugStatus": 40, "chargeRemainingAmount": 65,
+                    "evDistance": 30, "evDistanceUnit": "mi",
+                }},
+            })
+            vehicle._parse_electric_status({
+                "vehicleInfo": {"chargeInfo": {"connectorStatus": 5}},
+            })
+            self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 65)
+            self.assertEqual(vehicle.features[VehicleFeatures.ChargeDistance].value, 30)
+            self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
+            self.assertNotIn(VehicleFeatures.RemainingChargeTime, vehicle.features)
 
     def test_unknown_charging_state_does_not_create_or_clear_state(self):
         for vehicle, apply in (
+            (make_17cy_vehicle(), lambda vehicle, value: vehicle._parse_electric_status({
+                "vehicleInfo": {"chargeInfo": {"plugStatus": value}},
+            })),
             (make_vehicle(), lambda vehicle, value: vehicle._parse_electric_status({
                 "vehicleInfo": {"chargeInfo": {"plugStatus": value}},
             })),
@@ -631,15 +667,16 @@ class VehicleStateTests(unittest.TestCase):
                 self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
 
     def test_older_electric_response_cannot_overwrite_newer_charge_level(self):
-        vehicle = make_vehicle()
-        for timestamp, level in (("07:01:00", 65), ("07:00:00", 64)):
-            vehicle._parse_electric_status({
-                "vehicleInfo": {
-                    "acquisitionDatetime": f"2026-09-14T{timestamp}Z",
-                    "chargeInfo": {"chargeRemainingAmount": level},
-                },
-            })
-        self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 65)
+        for make in (make_vehicle, make_17cy_vehicle):
+            vehicle = make()
+            for timestamp, level in (("07:01:00", 65), ("07:00:00", 64)):
+                vehicle._parse_electric_status({
+                    "vehicleInfo": {
+                        "acquisitionDatetime": f"2026-09-14T{timestamp}Z",
+                        "chargeInfo": {"chargeRemainingAmount": level},
+                    },
+                })
+            self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 65)
 
     def test_telemetry_tires_use_their_measurement_timestamp(self):
         legacy = SeventeenCYToyotaVehicle(
@@ -1131,9 +1168,11 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
             object(), lambda vin, status: received.append((vin, status))
         )
         status = {"vin": "TESTVIN", "vehicleState": {"doors": {}}}
+        handler._vehicle_contexts = {"TESTVIN": {}}
+        handler._subscriptions = {"TESTVIN": "subscription"}
 
         await handler._handle_message(
-            {"type": "data", "payload": {"data": {"onVehicleStatusUpdated": status}}},
+            {"type": "data", "id": "subscription", "payload": {"data": {"onVehicleStatusUpdated": status}}},
             None,
             None,
         )
@@ -1254,6 +1293,8 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 handler = ToyotaWebSocketHandler(
                     client, lambda vin, pushed: current.apply_graphql_status(pushed)
                 )
+                handler._vehicle_contexts = {"TESTVIN": {}}
+                handler._subscriptions = {"TESTVIN": "subscription"}
                 client._ws_handler = handler
                 client.block = True
                 task = asyncio.create_task(get_vehicles(client))
@@ -1281,6 +1322,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                         await handler._handle_message(
                             {
                                 "type": "data",
+                                "id": "subscription",
                                 "payload": {"data": {"onVehicleStatusUpdated": pushed}},
                             },
                             "token",

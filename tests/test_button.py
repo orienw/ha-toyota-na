@@ -200,6 +200,7 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 runtime_spec = importlib.util.spec_from_file_location(
     "custom_components.toyota_na.integration_runtime",
     INTEGRATION / "__init__.py",
+    submodule_search_locations=None,
 )
 integration_runtime = importlib.util.module_from_spec(runtime_spec)
 sys.modules[runtime_spec.name] = integration_runtime
@@ -587,6 +588,36 @@ class DeviceTrackerTests(unittest.IsolatedAsyncioTestCase):
 
 
 class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_poll_reconciles_only_current_push_capable_vehicles(self):
+        vehicles = []
+        for vin, generation, subscribed in (
+            ("NEWVIN", ApiVehicleGeneration.MM21, True),
+            ("OTHERNEWVIN", ApiVehicleGeneration.MM24, True),
+            ("EXPIREDVIN", ApiVehicleGeneration.MM24, False),
+            ("LEGACYVIN", ApiVehicleGeneration.CY17, True),
+        ):
+            vehicle = FakeVehicle(set(), vin=vin)
+            vehicle.generation = generation
+            vehicle.subscribed = subscribed
+            vehicle.region = "CA"
+            vehicles.append(vehicle)
+        coordinator = DataUpdateCoordinator([])
+        handler = types.SimpleNamespace(update_vehicle_contexts=mock.AsyncMock())
+        client = types.SimpleNamespace(_ws_handler=handler)
+        with (
+            mock.patch.object(integration_runtime, "get_vehicles", mock.AsyncMock(return_value=vehicles)),
+            mock.patch.object(integration_runtime, "automatic_wake_due", return_value=False),
+            self.assertLogs(integration_runtime.__name__, level="WARNING"),
+        ):
+            result = await integration_runtime.update_vehicles_status(
+                FakeHass(coordinator), client, ConfigEntry(), coordinator,
+            )
+        self.assertEqual(result, vehicles)
+        handler.update_vehicle_contexts.assert_awaited_once_with({
+            "NEWVIN": {"region": "CA", "backdoor_type": "trunk"},
+            "OTHERNEWVIN": {"region": "CA", "backdoor_type": "trunk"},
+        })
+
     async def test_automatic_wakes_schedule_one_followup_poll(self):
         vehicles = [
             FakeVehicle(set(), vin="FIRSTVIN"),

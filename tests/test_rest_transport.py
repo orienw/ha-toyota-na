@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
@@ -22,6 +23,8 @@ class Client:
     api_get = ToyotaOneClient.api_get
     api_post = ToyotaOneClient.api_post
     api_request = client_module.api_request
+    get_electric_status = client_module.get_electric_status
+    auth = types.SimpleNamespace(get_device_id=lambda: "device")
 
     async def _auth_headers(self):
         return {"AUTHORIZATION": "Bearer test-token"}
@@ -40,6 +43,45 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.patch = patch.object(client_module.aiohttp, "ClientSession", return_value=self.session)
         self.patch.start()
         self.addCleanup(self.patch.stop)
+
+    async def test_electric_status_uses_generation_specific_version_and_headers(self):
+        status = {"vehicleInfo": {"chargeInfo": {"chargeRemainingAmount": 80}}}
+        self.response.json.return_value = {"payload": status}
+        for generation, version in (("17CY", "v2"), ("17CYPLUS", "v3"), ("21MM", "v3")):
+            with self.subTest(generation=generation):
+                result = await Client().get_electric_status(
+                    "TESTVIN", region="CA", generation=generation,
+                )
+                args, kwargs = self.session.request.call_args
+                self.assertEqual(args, ("GET", f"https://onecdn.telematicsct.com/oneapi/{version}/electric/status"))
+                self.assertEqual(kwargs["headers"]["X-GENERATION"], generation)
+                self.assertEqual(kwargs["headers"]["x-region"], "CA")
+                self.assertEqual(result, status)
+
+    async def test_electric_refresh_followup_keeps_generation_and_request_number(self):
+        status = {"vehicleInfo": {"chargeInfo": {"plugStatus": 40}}}
+        for generation, version, query in (
+            ("17CY", "v2", ""),
+            ("17CYPLUS", "v3", "?realtime-status=request-123"),
+            ("21MM", "v3", "?realtime-status=request-123"),
+        ):
+            with self.subTest(generation=generation):
+                self.session.request.reset_mock()
+                self.response.json.side_effect = [
+                    {"payload": {"appRequestNo": "request-123", "returnCode": "ONE-RES-10000"}},
+                    {"payload": status},
+                ]
+                result = await client_module.get_electric_realtime_status(
+                    Client(), "TESTVIN", generation, "CA",
+                )
+                refresh, followup = self.session.request.call_args_list
+                self.assertEqual(refresh.args, ("POST", "https://onecdn.telematicsct.com/oneapi/v2/electric/realtime-status"))
+                self.assertEqual(refresh.kwargs["headers"]["X-GENERATION"], generation)
+                self.assertEqual(refresh.kwargs["headers"]["device-id"], "device")
+                UUID(refresh.kwargs["headers"]["X-CORRELATIONID"])
+                self.assertEqual(followup.args, ("GET", f"https://onecdn.telematicsct.com/oneapi/{version}/electric/status{query}"))
+                self.assertEqual(followup.kwargs["headers"]["X-GENERATION"], generation)
+                self.assertEqual(result, status)
 
     async def test_21mm_command_reaches_cdn_root_with_vehicle_headers(self):
         await client_module.remote_request_21mm(Client(), "TESTVIN", "engine-start", "CA")

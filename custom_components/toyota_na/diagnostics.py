@@ -119,7 +119,7 @@ async def async_get_config_entry_diagnostics(
         try:
             if api_generation != "24MM":
                 user_electric_status = await client.get_electric_status(
-                    vin, region=region
+                    vin, region=region, generation=api_generation
                 )
         except Exception as err:
             _LOGGER.debug(

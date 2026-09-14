@@ -1,15 +1,4 @@
-"""AWS AppSync WebSocket handler for Toyota vehicle status subscriptions.
-
-The 21MM and 24MM paths use AppSync subscriptions to supplement polled
-status with live door, lock, window, cargo opening, and engine updates.
-
-Flow (per APK analysis of SubscribeVehicleStatusDefaultRepo):
-1. Connect WebSocket to AppSync realtime endpoint
-2. Subscribe to ReceiveVehicleStatus for each VIN
-3. On subscription active (start_ack) -> call ConfirmSubscription mutation
-4. PreWake + RefreshStatus trigger the vehicle to upload fresh data
-5. Data arrives via WebSocket push -> cached and sent to Home Assistant immediately
-"""
+"""AppSync subscriptions for 21MM and 24MM vehicle status updates."""
 import asyncio
 import base64
 import json
@@ -22,47 +11,18 @@ from typing import Optional
 import aiohttp
 
 from .patch_client import (
+    GRAPHQL_VEHICLE_STATUS_FIELDS,
     GRAPHQL_WS_ENDPOINT,
     appsync_authorization,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# Subscription query from Toyota app v3.1.0 APK (yj/h$i.smali)
 SUBSCRIBE_VEHICLE_STATUS = (
     "subscription ReceiveVehicleStatus($vin: String!) {"
     " onVehicleStatusUpdated(vin: $vin) {"
-    " vin lastUpdateDateTime"
-    " vehicleState {"
-    " lastUpdateDateTime driverPosition"
-    " doors {"
-    " driverSide { lock { status } position { status } }"
-    " passengerSide { lock { status } position { status } }"
-    " rearDriverSide { lock { status } position { status } }"
-    " rearPassengerSide { lock { status } position { status } }"
-    " }"
-    " windows {"
-    " driverSide { position { status } }"
-    " passengerSide { position { status } }"
-    " rearDriverSide { position { status } }"
-    " rearPassengerSide { position { status } }"
-    " }"
-    " hatch { lock { status } position { status } }"
-    " hood { position { status } }"
-    " moonroof { position { status } }"
-    " trunk { lock { status } position { status } }"
-    " tailgate { lock { status } position { status } }"
-    " engine { running status }"
-    " }"
-    " location { latitude longitude lastUpdateDateTime }"
-    " telemetry {"
-    " lastUpdateDateTime"
-    " odo { unit value }"
-    " fugage { unit value }"
-    " range { unit value }"
-    " }"
-    " }"
-    "}"
+    + GRAPHQL_VEHICLE_STATUS_FIELDS
+    + "} }"
 )
 
 
@@ -81,12 +41,12 @@ class ToyotaWebSocketHandler:
         self._ws = None
         self._subscriptions = {}  # vin -> subscription_id
         self._cached_status = {}  # vin -> latest vehicle status dict
-        self._confirmed_vins = set()  # VINs that have been confirmed
-        self._vins = []
         self._vehicle_contexts: dict[str, dict] = {}
         self._task = None
-        self._retry_task = None
+        self._retry_tasks = {}
+        self._retry_delays = {}
         self._running = False
+        self._ready = False
         self._reconnect_delay = 5
         self._max_reconnect_delay = 300
         self._keepalive_timeout = 300
@@ -103,35 +63,67 @@ class ToyotaWebSocketHandler:
     async def start(self, vehicle_contexts):
         """Start the WebSocket handler and subscribe to the given VINs."""
         self._running = True
+        await self.update_vehicle_contexts(vehicle_contexts)
+
+    async def update_vehicle_contexts(self, vehicle_contexts):
+        """Reconcile subscriptions with the account's current vehicles."""
         if isinstance(vehicle_contexts, Mapping):
-            self._vehicle_contexts = {
+            contexts = {
                 vin: dict(context) for vin, context in vehicle_contexts.items()
             }
         else:
-            self._vehicle_contexts = {vin: {} for vin in vehicle_contexts}
-        self._vins = list(self._vehicle_contexts)
-        if self._vins:
-            self._task = asyncio.ensure_future(self._run_loop())
-            _LOGGER.debug("WebSocket handler started for %d VINs", len(self._vins))
+            contexts = {vin: {} for vin in vehicle_contexts}
+        previous_contexts = self._vehicle_contexts
+        self._vehicle_contexts = contexts
+        for vin, context in previous_contexts.items():
+            if contexts.get(vin) == context:
+                continue
+            self._cancel_retry(vin)
+            self._retry_delays.pop(vin, None)
+            self._cached_status.pop(vin, None)
+            sub_id = self._subscriptions.pop(vin, None)
+            if sub_id and self.is_connected:
+                try:
+                    await self._ws.send_json({"id": sub_id, "type": "stop"})
+                except Exception as err:
+                    _LOGGER.debug("WebSocket: failed to stop subscription: %s", err)
+                    await self._ws.close()
+
+        if not self._running:
+            return
+        if not contexts:
+            await self._disconnect()
+        elif self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._run_loop())
+        elif self._ready:
+            for vin in contexts:
+                if vin not in self._subscriptions and vin not in self._retry_tasks:
+                    self._schedule_retry(vin, delay=0)
 
     async def stop(self):
         """Stop the WebSocket handler and clean up resources."""
         self._running = False
+        await self._disconnect()
+        _LOGGER.debug("WebSocket handler stopped")
+
+    async def _disconnect(self):
+        self._ready = False
+        if self._task:
+            self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
+            self._task = None
+        await self._cancel_retries()
         if self._ws and not self._ws.closed:
             await self._ws.close()
         if self._session and not self._session.closed:
             await self._session.close()
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        _LOGGER.debug("WebSocket handler stopped")
+        self._ws = None
+        self._session = None
+        self._subscriptions.clear()
 
     async def _run_loop(self):
         """Main loop: connect, listen, reconnect on failure."""
-        while self._running:
+        while self._running and self._vehicle_contexts:
             try:
                 await self._connect_and_listen()
             except asyncio.CancelledError:
@@ -139,7 +131,7 @@ class ToyotaWebSocketHandler:
             except Exception as e:
                 _LOGGER.debug("WebSocket connection error: %s", e)
 
-            if not self._running:
+            if not self._running or not self._vehicle_contexts:
                 return
 
             _LOGGER.debug(
@@ -157,7 +149,7 @@ class ToyotaWebSocketHandler:
         device_id = self._client.auth.get_device_id()
 
         # AppSync requires auth headers as base64-encoded URL params
-        first_vin = self._vins[0] if self._vins else ""
+        first_vin = next(iter(self._vehicle_contexts), "")
         first_context = self._vehicle_contexts.get(first_vin, {})
         auth_header = appsync_authorization(
             token,
@@ -179,12 +171,6 @@ class ToyotaWebSocketHandler:
             self._ws = await self._session.ws_connect(
                 ws_url, protocols=["graphql-ws"], heartbeat=30
             )
-        except Exception:
-            await self._session.close()
-            self._session = None
-            raise
-
-        try:
             # Initiate AppSync connection handshake
             await self._ws.send_json({"type": "connection_init"})
             self._keepalive_deadline = monotonic() + 30
@@ -205,6 +191,8 @@ class ToyotaWebSocketHandler:
                 ):
                     break
         finally:
+            self._ready = False
+            await self._cancel_retries()
             self._subscriptions.clear()
             if self._ws and not self._ws.closed:
                 await self._ws.close()
@@ -219,16 +207,17 @@ class ToyotaWebSocketHandler:
         msg_type = msg.get("type")
 
         if msg_type == "connection_ack":
+            self._ready = True
             self._keepalive_timeout = (
                 msg.get("payload", {}).get("connectionTimeoutMs", 300_000) / 1000
             )
             self._keepalive_deadline = monotonic() + self._keepalive_timeout
             _LOGGER.debug(
                 "WebSocket: connected, subscribing to %d VINs",
-                len(self._vins),
+                len(self._vehicle_contexts),
             )
             self._reconnect_delay = 5  # Reset backoff on successful connect
-            for vin in self._vins:
+            for vin in list(self._vehicle_contexts):
                 await self._subscribe_vin(vin, token, guid)
 
         elif msg_type == "start_ack":
@@ -243,6 +232,7 @@ class ToyotaWebSocketHandler:
             )
             # Per app flow: call ConfirmSubscription after subscription active
             if vin:
+                self._cancel_retry(vin)
                 try:
                     context = self._vehicle_contexts.get(vin, {})
                     result = await self._client.graphql_confirm_subscription(
@@ -271,6 +261,13 @@ class ToyotaWebSocketHandler:
             status = payload.get("onVehicleStatusUpdated")
             if status:
                 vin = status.get("vin", "")
+                if (
+                    vin not in self._vehicle_contexts
+                    or not msg.get("id")
+                    or self._subscriptions.get(vin) != msg["id"]
+                ):
+                    return
+                self._retry_delays.pop(vin, None)
                 _LOGGER.info(
                     "WebSocket: received vehicle status for VIN ...%s "
                     "(updated: %s)",
@@ -288,8 +285,19 @@ class ToyotaWebSocketHandler:
                             e,
                         )
 
-        elif msg_type == "error":
-            _LOGGER.debug("WebSocket error: %s", json.dumps(msg)[:500])
+        elif msg_type in ("error", "complete"):
+            vin = next(
+                (vin for vin, sub_id in self._subscriptions.items() if sub_id == msg.get("id")),
+                None,
+            )
+            if vin is not None:
+                self._subscriptions.pop(vin)
+                _LOGGER.warning(
+                    "WebSocket: subscription ended for VIN ...%s (%s); retrying",
+                    vin[-4:], msg_type,
+                )
+                _LOGGER.debug("WebSocket subscription response: %s", json.dumps(msg)[:500])
+                self._schedule_retry(vin)
 
         elif msg_type == "ka":
             self._keepalive_deadline = monotonic() + self._keepalive_timeout
@@ -303,6 +311,8 @@ class ToyotaWebSocketHandler:
 
     async def _subscribe_vin(self, vin, token, guid):
         """Subscribe to vehicle status updates for a specific VIN."""
+        if vin not in self._vehicle_contexts:
+            return
         sub_id = str(uuid.uuid4())
         self._subscriptions[vin] = sub_id
         context = self._vehicle_contexts.get(vin, {})
@@ -329,4 +339,46 @@ class ToyotaWebSocketHandler:
                 },
             },
         }
+        self._schedule_retry(vin, delay=30)
         await self._ws.send_json(subscription)
+
+    def _cancel_retry(self, vin):
+        task = self._retry_tasks.pop(vin, None)
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+
+    async def _cancel_retries(self):
+        tasks = list(self._retry_tasks.values())
+        for vin in list(self._retry_tasks):
+            self._cancel_retry(vin)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _schedule_retry(self, vin, delay=None):
+        self._cancel_retry(vin)
+        if not self._running or not self._ready or vin not in self._vehicle_contexts:
+            return
+        if delay is None:
+            delay = self._retry_delays.get(vin, 5)
+            self._retry_delays[vin] = min(delay * 2, self._max_reconnect_delay)
+        self._retry_tasks[vin] = asyncio.create_task(self._retry_subscription(vin, delay))
+
+    async def _retry_subscription(self, vin, delay):
+        try:
+            await asyncio.sleep(delay)
+            sub_id = self._subscriptions.pop(vin, None)
+            if sub_id:
+                await self._ws.send_json({"id": sub_id, "type": "stop"})
+                self._schedule_retry(vin)
+                return
+            token = await self._client.auth.get_access_token()
+            guid = await self._client.auth.get_guid()
+            await self._subscribe_vin(vin, token, guid)
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("WebSocket: subscription retry failed: %s", err)
+            self._schedule_retry(vin)
+        finally:
+            if self._retry_tasks.get(vin) is asyncio.current_task():
+                self._retry_tasks.pop(vin)
