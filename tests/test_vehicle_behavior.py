@@ -6,7 +6,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +56,7 @@ from custom_components.toyota_na.wake_policy import (
     record_vehicle_wake,
 )
 from custom_components.toyota_na.websocket_handler import ToyotaWebSocketHandler
+from custom_components.toyota_na import websocket_handler as websocket_module
 
 import toyota_na.vehicle.vehicle_generations.seventeen_cy as upstream_17cy
 import toyota_na.vehicle.vehicle_generations.seventeen_cy_plus as upstream_17cyplus
@@ -279,11 +280,51 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
 
 
 class EngineStatusTests(unittest.IsolatedAsyncioTestCase):
+    async def test_push_received_during_engine_poll_wins(self):
+        for generation in (ApiVehicleGeneration.MM21, ApiVehicleGeneration.CY17PLUS):
+            with self.subTest(generation=generation):
+                async def get_engine_status(*args):
+                    vehicle.apply_graphql_status({
+                        "vehicleState": {
+                            "engine": {"running": True, "lastUpdateDateTime": "2026-09-14T07:01:00Z"},
+                        },
+                    })
+                    return {"status": "0", "date": "2026-09-14T07:00:00Z", "timer": 20}
+
+                client = types.SimpleNamespace(
+                    get_telemetry=AsyncMock(return_value={}),
+                    get_vehicle_status_21mm=AsyncMock(return_value={}),
+                    get_vehicle_status_17cyplus=AsyncMock(return_value={}),
+                    get_engine_status_21mm=get_engine_status,
+                    get_engine_status_17cyplus=get_engine_status,
+                )
+                vehicle = make_vehicle(client)
+                vehicle._generation = generation
+
+                await vehicle.update()
+
+                self.assertTrue(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
+
+                # The date is the engine start time, not the status observation time.
+                vehicle._parse_engine_status({"status": "0", "date": "2026-09-14T07:00:00Z", "timer": 20})
+                self.assertFalse(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
+
+    def test_unknown_engine_status_does_not_report_stopped(self):
+        vehicle = make_vehicle()
+        vehicle._parse_engine_status({"status": "unknown"})
+        self.assertNotIn(VehicleFeatures.RemoteStartStatus, vehicle.features)
+        vehicle._parse_engine_status({"status": "started"})
+        for status in (None, "unknown", "", "unavailable"):
+            with self.subTest(status=status):
+                vehicle._parse_engine_status({"status": status})
+                self.assertTrue(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
+
     async def test_poll_uses_generation_specific_engine_status(self):
         for generation in (ApiVehicleGeneration.MM21, ApiVehicleGeneration.CY17PLUS):
             with self.subTest(generation=generation):
                 client = types.SimpleNamespace(
                     get_telemetry=AsyncMock(return_value={}),
+                    get_vehicle_status_21mm=AsyncMock(return_value={}),
                     get_vehicle_status_17cyplus=AsyncMock(return_value={}),
                     get_engine_status_21mm=AsyncMock(return_value={"status": "started"}),
                     get_engine_status_17cyplus=AsyncMock(return_value={"status": "1"}),
@@ -296,9 +337,13 @@ class EngineStatusTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertTrue(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
                 if generation == ApiVehicleGeneration.MM21:
+                    client.get_vehicle_status_21mm.assert_awaited_once_with("TESTVIN", "CA")
+                    client.get_vehicle_status_17cyplus.assert_not_awaited()
                     client.get_engine_status_21mm.assert_awaited_once_with("TESTVIN", "CA")
                     client.get_engine_status_17cyplus.assert_not_awaited()
                 else:
+                    client.get_vehicle_status_17cyplus.assert_awaited_once_with("TESTVIN", "CA")
+                    client.get_vehicle_status_21mm.assert_not_awaited()
                     client.get_engine_status_17cyplus.assert_awaited_once_with("TESTVIN", "CA")
                     client.get_engine_status_21mm.assert_not_awaited()
 
@@ -336,6 +381,9 @@ class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
         async def send_refresh_request_17cyplus(self, *args):
             self.calls.append(("rest_refresh", args))
 
+        async def send_refresh_request_21mm(self, *args):
+            self.calls.append(("route_refresh", args))
+
     async def test_17cyplus_refresh_uses_only_rest(self):
         client = self.Client()
         vehicle = SeventeenCYPlusToyotaVehicle(
@@ -368,7 +416,7 @@ class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
                 ("pre_wake", ("guid", "US")),
                 ("confirm", ("TESTVIN", "trunk", "US")),
                 ("graphql_refresh", ("TESTVIN", "US")),
-                ("rest_refresh", ("TESTVIN", "US")),
+                ("route_refresh", ("TESTVIN", "US")),
             ],
         )
 
@@ -525,6 +573,74 @@ class WakePolicyTests(unittest.TestCase):
 
 
 class VehicleStateTests(unittest.TestCase):
+    def test_rest_location_uses_its_own_acquisition_timestamp(self):
+        vehicle = make_vehicle()
+        vehicle.apply_graphql_status({
+            "location": {
+                "latitude": 34.05, "longitude": -118.25,
+                "lastUpdateDateTime": "2026-09-14T07:01:00Z",
+            },
+        })
+        vehicle._parse_vehicle_status({
+            "occurrenceDate": "2026-09-14T07:02:00Z",
+            "locationAcquisitionDatetime": "2026-09-14T07:00:00Z",
+            "latitude": 35, "longitude": -119,
+        })
+        location = vehicle.features[VehicleFeatures.ParkingLocation]
+        self.assertEqual((location.lat, location.value), (34.05, -118.25))
+
+    def test_rest_charging_state_distinguishes_waiting_and_completion(self):
+        for plug_status, charging in ((40, True), (56, True), (36, False), (45, False), (60, False)):
+            with self.subTest(plug_status=plug_status):
+                vehicle = make_vehicle()
+                vehicle._parse_electric_status({
+                    "vehicleInfo": {"chargeInfo": {"plugStatus": plug_status, "connectorStatus": 5}},
+                })
+                self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
+
+    def test_partial_electric_status_preserves_existing_values(self):
+        vehicle = make_vehicle()
+        vehicle._parse_electric_status({
+            "vehicleInfo": {"chargeInfo": {
+                "plugStatus": 40, "chargeRemainingAmount": 65,
+                "evDistance": 30, "evDistanceUnit": "mi",
+            }},
+        })
+        vehicle._parse_electric_status({
+            "vehicleInfo": {"chargeInfo": {"connectorStatus": 5}},
+        })
+        self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 65)
+        self.assertEqual(vehicle.features[VehicleFeatures.ChargeDistance].value, 30)
+        self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
+        self.assertNotIn(VehicleFeatures.RemainingChargeTime, vehicle.features)
+
+    def test_unknown_charging_state_does_not_create_or_clear_state(self):
+        for vehicle, apply in (
+            (make_vehicle(), lambda vehicle, value: vehicle._parse_electric_status({
+                "vehicleInfo": {"chargeInfo": {"plugStatus": value}},
+            })),
+            (make_24mm_vehicle(), lambda vehicle, value: vehicle._parse_graphql_electric_status({
+                "charging": {"chargingState": value},
+            })),
+        ):
+            with self.subTest(generation=vehicle.api_generation):
+                apply(vehicle, "unknown")
+                self.assertNotIn(VehicleFeatures.ChargingStatus, vehicle.features)
+                apply(vehicle, "40")
+                apply(vehicle, "unknown")
+                self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
+
+    def test_older_electric_response_cannot_overwrite_newer_charge_level(self):
+        vehicle = make_vehicle()
+        for timestamp, level in (("07:01:00", 65), ("07:00:00", 64)):
+            vehicle._parse_electric_status({
+                "vehicleInfo": {
+                    "acquisitionDatetime": f"2026-09-14T{timestamp}Z",
+                    "chargeInfo": {"chargeRemainingAmount": level},
+                },
+            })
+        self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 65)
+
     def test_telemetry_tires_use_their_measurement_timestamp(self):
         legacy = SeventeenCYToyotaVehicle(
             client=object(),
@@ -956,6 +1072,59 @@ class VehicleStateTests(unittest.TestCase):
 
 
 class WebSocketTests(unittest.IsolatedAsyncioTestCase):
+    async def test_appsync_keepalive_deadline_ignores_other_traffic(self):
+        handler = ToyotaWebSocketHandler(object())
+        with patch.object(websocket_module, "monotonic", return_value=100):
+            await handler._handle_message(
+                {"type": "connection_ack", "payload": {"connectionTimeoutMs": 120_000}},
+                "token", "guid",
+            )
+        self.assertEqual(handler._keepalive_deadline, 220)
+
+        with patch.object(websocket_module, "monotonic", return_value=150):
+            await handler._handle_message({"type": "data", "payload": {}}, "token", "guid")
+            self.assertEqual(handler._keepalive_deadline, 220)
+            await handler._handle_message({"type": "ka"}, "token", "guid")
+        self.assertEqual(handler._keepalive_deadline, 270)
+
+    async def test_missing_appsync_keepalive_closes_socket_and_session(self):
+        websocket = AsyncMock()
+        websocket.closed = False
+        websocket.receive.return_value = types.SimpleNamespace(
+            type=websocket_module.aiohttp.WSMsgType.TEXT,
+            data=json.dumps({"type": "connection_ack", "payload": {"connectionTimeoutMs": 1000}}),
+        )
+        session = MagicMock()
+        session.closed = False
+        session.ws_connect = AsyncMock(return_value=websocket)
+        session.close = AsyncMock()
+        auth = types.SimpleNamespace(
+            get_access_token=AsyncMock(return_value="token"),
+            get_guid=AsyncMock(return_value="guid"),
+            get_device_id=lambda: "device",
+        )
+        handler = ToyotaWebSocketHandler(types.SimpleNamespace(auth=auth))
+        handler._running = True
+        with (
+            patch.object(websocket_module.aiohttp, "ClientSession", return_value=session),
+            patch.object(websocket_module, "monotonic", side_effect=[0, 0, 0, 2]),
+        ):
+            with self.assertRaises(asyncio.TimeoutError):
+                await handler._connect_and_listen()
+
+        websocket.close.assert_awaited_once()
+        session.close.assert_awaited_once()
+        self.assertFalse(handler.is_connected)
+
+    async def test_connection_rejection_exits_listen_loop(self):
+        handler = ToyotaWebSocketHandler(object())
+        with self.assertLogs(websocket_module.__name__, level="WARNING"):
+            with self.assertRaises(ConnectionError):
+                await handler._handle_message(
+                    {"type": "connection_error", "payload": {"message": "rejected"}},
+                    "token", "guid",
+                )
+
     async def test_push_is_forwarded_immediately(self):
         received = []
         handler = ToyotaWebSocketHandler(
@@ -1068,7 +1237,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                     async def get_telemetry(self, *args):
                         return {}
 
-                    async def get_engine_status_17cyplus(self, *args):
+                    async def get_engine_status_21mm(self, *args):
                         return None
 
                     async def get_status(self, *args):
@@ -1077,7 +1246,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                             await resume.wait()
                         return status
 
-                    get_vehicle_status_17cyplus = get_status
+                    get_vehicle_status_21mm = get_status
                     graphql_get_vehicle_status = get_status
 
                 client = Client()
@@ -1193,7 +1362,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
             async def get_telemetry(self, *args):
                 return {}
 
-            async def get_vehicle_status_17cyplus(self, *args):
+            async def get_vehicle_status_21mm(self, *args):
                 return {
                     "vehicleStatus": [
                         {
@@ -1205,7 +1374,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                     ]
                 }
 
-            async def get_engine_status_17cyplus(self, *args):
+            async def get_engine_status_21mm(self, *args):
                 return None
 
         vehicle = make_vehicle(Client())
@@ -1226,10 +1395,10 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
             async def get_telemetry(self, *args):
                 calls.append(("telemetry", args))
 
-            async def get_vehicle_status_17cyplus(self, *args):
+            async def get_vehicle_status_21mm(self, *args):
                 calls.append(("status", args))
 
-            async def get_engine_status_17cyplus(self, *args):
+            async def get_engine_status_21mm(self, *args):
                 calls.append(("engine", args))
 
         vehicles = await get_vehicles(Client())
@@ -1297,7 +1466,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
             async def get_telemetry(self, *args):
                 return {}
 
-            async def get_vehicle_status_17cyplus(self, *args):
+            async def get_vehicle_status_21mm(self, *args):
                 nonlocal status_calls
                 status_calls += 1
                 if status_calls == 1:
@@ -1320,7 +1489,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                     }
                 return None
 
-            async def get_engine_status_17cyplus(self, *args):
+            async def get_engine_status_21mm(self, *args):
                 return None
 
         client = Client()

@@ -16,6 +16,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable, Mapping
+from time import monotonic
 from typing import Optional
 
 import aiohttp
@@ -88,6 +89,8 @@ class ToyotaWebSocketHandler:
         self._running = False
         self._reconnect_delay = 5
         self._max_reconnect_delay = 300
+        self._keepalive_timeout = 300
+        self._keepalive_deadline = None
 
     @property
     def is_connected(self):
@@ -184,13 +187,19 @@ class ToyotaWebSocketHandler:
         try:
             # Initiate AppSync connection handshake
             await self._ws.send_json({"type": "connection_init"})
+            self._keepalive_deadline = monotonic() + 30
 
-            async for msg in self._ws:
+            while self._running:
+                msg = await asyncio.wait_for(
+                    self._ws.receive(),
+                    timeout=max(0, self._keepalive_deadline - monotonic()),
+                )
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     await self._handle_message(
                         json.loads(msg.data), token, guid
                     )
                 elif msg.type in (
+                    aiohttp.WSMsgType.CLOSE,
                     aiohttp.WSMsgType.CLOSED,
                     aiohttp.WSMsgType.ERROR,
                 ):
@@ -203,12 +212,17 @@ class ToyotaWebSocketHandler:
                 await self._session.close()
             self._ws = None
             self._session = None
+            self._keepalive_deadline = None
 
     async def _handle_message(self, msg, token, guid):
         """Handle an AppSync WebSocket protocol message."""
         msg_type = msg.get("type")
 
         if msg_type == "connection_ack":
+            self._keepalive_timeout = (
+                msg.get("payload", {}).get("connectionTimeoutMs", 300_000) / 1000
+            )
+            self._keepalive_deadline = monotonic() + self._keepalive_timeout
             _LOGGER.debug(
                 "WebSocket: connected, subscribing to %d VINs",
                 len(self._vins),
@@ -278,13 +292,14 @@ class ToyotaWebSocketHandler:
             _LOGGER.debug("WebSocket error: %s", json.dumps(msg)[:500])
 
         elif msg_type == "ka":
-            pass  # keepalive, no action needed
+            self._keepalive_deadline = monotonic() + self._keepalive_timeout
 
         elif msg_type == "connection_error":
             _LOGGER.warning(
                 "WebSocket connection error: %s",
                 msg.get("payload", msg),
             )
+            raise ConnectionError("AppSync rejected the connection")
 
     async def _subscribe_vin(self, vin, token, guid):
         """Subscribe to vehicle status updates for a specific VIN."""

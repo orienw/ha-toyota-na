@@ -199,7 +199,7 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.ChargingStatus,
         "icon": "mdi:ev-station",
         "name": "Charging Status",
-        "subscription": True,
+        "subscription": False,
         "electric": True,
     },
 ]
@@ -310,7 +310,7 @@ SENSORS = [
         "feature": VehicleFeatures.ChargeDistance,
         "name": "EV Range",
         "unit": "MI_OR_KM",
-        "subscription": True,
+        "subscription": False,
         "electric": True,
     },
     {
@@ -319,7 +319,7 @@ SENSORS = [
         "feature": VehicleFeatures.ChargeDistanceAC,
         "name": "EV Range AC",
         "unit": "MI_OR_KM",
-        "subscription": True,
+        "subscription": False,
         "electric": True,
     },
     {
@@ -328,7 +328,7 @@ SENSORS = [
         "feature": VehicleFeatures.ChargeLevel,
         "name": "EV Battery Level",
         "unit": PERCENTAGE,
-        "subscription": True,
+        "subscription": False,
         "electric": True,
     },
     {
@@ -364,7 +364,7 @@ SENSORS = [
         "feature": VehicleFeatures.PlugStatus,
         "name": "Plug Status",
         "unit": "",
-        "subscription": True,
+        "subscription": False,
         "electric": True,
     },
     {
@@ -373,7 +373,7 @@ SENSORS = [
         "feature": VehicleFeatures.RemainingChargeTime,
         "name": "Remaining Charge Time",
         "unit": "",
-        "subscription": True,
+        "subscription": False,
         "electric": True,
     },
     {
@@ -382,7 +382,7 @@ SENSORS = [
         "feature": VehicleFeatures.EvTravelableDistance,
         "name": "EV Travelable Distance",
         "unit": "",
-        "subscription": True,
+        "subscription": False,
         "electric": True,
     },
     {
@@ -391,7 +391,7 @@ SENSORS = [
         "feature": VehicleFeatures.ChargeType,
         "name": "Charge Type",
         "unit": "",
-        "subscription": True,
+        "subscription": False,
         "electric": True,
     },
     {
@@ -400,7 +400,7 @@ SENSORS = [
         "feature": VehicleFeatures.ConnectorStatus,
         "name": "Connector Status",
         "unit": "",
-        "subscription": True,
+        "subscription": False,
         "electric": True,
     },
 ]

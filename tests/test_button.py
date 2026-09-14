@@ -492,6 +492,31 @@ class BinarySensorCleanupTests(unittest.IsolatedAsyncioTestCase):
 
 
 class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_reported_ev_data_is_available_without_remote_subscription(self):
+        vehicle = FakeVehicle(set())
+        vehicle.subscribed = False
+        vehicle.electric = True
+        vehicle.features = {
+            VehicleFeatures.ChargeLevel: ToyotaNumeric(65, "%"),
+            VehicleFeatures.ChargeDistance: ToyotaNumeric(30, "mi"),
+            VehicleFeatures.ChargingStatus: ToyotaOpening(closed=False),
+        }
+        coordinator = DataUpdateCoordinator([vehicle])
+        hass = FakeHass(coordinator)
+        sensors = []
+        binary_sensors = []
+
+        await sensor_platform.async_setup_entry(
+            hass, ConfigEntry(), lambda added, update: sensors.extend(added),
+        )
+        await binary_sensor_platform.async_setup_entry(
+            hass, ConfigEntry(), lambda added, update: binary_sensors.extend(added),
+        )
+
+        self.assertEqual({sensor.sensor_name for sensor in sensors}, {"EV Range", "EV Battery Level"})
+        self.assertEqual([sensor.sensor_name for sensor in binary_sensors], ["Charging Status"])
+        self.assertTrue(binary_sensors[0].is_on)
+
     async def test_pressure_sensor_converts_reported_units_to_psi(self):
         for value, unit, expected in (
             (240, "kPa", 34.809058),

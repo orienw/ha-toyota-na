@@ -191,7 +191,7 @@ async def _auth_headers(self):
     }
 
 async def get_vehicle_status_17cyplus(self, vin, region="US"):
-    """Vehicle status (doors, locks, windows, hood, hatch) for 21MM/24MM/17CYPLUS."""
+    """Vehicle status for 17CYPLUS vehicles."""
     try:
         res = await self.api_get(
             "v1/global/remote/status",
@@ -202,6 +202,12 @@ async def get_vehicle_status_17cyplus(self, vin, region="US"):
     except Exception as e:
         _LOGGER.debug("vehicle_status v1/global/remote/status failed: %s", e)
     return None
+
+async def get_vehicle_status_21mm(self, vin, region="US"):
+    return await self.api_get(
+        REMOTE_ROUTE + "status",
+        _vehicle_headers(vin, region, **{"X-GENERATION": "21MM"}),
+    )
 
 async def get_engine_status_17cyplus(self, vin, region="US"):
     """Engine status for 17CYPLUS vehicles."""
@@ -232,6 +238,20 @@ async def send_refresh_request_17cyplus(self, vin, region="US"):
             "vin": vin,
         },
         _vehicle_headers(vin, region),
+    )
+
+async def send_refresh_request_21mm(self, vin, region="US"):
+    return await self.api_post(
+        REMOTE_ROUTE + "refresh-status",
+        {"autoFixPopup": False},
+        _vehicle_headers(
+            vin,
+            region,
+            **{
+                "X-GENERATION": "21MM",
+                "X-CORRELATIONID": str(uuid.uuid4()),
+            },
+        ),
     )
 
 async def remote_request_17cyplus(self, vin, command, region="US"):

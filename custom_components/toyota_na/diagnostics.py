@@ -72,6 +72,10 @@ async def async_get_config_entry_diagnostics(
                 user_vehicle_status = await client.get_vehicle_status_17cy(
                     vin, region
                 )
+            elif api_generation == "21MM":
+                user_vehicle_status = await client.get_vehicle_status_21mm(
+                    vin, region
+                )
             elif generation == "17CYPLUS":
                 user_vehicle_status = await client.get_vehicle_status_17cyplus(
                     vin, region

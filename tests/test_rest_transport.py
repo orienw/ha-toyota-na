@@ -64,6 +64,29 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["headers"]["x-region"], "CA")
         self.assertEqual(result, {"status": "started"})
 
+    async def test_21mm_vehicle_status_reaches_cdn_root(self):
+        status = {"vehicleStatus": [], "latitude": 34.05, "longitude": -118.25}
+        self.response.json.return_value = {"payload": status}
+
+        result = await client_module.get_vehicle_status_21mm(Client(), "TESTVIN", "CA")
+
+        args, kwargs = self.session.request.call_args
+        self.assertEqual(args, ("GET", "https://onecdn.telematicsct.com/v1/remote/route/status"))
+        self.assertEqual(kwargs["headers"]["VIN"], "TESTVIN")
+        self.assertEqual(kwargs["headers"]["X-GENERATION"], "21MM")
+        self.assertEqual(kwargs["headers"]["x-region"], "CA")
+        self.assertEqual(result, status)
+
+    async def test_21mm_refresh_uses_route_request_body(self):
+        await client_module.send_refresh_request_21mm(Client(), "TESTVIN", "CA")
+
+        args, kwargs = self.session.request.call_args
+        self.assertEqual(args, ("POST", "https://onecdn.telematicsct.com/v1/remote/route/refresh-status"))
+        self.assertEqual(kwargs["json"], {"autoFixPopup": False})
+        self.assertEqual(kwargs["headers"]["VIN"], "TESTVIN")
+        self.assertEqual(kwargs["headers"]["X-GENERATION"], "21MM")
+        self.assertEqual(kwargs["headers"]["x-region"], "CA")
+
     async def test_rejected_21mm_command_raises(self):
         self.response.status = 400
         self.response.text.return_value = "rejected"

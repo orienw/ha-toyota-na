@@ -79,6 +79,29 @@ def normalize_lock(value: Any) -> bool | None:
     return _LOCK_STATES.get(value.lower())
 
 
+def normalize_engine_state(value: Any) -> bool | None:
+    """Normalize REST and GraphQL engine states, preserving unknown values."""
+    normalized = str(value).lower()
+    if normalized in ("on", "running", "started", "true", "1"):
+        return True
+    if normalized in ("off", "stopped", "false", "0"):
+        return False
+    return None
+
+
+def normalize_charging_state(value: Any) -> bool | None:
+    """Distinguish active charging from waiting, completion, and power supply."""
+    normalized = str(value).lower()
+    if normalized in ("charging", "40", "56", "active", "in_progress", "in-progress"):
+        return True
+    if normalized in (
+        "36", "45", "60", "charge_now", "resume_charging", "no_controls",
+        "unavailable", "external_power_active", "external_power_active_hybrid",
+    ):
+        return False
+    return None
+
+
 def opening_state_from_values(
     values: Iterable[Mapping[str, Any]],
 ) -> tuple[bool | None, bool | None]:
