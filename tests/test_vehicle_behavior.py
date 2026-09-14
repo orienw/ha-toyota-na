@@ -6,6 +6,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -218,7 +219,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
         calls = []
 
         class Client:
-            async def remote_request_17cyplus(self, *args):
+            async def remote_request_21mm(self, *args):
                 calls.append(args)
 
         vehicle = make_vehicle(Client())
@@ -226,6 +227,39 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
         await vehicle.send_command(RemoteRequestCommand.VehicleFinder)
 
         self.assertEqual(calls, [("TESTVIN", "find-vehicle", "US")])
+
+    async def test_21mm_routes_engine_lock_and_hazard_commands(self):
+        client = types.SimpleNamespace(
+            remote_request_21mm=AsyncMock(),
+            remote_request_17cyplus=AsyncMock(),
+        )
+        vehicle = make_vehicle(client)
+        commands = {
+            RemoteRequestCommand.EngineStart: "engine-start",
+            RemoteRequestCommand.EngineStop: "engine-stop",
+            RemoteRequestCommand.DoorLock: "door-lock",
+            RemoteRequestCommand.DoorUnlock: "door-unlock",
+            RemoteRequestCommand.HazardsOn: "hazard-on",
+            RemoteRequestCommand.HazardsOff: "hazard-off",
+        }
+        for command, name in commands.items():
+            with self.subTest(command=command):
+                await vehicle.send_command(command)
+                client.remote_request_21mm.assert_awaited_with("TESTVIN", name, "US")
+        client.remote_request_17cyplus.assert_not_awaited()
+
+    async def test_17cyplus_keeps_global_command_route(self):
+        client = types.SimpleNamespace(
+            remote_request_21mm=AsyncMock(),
+            remote_request_17cyplus=AsyncMock(),
+        )
+        vehicle = make_vehicle(client)
+        vehicle._generation = ApiVehicleGeneration.CY17PLUS
+
+        await vehicle.send_command(RemoteRequestCommand.DoorLock)
+
+        client.remote_request_17cyplus.assert_awaited_once_with("TESTVIN", "door-lock", "US")
+        client.remote_request_21mm.assert_not_awaited()
 
     async def test_24mm_command_uses_appsync_transport_and_region(self):
         calls = []
@@ -242,6 +276,42 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
         await vehicle.send_command(RemoteRequestCommand.DoorLock)
 
         self.assertEqual(calls, [("TESTVIN24", "door-lock", "CA")])
+
+
+class EngineStatusTests(unittest.IsolatedAsyncioTestCase):
+    async def test_poll_uses_generation_specific_engine_status(self):
+        for generation in (ApiVehicleGeneration.MM21, ApiVehicleGeneration.CY17PLUS):
+            with self.subTest(generation=generation):
+                client = types.SimpleNamespace(
+                    get_telemetry=AsyncMock(return_value={}),
+                    get_vehicle_status_17cyplus=AsyncMock(return_value={}),
+                    get_engine_status_21mm=AsyncMock(return_value={"status": "started"}),
+                    get_engine_status_17cyplus=AsyncMock(return_value={"status": "1"}),
+                )
+                vehicle = make_vehicle(client)
+                vehicle._generation = generation
+                vehicle._region = "CA"
+
+                await vehicle.update()
+
+                self.assertTrue(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
+                if generation == ApiVehicleGeneration.MM21:
+                    client.get_engine_status_21mm.assert_awaited_once_with("TESTVIN", "CA")
+                    client.get_engine_status_17cyplus.assert_not_awaited()
+                else:
+                    client.get_engine_status_17cyplus.assert_awaited_once_with("TESTVIN", "CA")
+                    client.get_engine_status_21mm.assert_not_awaited()
+
+    def test_numeric_and_word_engine_statuses(self):
+        vehicle = make_vehicle()
+        for status, expected in [("1", True), ("0", False), ("started", True), ("stopped", False)]:
+            with self.subTest(status=status):
+                vehicle._parse_engine_status({
+                    "status": status, "date": "2026-09-14T07:00:00Z", "timer": 20,
+                })
+                feature = vehicle.features[VehicleFeatures.RemoteStartStatus]
+                self.assertEqual(feature.on, expected)
+                self.assertEqual(feature.timer, 20)
 
 
 class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):

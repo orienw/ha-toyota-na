@@ -14,8 +14,10 @@ from .patch_client import (
     get_telemetry,
     get_vehicle_status_17cyplus,
     get_engine_status_17cyplus,
+    get_engine_status_21mm,
     send_refresh_request_17cyplus,
     remote_request_17cyplus,
+    remote_request_21mm,
     get_vehicle_status_17cy,
     get_engine_status_17cy,
     send_refresh_request_17cy,
@@ -35,8 +37,10 @@ ToyotaOneClient._auth_headers = _auth_headers
 ToyotaOneClient.get_telemetry = get_telemetry
 ToyotaOneClient.get_vehicle_status_17cyplus = get_vehicle_status_17cyplus
 ToyotaOneClient.get_engine_status_17cyplus = get_engine_status_17cyplus
+ToyotaOneClient.get_engine_status_21mm = get_engine_status_21mm
 ToyotaOneClient.send_refresh_request_17cyplus = send_refresh_request_17cyplus
 ToyotaOneClient.remote_request_17cyplus = remote_request_17cyplus
+ToyotaOneClient.remote_request_21mm = remote_request_21mm
 ToyotaOneClient.get_vehicle_status_17cy = get_vehicle_status_17cy
 ToyotaOneClient.get_engine_status_17cy = get_engine_status_17cy
 ToyotaOneClient.send_refresh_request_17cy = send_refresh_request_17cy

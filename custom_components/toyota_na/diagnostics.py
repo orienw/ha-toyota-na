@@ -97,7 +97,11 @@ async def async_get_config_entry_diagnostics(
                 user_engine_status = await client.get_engine_status_17cy(
                     vin, region
                 )
-            elif generation == "17CYPLUS" and api_generation != "24MM":
+            elif api_generation == "21MM":
+                user_engine_status = await client.get_engine_status_21mm(
+                    vin, region
+                )
+            elif api_generation == "17CYPLUS":
                 user_engine_status = await client.get_engine_status_17cyplus(
                     vin, region
                 )

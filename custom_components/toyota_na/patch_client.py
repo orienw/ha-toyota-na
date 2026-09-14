@@ -8,6 +8,7 @@ from urllib.parse import urlencode, urljoin
 import aiohttp
 
 API_GATEWAY = "https://onecdn.telematicsct.com/oneapi/"
+REMOTE_ROUTE = "https://onecdn.telematicsct.com/v1/remote/route/"
 GRAPHQL_ENDPOINT = "https://oa-api.telematicsct.com/graphql"
 GRAPHQL_WS_ENDPOINT = "wss://oa-api.telematicsct.com/graphql/realtime"
 GRAPHQL_HOST = "oa-api.telematicsct.com"
@@ -203,7 +204,7 @@ async def get_vehicle_status_17cyplus(self, vin, region="US"):
     return None
 
 async def get_engine_status_17cyplus(self, vin, region="US"):
-    """Engine status for 21MM/24MM/17CYPLUS."""
+    """Engine status for 17CYPLUS vehicles."""
     try:
         res = await self.api_get(
             "v1/global/remote/engine-status",
@@ -214,6 +215,12 @@ async def get_engine_status_17cyplus(self, vin, region="US"):
     except Exception as e:
         _LOGGER.debug("engine_status v1/global/remote/engine-status failed: %s", e)
     return None
+
+async def get_engine_status_21mm(self, vin, region="US"):
+    return await self.api_get(
+        REMOTE_ROUTE + "engine-status",
+        _vehicle_headers(vin, region, **{"X-GENERATION": "21MM"}),
+    )
 
 async def send_refresh_request_17cyplus(self, vin, region="US"):
     """Refresh status via v1/global/remote/refresh-status."""
@@ -233,6 +240,21 @@ async def remote_request_17cyplus(self, vin, command, region="US"):
         "v1/global/remote/command",
         {"command": command},
         _vehicle_headers(vin, region),
+    )
+
+async def remote_request_21mm(self, vin, command, region="US"):
+    return await self.api_post(
+        REMOTE_ROUTE + "command",
+        {"command": command, "autoFixPopup": False},
+        _vehicle_headers(
+            vin,
+            region,
+            **{
+                "X-GENERATION": "21MM",
+                "X-CORRELATIONID": str(uuid.uuid4()),
+                "Content-Type": "application/json",
+            },
+        ),
     )
 
 async def get_vehicle_status_17cy(self, vin, region="US"):

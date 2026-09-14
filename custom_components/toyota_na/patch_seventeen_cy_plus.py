@@ -178,11 +178,14 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
             if self._generation != ApiVehicleGeneration.MM24:
                 try:
-                    engine_status = (
-                        await self._client.get_engine_status_17cyplus(
+                    if self._generation == ApiVehicleGeneration.MM21:
+                        engine_status = await self._client.get_engine_status_21mm(
                             self._vin, self._region
                         )
-                    )
+                    else:
+                        engine_status = await self._client.get_engine_status_17cyplus(
+                            self._vin, self._region
+                        )
                     if engine_status:
                         self._parse_engine_status(engine_status)
                 except Exception as e:
@@ -279,6 +282,11 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 self._vin, command_name, self._region
             )
             return
+        if self._generation == ApiVehicleGeneration.MM21:
+            await self._client.remote_request_21mm(
+                self._vin, command_name, self._region
+            )
+            return
         await self._client.remote_request_17cyplus(
             self._vin, command_name, self._region
         )
@@ -293,7 +301,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
         self._features[VehicleFeatures.RemoteStartStatus] = ToyotaRemoteStart(
             date=engine_status.get("date"),
-            on=engine_status["status"] == "1",
+            on=str(engine_status["status"]).lower() in ("1", "started"),
             timer=engine_status.get("timer"),
         )
     
