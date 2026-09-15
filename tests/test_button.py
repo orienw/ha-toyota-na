@@ -245,7 +245,7 @@ class FakeVehicle:
 
     @property
     def can_receive_status(self):
-        return self.subscribed
+        return True
 
     async def send_command(self, command):
         self.sent.append(command)
@@ -630,7 +630,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         with (
             mock.patch.object(integration_runtime, "get_vehicles", mock.AsyncMock(return_value=vehicles)),
             mock.patch.object(integration_runtime, "automatic_wake_due", return_value=False),
-            self.assertLogs(integration_runtime.__name__, level="WARNING"),
+            self.assertNoLogs(integration_runtime.__name__, level="WARNING"),
         ):
             result = await integration_runtime.update_vehicles_status(
                 FakeHass(coordinator), client, ConfigEntry(), coordinator,
@@ -639,6 +639,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         handler.update_vehicle_contexts.assert_awaited_once_with({
             "NEWVIN": {"region": "CA", "backdoor_type": "trunk"},
             "OTHERNEWVIN": {"region": "CA", "backdoor_type": "trunk"},
+            "EXPIREDVIN": {"region": "CA", "backdoor_type": "trunk"},
         })
 
     async def test_automatic_wakes_schedule_one_followup_poll(self):

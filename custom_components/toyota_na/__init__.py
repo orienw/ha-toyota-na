@@ -215,9 +215,11 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             if config_entry is not None:
                 record_vehicle_wake(hass, config_entry, vin)
 
-        hass.async_create_task(
+        task = hass.async_create_task(
             _refresh_coordinator_after_command(coordinator)
         )
+        if config_entry is not None:
+            config_entry.async_on_unload(task.cancel)
         _LOGGER.info("Handling service call %s for VIN ...%s", remote_action, vin[-4:])
 
         return
@@ -334,10 +336,6 @@ async def update_vehicles_status(
         wake_requested = False
         vehicles: list[ToyotaVehicle] = []
         for vehicle in raw_vehicles:
-            if vehicle.subscribed is not True:
-                _LOGGER.warning(
-                    f"Your {vehicle.model_year} {vehicle.model_name} needs a remote services subscription to fully work with Home Assistant."
-                )
             need_refresh = automatic_wake_due(
                 entry.data,
                 entry.options,
@@ -360,9 +358,10 @@ async def update_vehicles_status(
                     _LOGGER.warning("Vehicle refresh failed (%s), continuing without refresh", e)
             vehicles.append(vehicle)
         if wake_requested:
-            hass.async_create_task(
+            task = hass.async_create_task(
                 _refresh_coordinator_after_command(coordinator)
             )
+            entry.async_on_unload(task.cancel)
         return vehicles
     except AuthError as e:
         raise ConfigEntryAuthFailed(e) from e
@@ -373,15 +372,12 @@ async def update_vehicles_status(
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
-    # Stop WebSocket handler
-    entry_data = hass.data[DOMAIN].get(entry.entry_id, {})
-    ws_handler = entry_data.get("ws_handler")
-    if ws_handler:
-        await ws_handler.stop()
-
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        entry_data = hass.data[DOMAIN].pop(entry.entry_id)
+        ws_handler = entry_data.get("ws_handler")
+        if ws_handler:
+            await ws_handler.stop()
 
     return unload_ok

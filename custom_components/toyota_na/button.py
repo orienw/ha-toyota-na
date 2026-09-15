@@ -64,7 +64,8 @@ class ToyotaButtonBase(ToyotaNABaseEntity, ButtonEntity):
         self._config_entry = config_entry
 
     def _schedule_refresh(self) -> None:
-        self.hass.async_create_task(self._async_refresh_after_delay())
+        task = self.hass.async_create_task(self._async_refresh_after_delay())
+        self._config_entry.async_on_unload(task.cancel)
 
     async def _async_refresh_after_delay(self) -> None:
         try:

@@ -130,7 +130,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
     async def update(self):
         
         try:
-            if self.subscribed:
+            if self.can_receive_status:
                 # vehicle_health_status
                 vehicle_status = await self._client.get_vehicle_status_17cy(
                     self._vin, self._region

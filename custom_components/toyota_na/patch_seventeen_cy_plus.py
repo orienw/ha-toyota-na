@@ -191,7 +191,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             except Exception as e:
                 _LOGGER.debug("Error fetching vehicle status: %s", e)
 
-            if not self.uses_appsync and self.subscribed:
+            if not self.uses_appsync:
                 try:
                     previous_engine = self._features.get(VehicleFeatures.RemoteStartStatus)
                     if self._generation == ApiVehicleGeneration.MM21:
@@ -737,14 +737,16 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 trip_observed_at,
             )
 
-        self._parse_graphql_electric_status(status.get("electric"))
+        self._parse_graphql_electric_status(
+            status.get("electric"), parse_api_timestamp(status.get("lastUpdateDateTime")),
+        )
 
-    def _parse_graphql_electric_status(self, electric: dict) -> None:
+    def _parse_graphql_electric_status(self, electric: dict, observed_at=None) -> None:
         """Parse the AppSync electric document returned for EVs and PHEVs."""
         if not electric:
             return
 
-        observed_at = parse_api_timestamp(electric.get("lastUpdateDateTime"))
+        observed_at = parse_api_timestamp(electric.get("lastUpdateDateTime")) or observed_at
         battery = electric.get("battery") or {}
         charge_level = None
         for key in (

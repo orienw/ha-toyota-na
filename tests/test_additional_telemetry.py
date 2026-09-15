@@ -81,3 +81,11 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
         vehicle.apply_graphql_status(status)
         self.assertEqual(8, vehicle.features[VehicleFeatures.GasolinePowerSupplyTime].value)
 
+    async def test_electric_observations_use_root_timestamp_when_section_has_none(self):
+        vehicle = behavior.make_24mm_vehicle()
+        for timestamp, value in (("12:00:00", 80), ("12:10:00", 81), ("12:05:00", 79)):
+            vehicle.apply_graphql_status({
+                "lastUpdateDateTime": f"2026-09-14T{timestamp}Z",
+                "electric": {"battery": {"stateOfChargeDisplay": {"value": value, "unit": "%"}}},
+            })
+        self.assertEqual(81, vehicle.features[VehicleFeatures.ChargeLevel].value)

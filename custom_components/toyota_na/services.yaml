@@ -190,10 +190,8 @@ power_supply_stop:
   name: Stop power supply
   description: Stop external power supply on a supported vehicle.
   fields:
-    vin:
-      name: VIN
-      description: Vehicle identification number.
+    vehicle:
       required: true
-      example: "JTMWRREV1JD243123"
       selector:
-        text:
+        device:
+          integration: toyota_na

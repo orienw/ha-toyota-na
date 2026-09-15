@@ -321,7 +321,10 @@ class ToyotaVehicle(ABC):
 
     @property
     def can_receive_status(self) -> bool:
-        return self.subscribed or (self.uses_appsync and self.electric)
+        return self.generation in (
+            ApiVehicleGeneration.CY17, ApiVehicleGeneration.CY17PLUS,
+            ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24, ApiVehicleGeneration.BEV26,
+        )
 
     @property
     def can_start_climate(self) -> bool:
