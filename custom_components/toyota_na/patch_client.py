@@ -793,6 +793,40 @@ async def update_charge_settings(self, vin, variable, value, region="US"):
     return await _run_appsync_operation(self, vin, submit, region)
 
 
+async def save_charge_schedule(self, vin, generation, schedule, region="US", brand="T", *, delete=False):
+    """Submit a schedule using its generation's time format and confirmation."""
+    appsync = generation in ("24MM", "26BEV")
+    body = dict(schedule)
+    endpoint = REMOTE_ROUTE + "charging" if appsync else "v1/electric/charging"
+    method = "PUT" if "settingId" in body else "POST"
+    if delete:
+        method = "DELETE"
+        endpoint += f"/{body['settingId']}"
+    elif not appsync:
+        for key in ("startTime", "endTime"):
+            if body.get(key) is not None:
+                hour, minute = map(int, body[key].split(":"))
+                body[key] = {"hour": hour, "minute": minute}
+
+    async def submit():
+        result = await self.api_request(
+            method, endpoint,
+            _vehicle_headers(vin, region, **{
+                "X-GENERATION": generation, "X-BRAND": brand,
+                "device-id": str(uuid.uuid4()),
+            }),
+            **({} if delete else {"json": body}),
+        )
+        result = result or {}
+        if result.get("returnCode") != "ONE-RES-10000" or not (result.get("appRequestNo") or result.get("correlationId")):
+            raise RuntimeError(result.get("message") or "Toyota did not accept the charge schedule change.")
+        return {"payload": {"requestNo": result.get("appRequestNo")}}
+
+    if appsync:
+        return await _run_appsync_operation(self, vin, submit, region)
+    return await submit()
+
+
 async def _run_appsync_operation(self, vin, submit, region):
     # Some callbacks omit request numbers. Keep this account's operations for a
     # vehicle sequential so they cannot complete one another.

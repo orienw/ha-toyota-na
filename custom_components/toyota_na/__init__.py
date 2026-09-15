@@ -26,6 +26,7 @@ from .patch_client import (
     get_climate_settings,
     update_climate_settings,
     update_charge_settings,
+    save_charge_schedule,
     electric_command,
     api_request,
     _auth_headers,
@@ -57,6 +58,7 @@ from .patch_client import (
 ToyotaOneClient.get_electric_realtime_status = get_electric_realtime_status
 ToyotaOneClient.get_electric_status = get_electric_status
 ToyotaOneClient.get_climate_settings = get_climate_settings
+ToyotaOneClient.save_charge_schedule = save_charge_schedule
 ToyotaOneClient.update_charge_settings = update_charge_settings
 ToyotaOneClient.update_climate_settings = update_climate_settings
 ToyotaOneClient.electric_command = electric_command
@@ -205,6 +207,17 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
         vehicle = next(
             item for item in coordinator.data if item.vin == vin
         )
+        if remote_action in ("set_charge_schedule", "delete_charge_schedule"):
+            fields = {"enabled": "enabled", "start_time": "startTime", "end_time": "endTime", "days": "daysOfTheWeek"}
+            changes = {field: service_call.data[key] for key, field in fields.items() if key in service_call.data}
+            await vehicle.update_charge_schedule(
+                service_call.data.get("schedule_id"),
+                delete=remote_action == "delete_charge_schedule", **changes,
+            )
+            if config_entry is not None:
+                record_vehicle_wake(hass, config_entry, vin)
+            coordinator.async_set_updated_data(coordinator.data)
+            return
         command = COMMAND_MAP[remote_action]
         if not vehicle.supports_command(command):
             raise HomeAssistantError(
@@ -230,7 +243,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
 
         return
 
-    for action in COMMAND_MAP:
+    for action in (*COMMAND_MAP, "set_charge_schedule", "delete_charge_schedule"):
         hass.services.async_register(DOMAIN, action, async_service_handle)
 
     return True

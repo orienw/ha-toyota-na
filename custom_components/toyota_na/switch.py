@@ -7,6 +7,7 @@ from .base_entity import ToyotaNABaseEntity
 from .climate_helpers import climate_parameters
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
+from .wake_policy import record_vehicle_wake
 
 CLIMATE_SWITCHES = (
     ("Front Defroster", "mdi:car-defrost-front", ("defrost", "frontDefrost")),
@@ -27,6 +28,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 yield entity
             for name, icon, setting in CLIMATE_SWITCHES:
                 entity = ToyotaClimatePreferenceSwitch(setting, icon, coordinator, name, vehicle.vin)
+                if entity.available:
+                    yield entity
+            for schedule in vehicle.charge_settings.get("schedules") or []:
+                if not isinstance(schedule, dict) or schedule.get("settingId") is None:
+                    continue
+                identifier = str(schedule["settingId"])
+                entity = ToyotaChargeScheduleSwitch(
+                    identifier, config_entry, coordinator, f"Charge Schedule {identifier}", vehicle.vin,
+                )
                 if entity.available:
                     yield entity
 
@@ -98,3 +108,47 @@ class ToyotaClimatePreferenceSwitch(ToyotaClimateSettingsSwitch):
         if self._setting == "extendedRuntime":
             return {"extendedRuntime": enabled}
         return {"parameter": (*self._setting, enabled)}
+
+
+class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, identifier, config_entry, *args):
+        super().__init__(*args)
+        self._identifier = identifier
+        self._config_entry = config_entry
+
+    @property
+    def schedule(self):
+        if self.vehicle is None:
+            return {}
+        schedules = self.vehicle.charge_settings.get("schedules") or []
+        return next((item for item in schedules if isinstance(item, dict)
+                     and str(item.get("settingId")) == self._identifier), {})
+
+    @property
+    def available(self):
+        return (self.vehicle is not None and self.vehicle.supports_charge_schedules
+                and isinstance(self.schedule.get("enabled"), bool))
+
+    @property
+    def is_on(self):
+        return self.schedule.get("enabled")
+
+    @property
+    def extra_state_attributes(self):
+        return {key: self.schedule.get(key) for key in ("startTime", "endTime", "daysOfTheWeek", "settingId")}
+
+    async def async_turn_on(self, **kwargs):
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs):
+        await self._set_enabled(False)
+
+    async def _set_enabled(self, enabled):
+        if not self.available:
+            raise ValueError("This charge schedule is unavailable.")
+        await self.vehicle.update_charge_schedule(self._identifier, enabled=enabled)
+        record_vehicle_wake(self.hass, self._config_entry, self.vin)
+        self.coordinator.async_set_updated_data(self.coordinator.data)

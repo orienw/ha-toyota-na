@@ -261,11 +261,14 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         if not electric_status:
             return
         vehicle_info = electric_status.get("vehicleInfo") or {}
+        observed_at = parse_api_timestamp(vehicle_info.get("acquisitionDatetime"))
+        self._store_charge_schedules(vehicle_info.get("timerChargeInfo"), observed_at)
+        if isinstance(vehicle_info.get("maxNoOfChargeSchedules"), int):
+            self._charge_settings["maxNoOfChargeSchedules"] = vehicle_info["maxNoOfChargeSchedules"]
         charge_info = vehicle_info.get("chargeInfo") or {}
         if not charge_info:
             return
 
-        observed_at = parse_api_timestamp(vehicle_info.get("acquisitionDatetime"))
         self._store_numeric(
             VehicleFeatures.ChargingState, charge_info.get("plugStatus"), "", observed_at
         )

@@ -12,7 +12,15 @@ from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .vehicle_helpers import can_extend_remote_runtime, endpoint_generation, first_capability, is_appsync_generation
 from .climate_helpers import apply_climate_changes
-from .charging_helpers import CHARGE_SETTINGS, charge_options
+from .charging_helpers import (
+    CHARGE_SETTINGS,
+    build_charge_schedule,
+    charge_options,
+    schedule_identifier,
+    schedule_matches,
+)
+
+SCHEDULE_UPDATE_TIMEOUT = 90
 
 
 @unique
@@ -84,6 +92,7 @@ class VehicleFeatures(Enum):
     TripFuelConsumption = auto()
     TripCount = auto()
     ChargingRate = auto()
+    ChargeScheduleCount = auto()
 
     #Times
     OccurrenceDate = auto()
@@ -231,6 +240,7 @@ class ToyotaVehicle(ABC):
         self._climate_lock = asyncio.Lock()
         self._charge_settings = {}
         self._engine_details = {}
+        self._schedule_lock = asyncio.Lock()
 
     @abstractmethod
     async def poll_vehicle_refresh(self) -> None:
@@ -409,6 +419,79 @@ class ToyotaVehicle(ABC):
     def supports_charge_settings(self):
         return self.uses_appsync and self.electric and self.subscribed and self.feature_enabled("remoteCommands")
 
+    @property
+    def supports_charge_schedules(self):
+        return (
+            self.electric and self.subscribed and self.feature_enabled("remoteCommands")
+            and self.feature_enabled("multiDayCharging")
+            and (self.uses_appsync or (self._feature_flags or {}).get("multiDayCharging") == 1)
+            and isinstance(self.charge_settings.get("schedules"), list)
+        )
+
+    def _store_charge_schedules(self, schedules, observed_at):
+        if not isinstance(schedules, list):
+            return
+        previous = self._charge_settings.get("_schedules_updated_at")
+        if previous is not None and (observed_at is None or observed_at < previous):
+            return
+        self._charge_settings["schedules"] = schedules
+        self._charge_settings["_schedules_updated_at"] = observed_at
+        self._features[VehicleFeatures.ChargeScheduleCount] = ToyotaNumeric(len(schedules), "")
+
+    async def _read_charge_schedules(self):
+        if self.uses_appsync:
+            status = await self._client.graphql_get_vehicle_status(self.vin, self.backdoor_type, self.region)
+            self.apply_graphql_status(status)
+            electric = (status or {}).get("electric") or {}
+            charging = electric.get("charging") or {}
+            schedules = (charging.get("chargeSettings") or {}).get("schedules")
+        else:
+            status = await self._client.get_electric_status(self.vin, region=self.region, generation=self.api_generation)
+            self._parse_electric_status(status)
+            schedules = ((status or {}).get("vehicleInfo") or {}).get("timerChargeInfo")
+        if not isinstance(schedules, list):
+            raise ValueError("Toyota did not return current charge schedules.")
+        return schedules
+
+    async def update_charge_schedule(self, identifier=None, *, delete=False, **changes):
+        if not self.supports_charge_schedules:
+            raise ValueError("Multi-day charge schedules are unavailable for this vehicle.")
+        async with self._schedule_lock:
+            schedules = await self._read_charge_schedules()
+            if identifier is not None:
+                identifier = schedule_identifier(identifier)
+            previous_ids = {
+                str(item.get("settingId")) for item in schedules if isinstance(item, dict)
+            }
+            if delete:
+                if identifier is None or str(identifier) not in previous_ids:
+                    raise ValueError("This charge schedule no longer exists.")
+                body = {"settingId": identifier}
+            else:
+                body = build_charge_schedule(schedules, identifier, **changes)
+                maximum = self.charge_settings.get("maxNoOfChargeSchedules")
+                if identifier is None and isinstance(maximum, int) and len(schedules) >= maximum:
+                    raise ValueError("The vehicle has reached its charge schedule limit.")
+            await self._client.save_charge_schedule(
+                self.vin, self.api_generation, body, self.region, self.brand, delete=delete,
+            )
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT
+            while loop.time() < deadline:
+                try:
+                    schedules = await asyncio.wait_for(self._read_charge_schedules(), deadline - loop.time())
+                except asyncio.TimeoutError:
+                    break
+                candidates = [item for item in schedules if isinstance(item, dict)]
+                if identifier is None:
+                    candidates = [item for item in candidates if str(item.get("settingId")) not in previous_ids]
+                else:
+                    candidates = [item for item in candidates if str(item.get("settingId")) == str(identifier)]
+                if (delete and not candidates) or (not delete and any(schedule_matches(item, body) for item in candidates)):
+                    return
+                await asyncio.sleep(min(2, max(0, deadline - loop.time())))
+            raise RuntimeError("Toyota accepted the schedule change but did not return the updated schedule.")
+
     async def set_charge_setting(self, field, option):
         if not self.supports_charge_settings:
             raise ValueError("Charging preferences are unavailable for this vehicle.")
@@ -507,6 +590,7 @@ class ToyotaVehicle(ABC):
         self._climate_lock = previous._climate_lock
         self._charge_settings = previous.charge_settings
         self._engine_details = previous._engine_details
+        self._schedule_lock = previous._schedule_lock
         return True
 
     @property

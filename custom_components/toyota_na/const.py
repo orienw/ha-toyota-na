@@ -322,6 +322,14 @@ BINARY_SENSORS = [
 SENSORS = [
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "icon": "mdi:calendar-clock",
+        "feature": VehicleFeatures.ChargeScheduleCount,
+        "name": "Charge Schedules",
+        "unit": None,
+        "electric": True,
+    },
+    {
+        "state_class": SensorStateClass.MEASUREMENT,
         "icon": "mdi:ev-station",
         "feature": VehicleFeatures.ChargingRate,
         "name": "Charging Rate",

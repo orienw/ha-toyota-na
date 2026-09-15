@@ -46,6 +46,26 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
 
+    async def test_legacy_schedule_body_uses_hour_minute_objects(self):
+        self.response.json.return_value = {"payload": {"returnCode": "ONE-RES-10000", "appRequestNo": "123"}}
+        body = {"settingId": 1, "enabled": False, "startTime": "23:00", "endTime": "07:00", "daysOfTheWeek": ["Monday"]}
+        await client_module.save_charge_schedule(Client(), "TESTVIN", "21MM", body, "CA", "L")
+        args, kwargs = self.session.request.call_args
+        self.assertEqual(("PUT", "https://onecdn.telematicsct.com/oneapi/v1/electric/charging"), args)
+        self.assertEqual({"hour": 23, "minute": 0}, kwargs["json"]["startTime"])
+        self.assertEqual({"hour": 7, "minute": 0}, kwargs["json"]["endTime"])
+        self.assertEqual("L", kwargs["headers"]["X-BRAND"])
+        self.assertEqual("21MM", kwargs["headers"]["X-GENERATION"])
+        self.assertEqual("23:00", body["startTime"])
+
+    async def test_schedule_delete_uses_id_path_without_body(self):
+        self.response.json.return_value = {"payload": {"returnCode": "ONE-RES-10000", "appRequestNo": "123"}}
+        await client_module.save_charge_schedule(Client(), "TESTVIN", "21MM", {"settingId": 2}, delete=True)
+        args, kwargs = self.session.request.call_args
+        self.assertEqual(("DELETE", "https://onecdn.telematicsct.com/oneapi/v1/electric/charging/2"), args)
+        self.assertNotIn("json", kwargs)
+
+
     async def test_optional_read_helpers_propagate_expired_credentials(self):
         client = Client()
         client._auth_headers = AsyncMock(side_effect=LoginError())

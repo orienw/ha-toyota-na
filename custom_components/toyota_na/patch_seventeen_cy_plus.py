@@ -404,11 +404,14 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         if not electric_status:
             return
         vehicle_info = electric_status.get("vehicleInfo") or {}
+        observed_at = parse_api_timestamp(vehicle_info.get("acquisitionDatetime"))
+        self._store_charge_schedules(vehicle_info.get("timerChargeInfo"), observed_at)
+        if isinstance(vehicle_info.get("maxNoOfChargeSchedules"), int):
+            self._charge_settings["maxNoOfChargeSchedules"] = vehicle_info["maxNoOfChargeSchedules"]
         charge_info = vehicle_info.get("chargeInfo") or {}
         if not charge_info:
             return
 
-        observed_at = parse_api_timestamp(vehicle_info.get("acquisitionDatetime"))
         self._store_numeric(
             VehicleFeatures.ChargingState, charge_info.get("plugStatus"), "", observed_at
         )
@@ -888,10 +891,11 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         )
         settings = charging.get("chargeSettings") or {}
         settings_observed_at = parse_api_timestamp(settings.get("lastUpdateDateTime")) or charging_observed_at
+        self._store_charge_schedules(settings.get("schedules"), settings_observed_at)
         for key, value in {**settings, "limitSelectionValues": charging.get("limitSelectionValues")}.items():
             timestamp_key = ("charge_settings", key)
             previous = self._feature_timestamps.get(timestamp_key)
-            if value is None or (previous is not None and (
+            if key == "schedules" or value is None or (previous is not None and (
                 settings_observed_at is None or settings_observed_at < previous
             )):
                 continue

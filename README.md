@@ -40,6 +40,7 @@ Sensors:
 * Charge target and remaining time to 80%, when reported
 * Battery and gasoline power supply time, when reported
 * Average and trip fuel consumption, trip count, and gasoline range, when reported
+* Charge schedule count and saved schedules, when reported
 
 Services:
 * Lock/Unlock Doors (Remote Subscription Required)
@@ -48,6 +49,7 @@ Services:
 * Find Vehicle (Remote Subscription and reported vehicle support required)
 * Charge Now, Resume Charging, and Stop Charging, when available
 * Refresh Data
+* Create, update, or delete multi-day charge schedules, when supported
 
 Native controls:
 * Door lock
@@ -64,11 +66,18 @@ Native controls:
 * Use Climate Settings switch, when supported
 * Charge limit, AC current, DC power, and power supply battery limit, when reported
 * Stop Power Supply button, while external power is active
+* Enable/disable switches for saved multi-day charge schedules, when supported
 
 Climate controls save preferences for Remote Start and appear under device
 configuration. Remote Start runs the engine or climate system supported by the
 vehicle. Charging settings use the choices reported by the vehicle. Charging
 buttons become available according to the vehicle's reported charging state.
+
+The Charge Schedules sensor lists saved schedules in its attributes. Use
+`toyota_na.set_charge_schedule` to create a schedule with start and end times and
+days of the week, or supply a schedule ID to edit only the fields you want to
+change. Times use the vehicle's local time. Use `toyota_na.delete_charge_schedule`
+with a schedule ID to remove it.
 
 Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,
 `26BEV`, and `NG86`. Cached readings can remain available without Remote Connect when Toyota

@@ -205,3 +205,63 @@ extend_runtime:
       selector:
         device:
           integration: toyota_na
+
+set_charge_schedule:
+  name: Set charge schedule
+  description: Create or update a multi-day charge schedule. Times use the vehicle's local time.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+    schedule_id:
+      description: ID from Charge Schedules. Omit to create a new schedule.
+      selector:
+        number:
+          min: 0
+          step: 1
+          mode: box
+    enabled:
+      description: Enable the schedule. New schedules default to enabled.
+      selector:
+        boolean:
+    start_time:
+      description: Charging start time, required for new schedules. Use whole minutes.
+      selector:
+        time:
+    end_time:
+      description: Charging end time, required for new schedules. Use whole minutes.
+      selector:
+        time:
+    days:
+      description: Days of the week, required for new schedules.
+      selector:
+        select:
+          multiple: true
+          options:
+            - Sunday
+            - Monday
+            - Tuesday
+            - Wednesday
+            - Thursday
+            - Friday
+            - Saturday
+
+delete_charge_schedule:
+  name: Delete charge schedule
+  description: Remove a multi-day charge schedule from the vehicle.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+    schedule_id:
+      description: ID from Charge Schedules.
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 1
+          mode: box

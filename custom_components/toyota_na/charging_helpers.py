@@ -1,5 +1,9 @@
 """Charging choices reported by the vehicle."""
 
+from datetime import time
+
+WEEKDAYS = ("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+
 CHARGE_SETTINGS = {
     "targetLimit": ("Charge Limit", "limitSelectionValues", "%", "chargingTargetLimit"),
     "maxACCurrent": ("AC Charging Current", "acCurrentSelections", "A", "currentCharge"),
@@ -60,3 +64,68 @@ def current_charge_option(settings, field):
     except ValueError:
         return None
     return next((label for label, wire_value in options.items() if wire_value == value), None)
+
+
+def schedule_identifier(value):
+    try:
+        identifier = int(value)
+        if isinstance(value, bool) or identifier < 0 or float(value) != identifier:
+            raise ValueError
+    except (TypeError, ValueError, OverflowError) as err:
+        raise ValueError("Schedule ID must be a nonnegative integer.") from err
+    return identifier
+
+
+def schedule_time(value):
+    if value is None:
+        return None
+    try:
+        parsed = time.fromisoformat(value)
+        if parsed.second or parsed.microsecond or parsed.tzinfo:
+            raise ValueError
+    except (TypeError, ValueError) as err:
+        raise ValueError("Schedule times must use HH:MM in the vehicle's local time.") from err
+    return parsed.isoformat(timespec="minutes")
+
+
+def build_charge_schedule(schedules, identifier=None, **changes):
+    """Change one schedule without sending read-only response fields."""
+    fields = ("enabled", "startTime", "endTime", "daysOfTheWeek")
+    if changes.keys() - set(fields):
+        raise ValueError("Unknown charge schedule setting.")
+    if identifier is None:
+        body = {"enabled": True, **changes}
+        if not all(body.get(key) for key in ("startTime", "endTime", "daysOfTheWeek")):
+            raise ValueError("A new schedule needs start time, end time, and days of the week.")
+    else:
+        identifier = schedule_identifier(identifier)
+        existing = next((item for item in schedules if isinstance(item, dict)
+                         and str(item.get("settingId")) == str(identifier)), None)
+        if existing is None:
+            raise ValueError("This charge schedule no longer exists.")
+        body = {key: existing.get(key) for key in fields}
+        body.update(changes)
+        body["settingId"] = identifier
+    if not isinstance(body.get("enabled"), bool):
+        raise ValueError("Schedule enabled must be true or false.")
+    for key in ("startTime", "endTime"):
+        body[key] = schedule_time(body.get(key))
+    days = body.get("daysOfTheWeek")
+    if not isinstance(days, list) or not days or any(day not in WEEKDAYS for day in days):
+        raise ValueError("Choose at least one valid day of the week.")
+    body["daysOfTheWeek"] = list(dict.fromkeys(days))
+    return body
+
+
+def schedule_matches(schedule, desired):
+    if not isinstance(schedule, dict):
+        return False
+    try:
+        return (
+            schedule.get("enabled") == desired["enabled"]
+            and schedule_time(schedule.get("startTime")) == desired["startTime"]
+            and schedule_time(schedule.get("endTime")) == desired["endTime"]
+            and set(schedule.get("daysOfTheWeek") or []) == set(desired["daysOfTheWeek"])
+        )
+    except ValueError:
+        return False

@@ -97,6 +97,12 @@ class ToyotaNumericSensor(ToyotaNABaseEntity):
 
 
     @property
+    def extra_state_attributes(self):
+        if self._vehicle_feature == VehicleFeatures.ChargeScheduleCount and self.vehicle:
+            return {"schedules": self.vehicle.charge_settings.get("schedules", [])}
+        return None
+
+    @property
     def state_class(self):
         return self._state_class
 
