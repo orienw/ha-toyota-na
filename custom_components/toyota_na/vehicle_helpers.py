@@ -94,6 +94,17 @@ def normalize_engine_state(value: Any) -> bool | None:
     return None
 
 
+def can_extend_remote_runtime(engine: Mapping[str, Any]) -> bool:
+    stop_time = parse_api_timestamp(engine.get("stopTime"))
+    return (
+        engine.get("running") is True
+        and str(engine.get("lastUpdateBy", "")).lower() == "remote"
+        and bool(engine.get("status"))
+        and str(engine["status"]).lower() not in ("pending", "extendedrunning")
+        and stop_time is not None and stop_time > datetime.now(timezone.utc)
+    )
+
+
 def normalize_charging_state(value: Any) -> bool | None:
     """Distinguish active charging from waiting, completion, and power supply."""
     normalized = str(value).lower()

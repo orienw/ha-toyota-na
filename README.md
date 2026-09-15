@@ -51,6 +51,7 @@ Services:
 Native controls:
 * Door lock
 * Remote Start and Remote Stop buttons
+* Extend Remote Runtime button for an eligible active remote-start session
 * Flash Hazards button
 * Find Vehicle button, when reported supported
 * Horn, headlights, and buzzer buttons, when supported

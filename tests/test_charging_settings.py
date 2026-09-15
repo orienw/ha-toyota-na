@@ -110,6 +110,17 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
             await vehicle.set_charge_setting("targetLimit", "90%")
         self.assertEqual("80%", current_charge_option(vehicle.charge_settings, "targetLimit"))
 
+    async def test_partial_read_without_fresh_settings_cannot_change_cached_choices(self):
+        client = types.SimpleNamespace(
+            graphql_get_vehicle_status=AsyncMock(return_value={"telemetry": {"odo": {"value": 100}}}),
+            update_charge_settings=AsyncMock(),
+        )
+        vehicle = behavior.make_24mm_vehicle(client)
+        vehicle.apply_graphql_status(status())
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            await vehicle.set_charge_setting("targetLimit", "90%")
+        client.update_charge_settings.assert_not_awaited()
+
     async def test_older_or_partial_settings_cannot_erase_newer_choices(self):
         vehicle = behavior.make_24mm_vehicle()
         vehicle.apply_graphql_status(status())
@@ -171,4 +182,3 @@ class ChargingTransportTests(unittest.IsolatedAsyncioTestCase):
                 for _ in range(3)
             ))
         self.assertEqual(1, peak)
-

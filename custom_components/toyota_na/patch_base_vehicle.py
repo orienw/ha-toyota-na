@@ -10,7 +10,7 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
-from .vehicle_helpers import endpoint_generation, first_capability, is_appsync_generation
+from .vehicle_helpers import can_extend_remote_runtime, endpoint_generation, first_capability, is_appsync_generation
 from .climate_helpers import apply_climate_changes
 from .charging_helpers import CHARGE_SETTINGS, charge_options
 
@@ -102,6 +102,7 @@ class RemoteRequestCommand(Enum):
     ChargeResume = auto()
     ChargeStop = auto()
     PowerSupplyStop = auto()
+    ExtendRuntime = auto()
     SoundHorn = auto()
     HeadlightsOn = auto()
     SoundBuzzer = auto()
@@ -221,6 +222,7 @@ class ToyotaVehicle(ABC):
         self._climate_settings = {}
         self._climate_lock = asyncio.Lock()
         self._charge_settings = {}
+        self._engine_details = {}
 
     @abstractmethod
     async def poll_vehicle_refresh(self) -> None:
@@ -405,7 +407,11 @@ class ToyotaVehicle(ABC):
         if not status:
             raise ValueError("Toyota did not return charging preferences.")
         self.apply_graphql_status(status)
-        options = charge_options(self.charge_settings, field)
+        charging = ((status.get("electric") or {}).get("charging") or {})
+        options = charge_options({
+            **(charging.get("chargeSettings") or {}),
+            "limitSelectionValues": charging.get("limitSelectionValues"),
+        }, field)
         if option not in options:
             raise ValueError("This charging option is unavailable for this vehicle.")
         await self._client.update_charge_settings(
@@ -430,6 +436,8 @@ class ToyotaVehicle(ABC):
             return self.subscribed and self.feature_enabled("vehicleState")
         if not self.subscribed or not self.feature_enabled("remoteCommands"):
             return False
+        if command == RemoteRequestCommand.ExtendRuntime:
+            return self.uses_appsync and can_extend_remote_runtime(self._engine_details)
         if command in self._EXTENDED_COMMANDS:
             if command == RemoteRequestCommand.TrunkLock and self.uses_appsync:
                 return False
@@ -489,6 +497,7 @@ class ToyotaVehicle(ABC):
         self._climate_settings = previous.climate_settings
         self._climate_lock = previous._climate_lock
         self._charge_settings = previous.charge_settings
+        self._engine_details = previous._engine_details
         return True
 
     @property

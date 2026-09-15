@@ -226,7 +226,7 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         await self.handler._subscribe_vin("FIRSTVIN", "token", "guid")
         sent = self.socket.send_json.call_args.args[0]
         query = json.loads(sent["payload"]["data"])["query"]
-        for field in ("electric {", "tires {", "tripdetails {", "engine { running lastUpdateDateTime status }"):
+        for field in ("electric {", "tires {", "tripdetails {", "engine { running lastUpdateDateTime status"):
             self.assertIn(field, query)
 
         await self.handler._handle_message({

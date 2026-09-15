@@ -18,6 +18,7 @@ from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .vehicle_helpers import (
     backdoor_candidates,
+    can_extend_remote_runtime,
     normalize_charging_state,
     normalize_engine_state,
     opening_state_from_graphql,
@@ -41,6 +42,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         RemoteRequestCommand.HazardsOff: "hazard-off",
         RemoteRequestCommand.VehicleFinder: "find-vehicle",
         RemoteRequestCommand.Refresh: "refresh",
+        RemoteRequestCommand.ExtendRuntime: "add-runtime",
     }
 
     #  We'll parse these keys out in the parser by mapping the category and section types to a string literal
@@ -321,6 +323,13 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
     async def send_command(self, command: RemoteRequestCommand) -> None:
         """Send a generation-appropriate remote command."""
+        if command == RemoteRequestCommand.ExtendRuntime and self.supports_command(command):
+            status = await self._client.graphql_get_vehicle_status(self.vin, self.backdoor_type, self.region)
+            if not status:
+                raise RuntimeError("Toyota did not return the current remote-start session.")
+            self.apply_graphql_status(status)
+            if not can_extend_remote_runtime((status.get("vehicleState") or {}).get("engine") or {}):
+                raise ValueError("Runtime extension is unavailable for this session.")
         if not self.supports_command(command):
             raise ValueError("This command is unavailable for this vehicle.")
         if command in self._EXTENDED_COMMANDS:
@@ -669,13 +678,19 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             # Engine
             engine = vehicle_state.get("engine")
             if engine:
+                engine_observed_at = parse_api_timestamp(
+                    engine.get("lastUpdateDateTime")
+                    or vehicle_state.get("lastUpdateDateTime")
+                    or status.get("lastUpdateDateTime")
+                )
+                previous = self._feature_timestamps.get(("engine_details", "value"))
+                if previous is None or (engine_observed_at is not None and engine_observed_at >= previous):
+                    self._engine_details.update(engine)
+                    if engine_observed_at is not None:
+                        self._feature_timestamps[("engine_details", "value")] = engine_observed_at
                 self._store_remote_start(
                     engine.get("running", engine.get("status")),
-                    parse_api_timestamp(
-                        engine.get("lastUpdateDateTime")
-                        or vehicle_state.get("lastUpdateDateTime")
-                        or status.get("lastUpdateDateTime")
-                    ),
+                    engine_observed_at,
                 )
 
         # Telemetry from GraphQL response

@@ -74,7 +74,7 @@ GRAPHQL_VEHICLE_STATUS_FIELDS = """
         spare { psi kpa bar displayLowTirePressureWarning }
         lastUpdateDateTime
       }
-      engine { running lastUpdateDateTime status }
+      engine { running lastUpdateDateTime status startTime stopTime lastUpdateBy }
     }
     tripdetails {
       lastUpdateDateTime
@@ -561,7 +561,6 @@ async def graphql_request(
                     if code:
                         detail = f"{detail} [{code}]"
                     raise RuntimeError(detail)
-                return None
             return result.get("data")
 
 
@@ -839,9 +838,14 @@ async def _execute_appsync_operation(self, vin, submit, region):
             request_no = ((execution or {}).get("payload") or {}).get(
                 "requestNo"
             )
-            return await _wait_for_remote_command_result(
-                ws, vin, subscription_id, request_no
-            )
+            try:
+                return await _wait_for_remote_command_result(
+                    ws, vin, subscription_id, request_no
+                )
+            except asyncio.TimeoutError as err:
+                raise RuntimeError(
+                    "Toyota accepted the command but did not report completion within 60 seconds."
+                ) from err
 
 
 async def api_request(self, method, endpoint, header_params=None, **kwargs):

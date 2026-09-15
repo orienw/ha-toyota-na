@@ -195,3 +195,13 @@ power_supply_stop:
       selector:
         device:
           integration: toyota_na
+
+extend_runtime:
+  name: Extend remote runtime
+  description: Extend an active remote-start session when the vehicle reports it can be extended.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
