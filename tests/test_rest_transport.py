@@ -10,6 +10,7 @@ from uuid import UUID
 
 import aiohttp
 from toyota_na.client import ToyotaOneClient
+from toyota_na.exceptions import LoginError
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -44,6 +45,17 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.patch = patch.object(client_module.aiohttp, "ClientSession", return_value=self.session)
         self.patch.start()
         self.addCleanup(self.patch.stop)
+
+    async def test_optional_read_helpers_propagate_expired_credentials(self):
+        client = Client()
+        client._auth_headers = AsyncMock(side_effect=LoginError())
+        for getter in (
+            client_module.get_telemetry, client_module.get_vehicle_status_17cy,
+            client_module.get_vehicle_status_17cyplus, client_module.get_engine_status_17cyplus,
+        ):
+            with self.subTest(getter=getter.__name__), self.assertRaises(LoginError):
+                await getter(client, "TESTVIN")
+        self.session.request.assert_not_called()
 
     async def test_climate_preferences_use_route_with_actual_vehicle_context(self):
         settings = {"temperature": 72, "temperatureUnit": "F", "settingsOn": True}

@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 
 from toyota_na.client import ToyotaOneClient
+from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
@@ -136,6 +137,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 )
                 if vehicle_status:
                     self._parse_vehicle_status(vehicle_status)
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error parsing vehicle status: %s", e)
             pass
@@ -149,6 +152,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             )
             if telemetry:
                 self._parse_telemetry(telemetry)
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error parsing telemetry: %s", e)
             pass
@@ -159,6 +164,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             )
             if engine_status:
                 self._parse_engine_status(engine_status)
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error parsing engine status: %s", e)
             pass
@@ -171,12 +178,16 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 )
                 if electric_status:
                     self._parse_electric_status(electric_status)
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error parsing electric status: %s", e)
             pass
 
         try:
             await self.update_climate()
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error fetching climate settings: %s", e)
 
@@ -199,6 +210,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 )
                 if electric_status:
                     self._parse_electric_status(electric_status)
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error refreshing electric status: %s", e)
             pass

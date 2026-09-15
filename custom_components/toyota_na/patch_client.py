@@ -6,6 +6,7 @@ import uuid
 from urllib.parse import urlencode, urljoin
 
 import aiohttp
+from toyota_na.exceptions import AuthError
 
 API_GATEWAY = "https://onecdn.telematicsct.com/oneapi/"
 REMOTE_ROUTE = "https://onecdn.telematicsct.com/v1/remote/route/"
@@ -177,6 +178,8 @@ async def get_telemetry(self, vin, region="US", generation="17CYPLUS"):
             "v2/telemetry",
             _vehicle_headers(vin, region, GENERATION=generation),
         )
+    except AuthError:
+        raise
     except Exception as e:
         _LOGGER.debug("v2/telemetry failed: %s", e)
         return None
@@ -204,6 +207,8 @@ async def get_vehicle_status_17cyplus(self, vin, region="US"):
         )
         if res and res.get("vehicleStatus"):
             return res
+    except AuthError:
+        raise
     except Exception as e:
         _LOGGER.debug("vehicle_status v1/global/remote/status failed: %s", e)
     return None
@@ -224,6 +229,8 @@ async def get_engine_status_17cyplus(self, vin, region="US"):
         )
         if res:
             return res
+    except AuthError:
+        raise
     except Exception as e:
         _LOGGER.debug("engine_status v1/global/remote/engine-status failed: %s", e)
     return None
@@ -345,6 +352,8 @@ async def get_vehicle_status_17cy(self, vin, region="US"):
             "v2/legacy/remote/status",
             _vehicle_headers(vin, region),
         )
+    except AuthError:
+        raise
     except Exception as e:
         _LOGGER.debug("v2/legacy/remote/status failed: %s", e)
         return None
@@ -356,6 +365,8 @@ async def get_engine_status_17cy(self, vin, region="US"):
             "v1/legacy/remote/engine-status",
             _vehicle_headers(vin, region),
         )
+    except AuthError:
+        raise
     except Exception as e:
         _LOGGER.debug("v1/legacy/remote/engine-status failed: %s", e)
         return None
@@ -407,6 +418,8 @@ async def get_electric_realtime_status(
             )
         elif realtime_electric_status["returnCode"] == "ONE-RES-10000":
             return await self.get_electric_status(vin, region=region, generation=generation)
+    except AuthError:
+        raise
     except Exception as e:
         _LOGGER.debug("Electric realtime status failed: %s", e)
         return None
@@ -424,6 +437,8 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
         )
         if "vehicleInfo" in electric_status:
             return electric_status
+    except AuthError:
+        raise
     except Exception as e:
         _LOGGER.debug("Electric status failed: %s", e)
         return None

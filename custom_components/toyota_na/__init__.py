@@ -4,9 +4,10 @@ import asyncio
 
 from toyota_na.auth import ToyotaOneAuth
 from toyota_na.client import ToyotaOneClient
-from .patch_auth import authorize, login, refresh_tokens, request_tokens
+from .patch_auth import authorize, check_tokens, login, refresh_tokens, request_tokens
 
 ToyotaOneAuth.authorize = authorize
+ToyotaOneAuth.check_tokens = check_tokens
 ToyotaOneAuth.login = login
 ToyotaOneAuth.request_tokens = request_tokens
 ToyotaOneAuth.refresh_tokens = refresh_tokens
@@ -362,6 +363,8 @@ async def update_vehicles_status(
                     await vehicle.poll_vehicle_refresh()
                     record_vehicle_wake(hass, entry, vehicle.vin)
                     wake_requested = True
+                except AuthError:
+                    raise
                 except Exception as e:
                     _LOGGER.warning("Vehicle refresh failed (%s), continuing without refresh", e)
             vehicles.append(vehicle)

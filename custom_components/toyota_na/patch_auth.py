@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import logging
@@ -9,6 +10,15 @@ from toyota_na import ToyotaOneAuth
 from toyota_na.exceptions import LoginError
 
 _LOGGER = logging.getLogger(__name__)
+_check_tokens = ToyotaOneAuth.check_tokens
+
+
+async def check_tokens(self):
+    lock = getattr(self, "_token_lock", None)
+    if lock is None:
+        lock = self._token_lock = asyncio.Lock()
+    async with lock:
+        await _check_tokens(self)
 
 
 async def authorize(self, username, password, otp=None):
@@ -146,8 +156,9 @@ async def refresh_tokens(self):
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(ToyotaOneAuth.ACCESS_TOKEN_URL, data=data) as resp:
-            if resp.status != 200:
+            if resp.status in (400, 401):
                 raise LoginError()
+            resp.raise_for_status()
             self._extract_tokens(await resp.json())
 
 

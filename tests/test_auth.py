@@ -3,14 +3,18 @@
 import copy
 import base64
 import hashlib
+import asyncio
 import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
+import aiohttp
+import jwt
+
 import test_button as platform
 from custom_components.toyota_na import patch_auth
-from toyota_na.exceptions import LoginError
+from toyota_na.exceptions import LoginError, TokenExpired
 
 
 class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
@@ -146,6 +150,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         auth = types.SimpleNamespace(_refresh_token="saved-refresh", _extract_tokens=MagicMock())
         response = AsyncMock()
         response.status = 200
+        response.raise_for_status = MagicMock()
         response.json.return_value = {"access_token": "new-token"}
         response.__aenter__.return_value = response
         session = MagicMock()
@@ -158,6 +163,47 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(form["grant_type"], "refresh_token")
         self.assertNotIn("code_verifier", form)
         auth._extract_tokens.assert_called_once_with({"access_token": "new-token"})
+
+    async def test_concurrent_requests_refresh_an_expired_token_once(self):
+        auth = patch_auth.ToyotaOneAuth()
+        auth._expires_at = 0
+        auth._guid = "guid"
+
+        async def refresh():
+            await asyncio.sleep(0)
+            auth._extract_tokens({
+                "access_token": "new-token", "refresh_token": "new-refresh",
+                "id_token": jwt.encode({"sub": "guid"}, key="", algorithm="none"),
+                "expires_in": 3600,
+            })
+
+        auth.refresh_tokens = AsyncMock(side_effect=refresh)
+        results = await asyncio.gather(
+            auth.get_access_token(), auth.get_access_token(), auth.get_guid(),
+        )
+        self.assertEqual(results, ["new-token", "new-token", "guid"])
+        auth.refresh_tokens.assert_awaited_once()
+
+    async def test_temporary_refresh_failure_does_not_expire_login(self):
+        auth = patch_auth.ToyotaOneAuth()
+        auth._expires_at = 0
+        auth._refresh_token = "saved-refresh"
+        response = AsyncMock()
+        response.__aenter__.return_value = response
+        session = MagicMock()
+        session.__aenter__.return_value = session
+        session.post.return_value = response
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            for status in (429, 503):
+                response.status = status
+                error = aiohttp.ClientResponseError(MagicMock(), (), status=status)
+                response.raise_for_status = MagicMock(side_effect=error)
+                with self.subTest(status=status), self.assertRaises(aiohttp.ClientResponseError):
+                    await auth.check_tokens()
+                self.assertEqual(auth._refresh_token, "saved-refresh")
+            response.status = 400
+            with self.assertRaises(TokenExpired):
+                await auth.check_tokens()
 
     async def test_login_pauses_for_otp_before_exchanging_tokens(self):
         challenge = {"callbacks": []}

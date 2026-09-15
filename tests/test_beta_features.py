@@ -14,6 +14,7 @@ from custom_components.toyota_na.patch_base_vehicle import (
     ApiVehicleGeneration, RemoteRequestCommand, VehicleFeatures,
 )
 from custom_components.toyota_na.patch_vehicle import get_vehicles
+from toyota_na.exceptions import LoginError
 
 
 CLIMATE_SETTINGS = {
@@ -172,6 +173,14 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(vehicle.inherit_state(previous))
         self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 62)
         self.assertFalse(vehicle.supports_command(RemoteRequestCommand.EngineStart))
+
+    async def test_expired_login_during_optional_vehicle_reads_reaches_reauthentication(self):
+        for factory in (behavior.make_17cy_vehicle, behavior.make_24mm_vehicle):
+            client = types.SimpleNamespace(get_telemetry=AsyncMock(side_effect=LoginError()))
+            vehicle = factory(client)
+            vehicle._has_remote_subscription = False
+            with self.subTest(factory=factory.__name__), self.assertRaises(LoginError):
+                await vehicle.update()
 
     async def test_services_enforce_live_feature_and_charging_state(self):
         client = types.SimpleNamespace(remote_request_24mm=AsyncMock())
