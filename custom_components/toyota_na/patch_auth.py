@@ -151,7 +151,7 @@ async def authorize(self, username, password, otp=None):
         
             async with session.post(f"{ToyotaOneAuth.AUTHENTICATE_URL}", json=data, headers=headers) as resp:
                 if resp.status != 200:
-                    _LOGGER.info(await resp.text())
+                    _LOGGER.info("Toyota authentication failed with HTTP %s", resp.status)
                     raise LoginError()
                 data = await resp.json()
                 if any(

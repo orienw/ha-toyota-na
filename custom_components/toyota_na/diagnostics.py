@@ -24,6 +24,7 @@ TO_REDACT = {
     CONF_PASSWORD,
     "ctsLinks",  # contains a vin number
     "device_id",
+    "guid",
     "id_token",
     "imei",
     "refresh_token",

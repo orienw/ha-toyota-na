@@ -117,6 +117,22 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(client_patch.stop)
         self.credentials = {"username": "owner", "password": "password"}
 
+    async def test_failed_authentication_does_not_log_callback_body(self):
+        response = MagicMock(status=401)
+        response.text = AsyncMock(return_value='{"authId":"private-auth-session","callbacks":[]}')
+        response.__aenter__ = AsyncMock(return_value=response)
+        response.__aexit__ = AsyncMock(return_value=False)
+        session = MagicMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        session.post.return_value = response
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            with self.assertLogs(patch_auth.__name__, level="INFO") as logs:
+                with self.assertRaises(LoginError):
+                    await patch_auth.authorize(types.SimpleNamespace(), "owner", "password")
+        self.assertIn("401", " ".join(logs.output))
+        self.assertNotIn("private-auth-session", " ".join(logs.output))
+
     async def test_authorized_login_finishes_without_asking_for_otp(self):
         self.auth.authorize.return_value = "authorization-code"
 
