@@ -1,5 +1,7 @@
-import json
+import base64
+import hashlib
 import logging
+import secrets
 import aiohttp
 from urllib.parse import urlparse, parse_qs, urlencode
 
@@ -90,16 +92,20 @@ async def authorize(self, username, password, otp=None):
                     break
 
         if "tokenId" not in data:
-            _LOGGER.error(json.dumps(data))
+            _LOGGER.error("Toyota login did not complete its authentication challenge")
             raise LoginError()
         headers["Cookie"] = f"iPlanetDirectoryPro={data['tokenId']}"
+        self._code_verifier = secrets.token_urlsafe(64)
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(self._code_verifier.encode("ascii")).digest()
+        ).rstrip(b"=").decode("ascii")
         auth_params = {
             "client_id": "oneappsdkclient",
             "scope": "openid profile write",
             "response_type": "code",
             "redirect_uri": "com.toyota.oneapp:/oauth2Callback",
-            "code_challenge": "plain",
-            "code_challenge_method": "plain"
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
         }
         AUTHORIZE_URL_QS = f"{ToyotaOneAuth.AUTHORIZE_URL}?{urlencode(auth_params)}"
         async with session.get(AUTHORIZE_URL_QS, headers=headers, allow_redirects=False) as resp:
@@ -113,6 +119,40 @@ async def authorize(self, username, password, otp=None):
                 raise LoginError()
             return query["code"][0]
             
-async def login(self, username, password, otp):
+async def request_tokens(self, code):
+    verifier = getattr(self, "_code_verifier", None)
+    if not verifier:
+        raise LoginError("Start a new login before exchanging an authorization code.")
+    data = {
+        "client_id": "oneappsdkclient",
+        "redirect_uri": "com.toyota.oneapp:/oauth2Callback",
+        "grant_type": "authorization_code",
+        "code_verifier": verifier,
+        "code": code,
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(ToyotaOneAuth.ACCESS_TOKEN_URL, data=data) as resp:
+            if resp.status != 200:
+                raise LoginError()
+            self._extract_tokens(await resp.json())
+            self._code_verifier = None
+
+
+async def refresh_tokens(self):
+    data = {
+        "client_id": "oneappsdkclient",
+        "grant_type": "refresh_token",
+        "refresh_token": self._refresh_token,
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(ToyotaOneAuth.ACCESS_TOKEN_URL, data=data) as resp:
+            if resp.status != 200:
+                raise LoginError()
+            self._extract_tokens(await resp.json())
+
+
+async def login(self, username, password, otp=None):
     authorization_code = await self.authorize(username, password, otp)
+    if isinstance(authorization_code, dict):
+        return authorization_code
     await self.request_tokens(authorization_code)

@@ -4,14 +4,8 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 
-from toyota_na import ToyotaOneAuth, ToyotaOneClient
+from toyota_na import ToyotaOneClient
 from toyota_na.exceptions import AuthError
-
-# Patch auth code
-from .patch_auth import authorize, login
-
-ToyotaOneAuth.authorize = authorize
-ToyotaOneAuth.login = login
 
 from .const import DOMAIN, REFRESH_STATUS_INTERVAL
 from .wake_policy import (

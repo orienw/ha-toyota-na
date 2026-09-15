@@ -1,9 +1,12 @@
 """Login continuation and expired-credential recovery."""
 
 import copy
+import base64
+import hashlib
 import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import test_button as platform
 from custom_components.toyota_na import patch_auth
@@ -90,6 +93,82 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_each_login_exchanges_its_own_s256_verifier(self):
+        response = AsyncMock()
+        response.status = 200
+        response.json.return_value = {"tokenId": "session"}
+        response.__aenter__.return_value = response
+        redirect = AsyncMock()
+        redirect.status = 302
+        redirect.headers = {"Location": "com.toyota.oneapp:/oauth2Callback?code=code"}
+        redirect.__aenter__.return_value = redirect
+        session = MagicMock()
+        session.__aenter__.return_value = session
+        session.post.return_value = response
+        session.get.return_value = redirect
+        auth = types.SimpleNamespace(_extract_tokens=MagicMock())
+        verifiers = []
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            for _ in range(2):
+                code = await patch_auth.authorize(auth, "owner", "password")
+                query = parse_qs(urlparse(session.get.call_args.args[0]).query)
+                await patch_auth.request_tokens(auth, code)
+                form = session.post.call_args.kwargs["data"]
+                verifier = form["code_verifier"]
+                self.assertEqual(len(verifier), 86)
+                self.assertEqual(form["code"], "code")
+                self.assertEqual(query["code_challenge_method"], ["S256"])
+                self.assertEqual(query["code_challenge"], [
+                    base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode(),
+                ])
+                self.assertIsNone(auth._code_verifier)
+                verifiers.append(verifier)
+        self.assertNotEqual(*verifiers)
+
+    async def test_token_exchange_requires_authorization_and_preserves_failed_attempt(self):
+        auth = types.SimpleNamespace(_extract_tokens=MagicMock())
+        with self.assertRaises(LoginError):
+            await patch_auth.request_tokens(auth, "code")
+        auth._code_verifier = "pending-verifier"
+        response = AsyncMock()
+        response.status = 400
+        response.__aenter__.return_value = response
+        session = MagicMock()
+        session.__aenter__.return_value = session
+        session.post.return_value = response
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            with self.assertRaises(LoginError):
+                await patch_auth.request_tokens(auth, "code")
+        auth._extract_tokens.assert_not_called()
+        self.assertEqual(auth._code_verifier, "pending-verifier")
+
+    async def test_refresh_of_saved_session_needs_no_login_verifier(self):
+        auth = types.SimpleNamespace(_refresh_token="saved-refresh", _extract_tokens=MagicMock())
+        response = AsyncMock()
+        response.status = 200
+        response.json.return_value = {"access_token": "new-token"}
+        response.__aenter__.return_value = response
+        session = MagicMock()
+        session.__aenter__.return_value = session
+        session.post.return_value = response
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            await patch_auth.refresh_tokens(auth)
+        form = session.post.call_args.kwargs["data"]
+        self.assertEqual(form["refresh_token"], "saved-refresh")
+        self.assertEqual(form["grant_type"], "refresh_token")
+        self.assertNotIn("code_verifier", form)
+        auth._extract_tokens.assert_called_once_with({"access_token": "new-token"})
+
+    async def test_login_pauses_for_otp_before_exchanging_tokens(self):
+        challenge = {"callbacks": []}
+        auth = types.SimpleNamespace(
+            authorize=AsyncMock(side_effect=[challenge, "code"]), request_tokens=AsyncMock(),
+        )
+        self.assertEqual(await patch_auth.login(auth, "owner", "password"), challenge)
+        auth.request_tokens.assert_not_awaited()
+        await patch_auth.login(auth, "owner", "password", "otp")
+        auth.request_tokens.assert_awaited_once_with("code")
+
     async def test_invalid_otp_retry_uses_the_latest_server_challenge(self):
         def challenge(auth_id):
             return {
@@ -108,7 +187,10 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         })
         response = AsyncMock()
         response.status = 200
-        response.json.side_effect = [challenge("first-auth-id"), rejected, {"tokenId": "session"}]
+        response.json.side_effect = [
+            challenge("first-auth-id"), rejected, {"tokenId": "session"},
+            {"access_token": "new-token"},
+        ]
         response.__aenter__.return_value = response
         redirect = AsyncMock()
         redirect.status = 302
@@ -118,20 +200,25 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         session = MagicMock()
         session.__aenter__.return_value = session
 
-        def post(url, *, json, headers):
-            sent.append(copy.deepcopy(json))
+        def post(url, *, json=None, headers=None, data=None):
+            if json is not None:
+                sent.append(copy.deepcopy(json))
             return response
 
         session.post.side_effect = post
         session.get.return_value = redirect
-        auth = types.SimpleNamespace()
+        auth = types.SimpleNamespace(_extract_tokens=MagicMock())
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
             await patch_auth.authorize(auth, "owner", "password")
             with self.assertLogs(patch_auth.__name__, level="ERROR"):
                 with self.assertRaises(LoginError):
                     await patch_auth.authorize(auth, "owner", "password", "wrong")
             code = await patch_auth.authorize(auth, "owner", "password", "correct")
+            verifier = auth._code_verifier
+            await patch_auth.request_tokens(auth, code)
 
         self.assertEqual(code, "code")
         self.assertEqual(sent[-1]["authId"], "retry-auth-id")
         self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], "correct")
+        self.assertEqual(session.post.call_args.kwargs["data"]["code_verifier"], verifier)
+        auth._extract_tokens.assert_called_once_with({"access_token": "new-token"})
