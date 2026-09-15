@@ -31,7 +31,7 @@ class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
 
     def feature(self, feature: VehicleFeatures):
         """Return the feature dict."""
-        if self.vehicle is None:
+        if self.vehicle is None or not self.vehicle.feature_available(feature):
             return
         return self.vehicle.features.get(feature)
 

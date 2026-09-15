@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from toyota_na.client import ToyotaOneClient
 
 from .const import DOMAIN
-from .vehicle_helpers import endpoint_generation
+from .vehicle_helpers import endpoint_generation, is_appsync_generation
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ async def async_get_config_entry_diagnostics(
         region = vehicle.get("region") or "US"
         
         try:
-            if api_generation == "24MM":
+            if is_appsync_generation(api_generation):
                 user_vehicle_status = await client.graphql_get_vehicle_status(
                     vin,
                     vehicle.get("backdoorType"),
@@ -117,7 +117,7 @@ async def async_get_config_entry_diagnostics(
             )
             
         try:
-            if api_generation != "24MM":
+            if not is_appsync_generation(api_generation):
                 user_electric_status = await client.get_electric_status(
                     vin, region=region, generation=api_generation
                 )

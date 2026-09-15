@@ -45,6 +45,64 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
 
+    async def test_climate_preferences_use_route_with_actual_vehicle_context(self):
+        settings = {"temperature": 72, "temperatureUnit": "F", "settingsOn": True}
+        self.response.json.return_value = {"payload": settings}
+        for generation in ("17CY", "17CYPLUS", "21MM", "24MM", "26BEV"):
+            with self.subTest(generation=generation):
+                self.assertEqual(await client_module.get_climate_settings(Client(), "TESTVIN", generation, "CA", "L"), settings)
+                call = self.session.request.call_args
+                self.assertEqual(call.args, ("GET", "https://onecdn.telematicsct.com/v1/remote/route/climate-settings"))
+                self.assertEqual(call.kwargs["headers"]["X-GENERATION"], generation)
+                self.assertEqual(call.kwargs["headers"]["X-BRAND"], "L")
+                self.assertEqual(call.kwargs["headers"]["x-region"], "CA")
+                await client_module.update_climate_settings(Client(), "TESTVIN", generation, settings, "CA", "L")
+                call = self.session.request.call_args
+                self.assertEqual(call.args, ("PUT", "https://onecdn.telematicsct.com/v1/remote/route/climate-settings"))
+                self.assertEqual(call.kwargs["json"], settings)
+
+    async def test_charge_now_uses_electric_command_and_acceptance_response(self):
+        completed = {"remoteControlResult": {"status": 0, "result": 0}, "vehicleInfo": {"chargeInfo": {"plugStatus": 40}}}
+        self.response.json.side_effect = [
+            {"payload": {"appRequestNo": "charge-123", "returnCode": "ONE-RES-10000"}},
+            {"payload": {"remoteControlResult": {"status": 1, "result": None}}},
+            {"payload": completed},
+        ]
+        with patch.object(client_module.asyncio, "sleep", AsyncMock()):
+            result = await client_module.electric_command(Client(), "TESTVIN", "21MM", "immediate-charge", "CA", "L")
+        call, pending, followup = self.session.request.call_args_list
+        self.assertEqual(call.args, ("POST", "https://onecdn.telematicsct.com/oneapi/v2/electric/command"))
+        self.assertEqual(call.kwargs["json"], {"command": "immediate-charge"})
+        self.assertEqual(call.kwargs["headers"]["X-GENERATION"], "21MM")
+        self.assertEqual(call.kwargs["headers"]["X-BRAND"], "L")
+        self.assertEqual(call.kwargs["headers"]["device-id"], "device")
+        self.assertEqual(pending.args, ("GET", "https://onecdn.telematicsct.com/oneapi/v3/electric/status?remote-control=charge-123"))
+        self.assertEqual(followup.args, pending.args)
+        self.assertEqual(followup.kwargs["headers"]["X-GENERATION"], "21MM")
+        self.assertEqual(result, completed)
+
+    async def test_17cy_charging_completion_uses_v2_and_encoded_request_number(self):
+        self.response.json.side_effect = [
+            {"payload": {"appRequestNo": "charge/123", "returnCode": "ONE-RES-10000"}},
+            {"payload": {"remoteControlResult": {"status": 0, "result": 0}}},
+        ]
+        await client_module.electric_command(Client(), "TESTVIN", "17CY", "immediate-charge")
+        self.assertEqual(self.session.request.call_args.args, (
+            "GET", "https://onecdn.telematicsct.com/oneapi/v2/electric/status?remote-control=charge%2F123",
+        ))
+
+    async def test_charging_acceptance_without_completion_times_out(self):
+        self.response.json.return_value = {"payload": {"appRequestNo": "123", "returnCode": "ONE-RES-10000"}}
+        with patch.object(client_module, "ELECTRIC_COMMAND_TIMEOUT", 0):
+            with self.assertRaisesRegex(RuntimeError, "did not confirm completion"):
+                await client_module.electric_command(Client(), "TESTVIN", "21MM", "immediate-charge")
+
+    async def test_charge_now_rejects_failed_or_missing_acceptance(self):
+        for payload in ({}, {"returnCode": "ONE-RES-10000"}, {"returnCode": "REJECTED", "appRequestNo": "123"}):
+            with self.subTest(payload=payload), self.assertRaisesRegex(RuntimeError, "did not accept"):
+                self.response.json.return_value = {"payload": payload}
+                await client_module.electric_command(Client(), "TESTVIN", "17CY", "immediate-charge")
+
     async def test_electric_status_uses_generation_specific_version_and_headers(self):
         status = {"vehicleInfo": {"chargeInfo": {"chargeRemainingAmount": 80}}}
         self.response.json.return_value = {"payload": status}

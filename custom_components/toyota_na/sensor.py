@@ -32,6 +32,8 @@ async def async_setup_entry(
                 vehicle_feature = cast(
                     VehicleFeatures, entity_config["feature"]
                 )
+                if not vehicle.feature_available(vehicle_feature):
+                    continue
                 feature = vehicle.features.get(vehicle_feature)
                 if isinstance(feature, ToyotaNumeric):
                     if vehicle.electric is False and cast(

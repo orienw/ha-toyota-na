@@ -42,6 +42,7 @@ Services:
 * Remote Start/Stop Engine (Remote Subscription Required)
 * Hazards On/Off (Remote Subscription Required)
 * Find Vehicle (Remote Subscription and reported vehicle support required)
+* Charge Now, Resume Charging, and Stop Charging, when available
 * Refresh Data
 
 Native controls:
@@ -50,6 +51,16 @@ Native controls:
 * Flash Hazards button
 * Find Vehicle button, when reported supported
 * Refresh Status button
+* Charge Now, Resume Charging, and Stop Charging buttons, when available
+* Climate Temperature and Use Climate Settings controls, when supported
+
+Climate controls update the saved preferences used for remote starts. Use Remote
+Start and Remote Stop to start or stop the vehicle. Charging buttons become
+available according to the vehicle's reported charging state.
+
+Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,
+and `26BEV`. EV readings can remain available without Remote Connect when Toyota
+grants the account access to that data.
 
 ## Installation
 Requires Home Assistant 2022.11 or newer.

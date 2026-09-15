@@ -91,6 +91,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         backdoor_type: Optional[str] = None,
         remote_capabilities: Optional[dict] = None,
         extended_capabilities: Optional[dict] = None,
+        feature_flags: Optional[dict] = None,
+        legacy_capabilities: Optional[list] = None,
     ):
         self._has_remote_subscription = has_remote_subscription
         self._has_electric = has_electric
@@ -109,6 +111,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             backdoor_type,
             remote_capabilities,
             extended_capabilities,
+            feature_flags,
+            legacy_capabilities,
         )
         self._feature_timestamps = {}
 
@@ -125,7 +129,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
     async def update(self):
         
         try:
-            if self._has_remote_subscription:
+            if self.can_read_status:
                 # vehicle_health_status
                 vehicle_status = await self._client.get_vehicle_status_17cy(
                     self._vin, self._region
@@ -150,18 +154,18 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             pass
 
         try:
-            # engine_status
-            engine_status = await self._client.get_engine_status_17cy(
-                self._vin, self._region
-            )
-            if engine_status:
-                self._parse_engine_status(engine_status)
+            if self.can_read_status:
+                engine_status = await self._client.get_engine_status_17cy(
+                    self._vin, self._region
+                )
+                if engine_status:
+                    self._parse_engine_status(engine_status)
         except Exception as e:
             _LOGGER.debug("Error parsing engine status: %s", e)
             pass
 
         try:
-            if self._has_electric:
+            if self.can_read_electric:
                 # electric_status
                 electric_status = await self._client.get_electric_status(
                     self.vin, region=self._region, generation=self.api_generation
@@ -172,15 +176,22 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             _LOGGER.debug("Error parsing electric status: %s", e)
             pass
 
+        try:
+            await self.update_climate()
+        except Exception as e:
+            _LOGGER.debug("Error fetching climate settings: %s", e)
+
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
+        if not self.supports_command(RemoteRequestCommand.Refresh):
+            raise ValueError("Vehicle refresh is unavailable for this vehicle.")
         await self._client.send_refresh_request_17cy(
             self._vin, self._region
         )
 
         """Tell Toyota to refresh electric status if applicable"""
         try:
-            if self._has_electric:
+            if self.can_read_electric:
                 # electric_status
                 electric_status = await self._client.get_electric_realtime_status(
                     self.vin,
@@ -195,6 +206,11 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
     async def send_command(self, command: RemoteRequestCommand) -> None:
         """Start the engine. Periodically refreshes the vehicle status to determine if the engine is running."""
+        if not self.supports_command(command):
+            raise ValueError("This command is unavailable for this vehicle.")
+        if command == RemoteRequestCommand.ChargeStart:
+            await self.send_charging_command(command)
+            return
         await self._client.remote_request_17cy(
             self._vin,
             self._command_map[command],
@@ -235,6 +251,9 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             return
 
         observed_at = parse_api_timestamp(vehicle_info.get("acquisitionDatetime"))
+        self._store_numeric(
+            VehicleFeatures.ChargingState, charge_info.get("plugStatus"), "", observed_at
+        )
         distance_unit = charge_info.get("evDistanceUnit", "")
         for key, feature, unit in (
             ("evDistance", VehicleFeatures.ChargeDistance, distance_unit),

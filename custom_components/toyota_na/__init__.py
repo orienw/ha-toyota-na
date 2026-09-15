@@ -9,6 +9,9 @@ from toyota_na.client import ToyotaOneClient
 from .patch_client import (
     get_electric_realtime_status,
     get_electric_status,
+    get_climate_settings,
+    update_climate_settings,
+    electric_command,
     api_request,
     _auth_headers,
     get_telemetry,
@@ -34,6 +37,9 @@ from .patch_client import (
 )
 ToyotaOneClient.get_electric_realtime_status = get_electric_realtime_status
 ToyotaOneClient.get_electric_status = get_electric_status
+ToyotaOneClient.get_climate_settings = get_climate_settings
+ToyotaOneClient.update_climate_settings = update_climate_settings
+ToyotaOneClient.electric_command = electric_command
 ToyotaOneClient.api_request = api_request
 ToyotaOneClient._auth_headers = _auth_headers
 ToyotaOneClient.get_telemetry = get_telemetry
@@ -89,7 +95,7 @@ from .patch_vehicle import get_vehicles
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import device_registry as dr, service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -100,6 +106,9 @@ from .const import (
     COMMAND_MAP,
     COMMAND_REFRESH_DELAY,
     DOMAIN,
+    CHARGE_START,
+    CHARGE_RESUME,
+    CHARGE_STOP,
     ENGINE_START,
     ENGINE_STOP,
     HAZARDS_ON,
@@ -113,7 +122,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["binary_sensor", "button", "device_tracker", "lock", "sensor"]
+PLATFORMS = ["binary_sensor", "button", "device_tracker", "lock", "number", "sensor", "switch"]
 
 
 async def _refresh_coordinator_after_command(coordinator) -> None:
@@ -183,9 +192,11 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
         vehicle = next(
             item for item in coordinator.data if item.vin == vin
         )
-        if not vehicle.subscribed:
-            _LOGGER.warning("VIN ...%s has no active remote subscription", vin[-4:])
-            return
+        command = COMMAND_MAP[remote_action]
+        if not vehicle.supports_command(command):
+            raise HomeAssistantError(
+                f"{remote_action.replace('_', ' ').capitalize()} is unavailable for this vehicle."
+            )
 
         if remote_action.upper() == "REFRESH":
             await vehicle.poll_vehicle_refresh()
@@ -193,14 +204,6 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
                 record_vehicle_wake(hass, config_entry, vin)
             coordinator.async_set_updated_data(coordinator.data)
         else:
-            command = COMMAND_MAP[remote_action]
-            if not vehicle.supports_command(command):
-                _LOGGER.warning(
-                    "Toyota reports that %s is unsupported for VIN ...%s",
-                    remote_action,
-                    vin[-4:],
-                )
-                return
             await vehicle.send_command(command)
             if config_entry is not None:
                 record_vehicle_wake(hass, config_entry, vin)
@@ -212,6 +215,9 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
 
         return
 
+    hass.services.async_register(DOMAIN, CHARGE_START, async_service_handle)
+    hass.services.async_register(DOMAIN, CHARGE_RESUME, async_service_handle)
+    hass.services.async_register(DOMAIN, CHARGE_STOP, async_service_handle)
     hass.services.async_register(DOMAIN, ENGINE_START, async_service_handle)
     hass.services.async_register(DOMAIN, ENGINE_STOP, async_service_handle)
     hass.services.async_register(DOMAIN, HAZARDS_ON, async_service_handle)
@@ -302,6 +308,7 @@ def _websocket_contexts(vehicles):
     websocket_generations = {
         ApiVehicleGeneration.MM21,
         ApiVehicleGeneration.MM24,
+        ApiVehicleGeneration.BEV26,
     }
     return {
         vehicle.vin: {
@@ -309,7 +316,7 @@ def _websocket_contexts(vehicles):
             "backdoor_type": vehicle.backdoor_type,
         }
         for vehicle in vehicles
-        if vehicle.subscribed
+        if vehicle.can_receive_status
         and vehicle.generation in websocket_generations
     }
 
@@ -339,7 +346,7 @@ async def update_vehicles_status(
                 REFRESH_STATUS_INTERVAL,
                 vin=vehicle.vin,
             )
-            if need_refresh and vehicle.subscribed:
+            if need_refresh and vehicle.supports_command(RemoteRequestCommand.Refresh):
                 try:
                     _LOGGER.info(
                         "Requesting vehicle refresh for %s %s",

@@ -17,6 +17,9 @@ HAZARDS_ON = "hazards_on"
 HAZARDS_OFF = "hazards_off"
 VEHICLE_FINDER = "find_vehicle"
 REFRESH = "refresh"
+CHARGE_START = "charge_start"
+CHARGE_RESUME = "charge_resume"
+CHARGE_STOP = "charge_stop"
 
 UPDATE_INTERVAL = 600
 REFRESH_STATUS_INTERVAL = 2 * 3600
@@ -30,9 +33,27 @@ COMMAND_MAP = {
     HAZARDS_OFF: RemoteRequestCommand.HazardsOff,
     VEHICLE_FINDER: RemoteRequestCommand.VehicleFinder,
     REFRESH: RemoteRequestCommand.Refresh,
+    CHARGE_START: RemoteRequestCommand.ChargeStart,
+    CHARGE_RESUME: RemoteRequestCommand.ChargeResume,
+    CHARGE_STOP: RemoteRequestCommand.ChargeStop,
 }
 
 COMMAND_BUTTONS = (
+    {
+        "command": RemoteRequestCommand.ChargeStart,
+        "icon": "mdi:ev-station",
+        "name": "Charge Now",
+    },
+    {
+        "command": RemoteRequestCommand.ChargeResume,
+        "icon": "mdi:play",
+        "name": "Resume Charging",
+    },
+    {
+        "command": RemoteRequestCommand.ChargeStop,
+        "icon": "mdi:stop",
+        "name": "Stop Charging",
+    },
     {
         "command": RemoteRequestCommand.EngineStart,
         "icon": "mdi:engine-outline",

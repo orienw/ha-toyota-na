@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
+import asyncio
 from enum import Enum, auto, unique
+import math
 from typing import Optional, Union
 
 from toyota_na.client import ToyotaOneClient
@@ -9,7 +11,7 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
-from .vehicle_helpers import endpoint_generation, first_capability
+from .vehicle_helpers import endpoint_generation, first_capability, is_appsync_generation
 
 
 @unique
@@ -18,6 +20,7 @@ class ApiVehicleGeneration(Enum):
     CY17PLUS = "17CYPLUS"
     MM21 = "21MM"
     MM24 = "24MM"
+    BEV26 = "26BEV"
     NG86 = "GR86"
     PRE17CY = "PRE17CY"
 
@@ -39,6 +42,7 @@ class VehicleFeatures(Enum):
 
     # Charging Status
     ChargingStatus = auto()
+    ChargingState = auto()
     
     # Numeric values
     DistanceToEmpty = auto()
@@ -85,6 +89,9 @@ class RemoteRequestCommand(Enum):
     HazardsOff = auto()
     VehicleFinder = auto()
     Refresh = auto()
+    ChargeStart = auto()
+    ChargeResume = auto()
+    ChargeStop = auto()
 
 
 class ToyotaVehicle(ABC):
@@ -154,6 +161,8 @@ class ToyotaVehicle(ABC):
         backdoor_type: Optional[str] = None,
         remote_capabilities: Optional[dict] = None,
         extended_capabilities: Optional[dict] = None,
+        feature_flags: Optional[dict] = None,
+        legacy_capabilities: Optional[list] = None,
     ):
         """
         Initialize a new vehicle object. Must call `vehicle.update()` to fully populate the object.
@@ -174,6 +183,10 @@ class ToyotaVehicle(ABC):
         self._backdoor_type = backdoor_type
         self._remote_capabilities = remote_capabilities or {}
         self._extended_capabilities = extended_capabilities or {}
+        self._feature_flags = feature_flags
+        self._legacy_capabilities = legacy_capabilities or []
+        self._climate_settings = {}
+        self._climate_lock = asyncio.Lock()
 
     @abstractmethod
     async def poll_vehicle_refresh(self) -> None:
@@ -261,10 +274,165 @@ class ToyotaVehicle(ABC):
         """Return the generation string reported by vehicle discovery."""
         return self._generation.value
 
+    @property
+    def uses_appsync(self) -> bool:
+        return is_appsync_generation(self.api_generation)
+
+    def feature_enabled(self, name: str) -> bool:
+        """Older vehicle payloads omit the entire feature-state model."""
+        if self._feature_flags is None:
+            return True
+        value = self._feature_flags.get(name)
+        return type(value) is int and value == 1
+
+    @property
+    def can_read_status(self) -> bool:
+        return self.subscribed and self.feature_enabled("vehicleState")
+
+    @property
+    def can_read_electric(self) -> bool:
+        return self.electric and (
+            self.feature_enabled("evBattery")
+            or self.feature_enabled("evVehicleStatus")
+        )
+
+    @property
+    def can_receive_status(self) -> bool:
+        return self.can_read_status or (self.uses_appsync and self.can_read_electric)
+
+    @property
+    def can_start_climate(self) -> bool:
+        if self._extended_capabilities.get("remoteEConnectCapable") is True:
+            return True
+        return self.generation == ApiVehicleGeneration.CY17 and any(
+            isinstance(item, dict)
+            and str(item.get("name", "")).lower() == "evremoteservice"
+            for item in self._legacy_capabilities
+        )
+
+    @property
+    def supports_climate_settings(self) -> bool:
+        return (
+            self.subscribed
+            and self._extended_capabilities.get("climateCapable") is True
+            and self.feature_enabled("remoteClimate")
+        )
+
+    @property
+    def climate_settings(self) -> dict:
+        return self._climate_settings
+
+    async def update_climate_settings(self, **changes) -> None:
+        if not self.supports_climate_settings:
+            raise ValueError("Climate settings are unavailable for this vehicle.")
+        async with self._climate_lock:
+            settings = await self._client.get_climate_settings(
+                self.vin, self.api_generation, self.region, self.brand
+            )
+            if not isinstance(settings, dict) or not settings:
+                raise ValueError("Toyota did not return climate settings.")
+            if "temperature" in changes:
+                temperature = changes["temperature"]
+                minimum, maximum = settings.get("minTemp"), settings.get("maxTemp")
+                step = settings.get("tempInterval")
+                if (
+                    any(
+                        type(value) not in (int, float) or not math.isfinite(value)
+                        for value in (temperature, minimum, maximum, step)
+                    )
+                    or step <= 0
+                    or not minimum <= temperature <= maximum
+                    or not math.isclose(
+                        (temperature - minimum) / step,
+                        round((temperature - minimum) / step),
+                        abs_tol=1e-6,
+                    )
+                ):
+                    raise ValueError("Temperature does not match the vehicle's range and step.")
+            settings = {**settings, **changes}
+            await self._client.update_climate_settings(
+                self.vin, self.api_generation, settings, self.region, self.brand
+            )
+            self._climate_settings.clear()
+            self._climate_settings.update(settings)
+
+    async def update_climate(self) -> None:
+        if self.supports_climate_settings:
+            async with self._climate_lock:
+                settings = await self._client.get_climate_settings(
+                    self.vin, self.api_generation, self.region, self.brand
+                )
+                if isinstance(settings, dict) and settings:
+                    self._climate_settings.clear()
+                    self._climate_settings.update(settings)
+
+    async def send_charging_command(self, command: RemoteRequestCommand) -> None:
+        command_name = {
+            RemoteRequestCommand.ChargeStart: "immediate-charge",
+            RemoteRequestCommand.ChargeResume: "resume-charge",
+            RemoteRequestCommand.ChargeStop: "charge-stop",
+        }[command]
+        if self.uses_appsync:
+            await self._client.remote_request_24mm(self.vin, command_name, self.region)
+        else:
+            status = await self._client.electric_command(
+                self.vin, self.api_generation, command_name, self.region, self.brand
+            )
+            if status:
+                self._parse_electric_status(status)
+
+    def feature_available(self, feature: VehicleFeatures) -> bool:
+        if feature in (
+            VehicleFeatures.ChargeLevel, VehicleFeatures.ChargeDistance,
+            VehicleFeatures.ChargeDistanceAC, VehicleFeatures.EvTravelableDistance,
+        ):
+            return self.feature_enabled("evBattery")
+        if feature in (
+            VehicleFeatures.PlugStatus, VehicleFeatures.ConnectorStatus,
+            VehicleFeatures.ChargingStatus, VehicleFeatures.RemainingChargeTime,
+            VehicleFeatures.ChargeType,
+        ):
+            return self.feature_enabled("evVehicleStatus")
+        if feature in (
+            VehicleFeatures.FrontDriverDoor, VehicleFeatures.FrontPassengerDoor,
+            VehicleFeatures.RearDriverDoor, VehicleFeatures.RearPassengerDoor,
+            VehicleFeatures.FrontDriverWindow, VehicleFeatures.FrontPassengerWindow,
+            VehicleFeatures.RearDriverWindow, VehicleFeatures.RearPassengerWindow,
+            VehicleFeatures.Trunk, VehicleFeatures.Hood, VehicleFeatures.Moonroof,
+            VehicleFeatures.RemoteStartStatus,
+        ):
+            return self.feature_enabled("vehicleState")
+        return True
+
     def supports_command(self, command: RemoteRequestCommand) -> bool:
         """Return whether the API transport and vehicle support a command."""
+        if command == RemoteRequestCommand.Refresh:
+            return self.can_read_status
+        if not self.subscribed or not self.feature_enabled("remoteCommands"):
+            return False
+        if command in (
+            RemoteRequestCommand.ChargeStart,
+            RemoteRequestCommand.ChargeResume,
+            RemoteRequestCommand.ChargeStop,
+        ):
+            if not self.can_read_electric:
+                return False
+            states = {
+                RemoteRequestCommand.ChargeStart: ("36", "charge_now"),
+                RemoteRequestCommand.ChargeResume: ("resume_charging",),
+                RemoteRequestCommand.ChargeStop: ("charging",),
+            }
+            state = self.features.get(VehicleFeatures.ChargingState)
+            state = str(state.value).lower() if state is not None else None
+            return state in states[command] and (
+                command == RemoteRequestCommand.ChargeStart or self.uses_appsync
+            )
         if command not in self._command_map:
             return False
+
+        if command in (RemoteRequestCommand.EngineStart, RemoteRequestCommand.EngineStop):
+            if self.can_start_climate:
+                return True
 
         keys = self._COMMAND_CAPABILITIES.get(command)
         if keys is None:
@@ -289,6 +457,8 @@ class ToyotaVehicle(ABC):
         ):
             return False
         self._features = previous.features
+        self._climate_settings = previous.climate_settings
+        self._climate_lock = previous._climate_lock
         return True
 
     @property

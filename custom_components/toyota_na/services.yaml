@@ -8,6 +8,33 @@ engine_start:
       selector:
         device:
           integration: toyota_na
+charge_start:
+  name: Charge now
+  description: Start charging a plugged-in vehicle that reports charging is available.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+charge_resume:
+  name: Resume charging
+  description: Resume charging when the vehicle reports that charging can be resumed.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+charge_stop:
+  name: Stop charging
+  description: Stop charging when the vehicle reports support for stopping its current charge.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
 engine_stop:
   description: Remote stop your Toyota vehicle.
   fields:

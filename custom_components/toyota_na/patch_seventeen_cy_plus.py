@@ -92,6 +92,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         backdoor_type: Optional[str] = None,
         remote_capabilities: Optional[dict] = None,
         extended_capabilities: Optional[dict] = None,
+        feature_flags: Optional[dict] = None,
+        legacy_capabilities: Optional[list] = None,
     ):
         self._has_remote_subscription = has_remote_subscription
         self._has_electric = has_electric
@@ -110,6 +112,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             backdoor_type,
             remote_capabilities,
             extended_capabilities,
+            feature_flags,
+            legacy_capabilities,
         )
         self._last_vehicle_status = None
         self._last_graphql_status = None
@@ -140,7 +144,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         except Exception as e:
             _LOGGER.debug("Error fetching telemetry: %s", e)
 
-        if self._has_remote_subscription:
+        if self.can_receive_status:
             try:
                 # Cached push data fills gaps. The polled source below wins when
                 # neither response has timestamps.
@@ -150,7 +154,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                         ws_handler.get_cached_status(self._vin)
                     )
 
-                if self._generation == ApiVehicleGeneration.MM24:
+                if self.uses_appsync:
                     vehicle_status = (
                         await self._client.graphql_get_vehicle_status(
                             self._vin,
@@ -181,7 +185,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             except Exception as e:
                 _LOGGER.debug("Error fetching vehicle status: %s", e)
 
-            if self._generation != ApiVehicleGeneration.MM24:
+            if not self.uses_appsync and self.can_read_status:
                 try:
                     previous_engine = self._features.get(VehicleFeatures.RemoteStartStatus)
                     if self._generation == ApiVehicleGeneration.MM21:
@@ -199,8 +203,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
         try:
             if (
-                self._has_electric
-                and self._generation != ApiVehicleGeneration.MM24
+                self.can_read_electric
+                and not self.uses_appsync
             ):
                 electric_status = await self._client.get_electric_status(
                     self.vin, region=self._region, generation=self.api_generation
@@ -210,14 +214,22 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         except Exception as e:
             _LOGGER.debug("Error parsing electric status: %s", e)
 
+        try:
+            await self.update_climate()
+        except Exception as e:
+            _LOGGER.debug("Error fetching climate settings: %s", e)
+
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
+        if not self.supports_command(RemoteRequestCommand.Refresh):
+            raise ValueError("Vehicle refresh is unavailable for this vehicle.")
         errors = []
         refreshed = False
 
         if self._generation in (
             ApiVehicleGeneration.MM21,
             ApiVehicleGeneration.MM24,
+            ApiVehicleGeneration.BEV26,
         ):
             try:
                 guid = await self._client.auth.get_guid()
@@ -272,8 +284,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
         try:
             if (
-                self._has_electric
-                and self._generation != ApiVehicleGeneration.MM24
+                self.can_read_electric
+                and not self.uses_appsync
             ):
                 electric_status = await self._client.get_electric_realtime_status(
                     self.vin,
@@ -287,8 +299,17 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
     async def send_command(self, command: RemoteRequestCommand) -> None:
         """Send a generation-appropriate remote command."""
+        if not self.supports_command(command):
+            raise ValueError("This command is unavailable for this vehicle.")
+        if command in (
+            RemoteRequestCommand.ChargeStart,
+            RemoteRequestCommand.ChargeResume,
+            RemoteRequestCommand.ChargeStop,
+        ):
+            await self.send_charging_command(command)
+            return
         command_name = self._command_map[command]
-        if self._generation == ApiVehicleGeneration.MM24:
+        if self.uses_appsync:
             await self._client.remote_request_24mm(
                 self._vin, command_name, self._region
             )
@@ -335,6 +356,9 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             return
 
         observed_at = parse_api_timestamp(vehicle_info.get("acquisitionDatetime"))
+        self._store_numeric(
+            VehicleFeatures.ChargingState, charge_info.get("plugStatus"), "", observed_at
+        )
         distance_unit = charge_info.get("evDistanceUnit", "")
         for key, feature, unit in (
             ("evDistance", VehicleFeatures.ChargeDistance, distance_unit),
@@ -680,7 +704,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         self._parse_graphql_electric_status(status.get("electric"))
 
     def _parse_graphql_electric_status(self, electric: dict) -> None:
-        """Parse the electric document returned for 24MM EVs and PHEVs."""
+        """Parse the AppSync electric document returned for EVs and PHEVs."""
         if not electric:
             return
 
@@ -732,6 +756,13 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         charging_observed_at = parse_api_timestamp(
             charging.get("lastUpdateDateTime")
         ) or observed_at
+
+        self._store_numeric(
+            VehicleFeatures.ChargingState,
+            charging.get("chargingState"),
+            "",
+            charging_observed_at,
+        )
 
         self._store_numeric(
             VehicleFeatures.ChargeType,

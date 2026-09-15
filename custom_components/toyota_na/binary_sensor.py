@@ -75,6 +75,8 @@ async def async_setup_entry(
                         )
                         registry.async_remove(stale_entity_id)
                     continue
+                if not vehicle.feature_available(feature):
+                    continue
                 if vehicle.features.get(feature) is None:
                     continue
                 yield ToyotaBinarySensor(

@@ -43,9 +43,10 @@ async def async_setup_entry(
                         cast(str, config["name"]),
                         vehicle.vin,
                     )
-            yield ToyotaRefreshButton(
-                config_entry, coordinator, "Refresh Status", vehicle.vin
-            )
+            if vehicle.supports_command(RemoteRequestCommand.Refresh):
+                yield ToyotaRefreshButton(
+                    config_entry, coordinator, "Refresh Status", vehicle.vin
+                )
 
     setup_entity_discovery(
         config_entry,
@@ -113,7 +114,7 @@ class ToyotaRefreshButton(ToyotaButtonBase):
     @property
     def available(self) -> bool:
         vehicle = self.vehicle
-        return vehicle is not None and vehicle.subscribed
+        return vehicle is not None and vehicle.supports_command(RemoteRequestCommand.Refresh)
 
     async def async_press(self) -> None:
         """Request a vehicle refresh and schedule a status poll."""

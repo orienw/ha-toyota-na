@@ -21,9 +21,14 @@ _LOCK_STATES = {
 _BACKDOOR_TYPES = ("hatch", "trunk", "tailgate")
 
 
+def is_appsync_generation(api_generation: str) -> bool:
+    """Return whether vehicle status and commands use AppSync."""
+    return api_generation in ("24MM", "26BEV")
+
+
 def endpoint_generation(api_generation: str) -> str:
     """Return the generation name expected by the legacy REST endpoints."""
-    if api_generation in ("21MM", "24MM"):
+    if api_generation == "21MM" or is_appsync_generation(api_generation):
         return "17CYPLUS"
     return api_generation
 

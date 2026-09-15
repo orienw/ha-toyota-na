@@ -16,6 +16,7 @@ APPSYNC_API_KEY = "da2-zgeayo2qh5eo7cj6pmdwhwugze"
 RESOLVER_API_KEY = "pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG"
 USER_AGENT = "ToyotaOneApp/3.10.0 (com.toyota.oneapp; build:3100; Android 14) okhttp/4.12.0"
 TRANSPORT_BRAND = "T"
+ELECTRIC_COMMAND_TIMEOUT = 90
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -282,6 +283,61 @@ async def remote_request_21mm(self, vin, command, region="US"):
         ),
     )
 
+
+async def get_climate_settings(self, vin, generation, region="US", brand="T"):
+    return await self.api_get(
+        REMOTE_ROUTE + "climate-settings",
+        _vehicle_headers(vin, region, **{"X-GENERATION": generation, "X-BRAND": brand}),
+    )
+
+
+async def update_climate_settings(self, vin, generation, settings, region="US", brand="T"):
+    return await self.api_request(
+        "PUT",
+        REMOTE_ROUTE + "climate-settings",
+        _vehicle_headers(vin, region, **{"X-GENERATION": generation, "X-BRAND": brand}),
+        json=settings,
+    )
+
+
+async def electric_command(self, vin, generation, command, region="US", brand="T"):
+    result = await self.api_post(
+        "v2/electric/command",
+        {"command": command},
+        _vehicle_headers(vin, region, **{
+            "X-GENERATION": generation,
+            "X-BRAND": brand,
+            "device-id": self.auth.get_device_id(),
+        }),
+    )
+    if (
+        not result
+        or result.get("returnCode") != "ONE-RES-10000"
+        or not result.get("appRequestNo")
+    ):
+        code = (result or {}).get("returnCode")
+        raise RuntimeError(
+            f"Toyota did not accept the charging command ({code or 'no request number'})."
+        )
+
+    version = "v2" if generation == "17CY" else "v3"
+    query = urlencode({"remote-control": result["appRequestNo"]})
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + ELECTRIC_COMMAND_TIMEOUT
+    while loop.time() < deadline:
+        status = await self.api_request(
+            "GET",
+            f"{version}/electric/status?{query}",
+            _vehicle_headers(vin, region, **{"X-GENERATION": generation, "X-BRAND": brand}),
+            timeout=aiohttp.ClientTimeout(total=max(0.1, deadline - loop.time())),
+        )
+        completion = (status or {}).get("remoteControlResult") or {}
+        if completion.get("status") == 0 and completion.get("result") == 0:
+            return status
+        await asyncio.sleep(min(2, max(0, deadline - loop.time())))
+    raise RuntimeError("Toyota accepted the charging command but did not confirm completion.")
+
+
 async def get_vehicle_status_17cy(self, vin, region="US"):
     """Legacy vehicle status."""
     try:
@@ -493,7 +549,7 @@ async def graphql_refresh_status(self, vin, region="US"):
 async def graphql_get_vehicle_status(
     self, vin, backdoor_type="hatch", region="US"
 ):
-    """Read current 24MM state before subscription updates arrive."""
+    """Read current AppSync state before subscription updates arrive."""
     backdoor_type = backdoor_type or "hatch"
     data = await self.graphql_request(
         "GetVehicleStatus",
@@ -508,7 +564,7 @@ async def graphql_get_vehicle_status(
 async def graphql_send_remote_command(
     self, vin, command, region="US"
 ):
-    """Submit a 24MM command after its callback subscription is ready."""
+    """Submit an AppSync command after its callback subscription is ready."""
     data = await self.graphql_request(
         "SendRemoteCommand",
         GRAPHQL_SEND_REMOTE_COMMAND,
@@ -636,7 +692,7 @@ async def _wait_for_remote_command_result(
 
 
 async def remote_request_24mm(self, vin, command, region="US"):
-    """Run a 24MM command through AppSync and await Toyota's callback."""
+    """Run an AppSync command and await Toyota's callback."""
     token = await self.auth.get_access_token()
     guid = await self.auth.get_guid()
     authorization = appsync_authorization(

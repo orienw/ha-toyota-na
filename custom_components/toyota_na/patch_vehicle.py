@@ -44,12 +44,15 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
             ),
             "remote_capabilities": api_vehicle.get("remoteServiceCapabilities"),
             "extended_capabilities": api_vehicle.get("extendedCapabilities"),
+            "feature_flags": api_vehicle.get("features"),
+            "legacy_capabilities": api_vehicle.get("capabilities"),
         }
 
         if (
             generation == ApiVehicleGeneration.CY17PLUS
             or generation == ApiVehicleGeneration.MM21
             or generation == ApiVehicleGeneration.MM24
+            or generation == ApiVehicleGeneration.BEV26
         ):
             vehicle = SeventeenCYPlusToyotaVehicle(generation=generation, **common)
 

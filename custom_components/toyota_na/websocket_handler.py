@@ -1,4 +1,4 @@
-"""AppSync subscriptions for 21MM and 24MM vehicle status updates."""
+"""AppSync subscriptions for 21MM, 24MM, and 26BEV vehicle status updates."""
 import asyncio
 import base64
 import json

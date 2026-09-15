@@ -75,6 +75,10 @@ class DataUpdateCoordinator(Subscriptable):
     async def async_request_refresh(self):
         self.refreshes += 1
 
+    def async_set_updated_data(self, data):
+        self.data = data
+        self.notify_listeners()
+
     def async_add_listener(self, listener):
         self.listeners.append(listener)
 
@@ -126,6 +130,11 @@ binary_sensor.BinarySensorDeviceClass = BinarySensorDeviceClass
 binary_sensor.BinarySensorEntity = type("BinarySensorEntity", (), {})
 button_component = module("homeassistant.components.button")
 button_component.ButtonEntity = type("ButtonEntity", (), {})
+number_component = module("homeassistant.components.number")
+number_component.NumberEntity = type("NumberEntity", (), {})
+number_component.NumberDeviceClass = types.SimpleNamespace(TEMPERATURE="temperature")
+switch_component = module("homeassistant.components.switch")
+switch_component.SwitchEntity = type("SwitchEntity", (), {})
 lock_component = module("homeassistant.components.lock")
 lock_component.LockEntity = LockEntity
 device_tracker_component = module("homeassistant.components.device_tracker")
@@ -144,9 +153,11 @@ core.HomeAssistant = type("HomeAssistant", (), {})
 core.ServiceCall = type("ServiceCall", (), {})
 exceptions = module("homeassistant.exceptions")
 exceptions.ConfigEntryAuthFailed = type("ConfigEntryAuthFailed", (Exception,), {})
+exceptions.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
 ha_const = module("homeassistant.const")
 ha_const.PERCENTAGE = "%"
 ha_const.UnitOfPressure = UnitOfPressure
+ha_const.UnitOfTemperature = types.SimpleNamespace(CELSIUS="°C", FAHRENHEIT="°F")
 ha_const.UnitOfLength = types.SimpleNamespace(MILES="mi", KILOMETERS="km")
 module("homeassistant.util")
 unit_conversion = module("homeassistant.util.unit_conversion")
@@ -208,6 +219,10 @@ runtime_spec.loader.exec_module(integration_runtime)
 
 
 class FakeVehicle:
+    _feature_flags = None
+    feature_enabled = ToyotaVehicle.feature_enabled
+    feature_available = ToyotaVehicle.feature_available
+
     def __init__(self, supported, vin="TESTVIN"):
         self.vin = vin
         self.subscribed = True
@@ -222,7 +237,13 @@ class FakeVehicle:
         self.brand = "L"
 
     def supports_command(self, command):
+        if command == RemoteRequestCommand.Refresh:
+            return self.subscribed
         return command in self.supported
+
+    @property
+    def can_receive_status(self):
+        return self.subscribed
 
     async def send_command(self, command):
         self.sent.append(command)
