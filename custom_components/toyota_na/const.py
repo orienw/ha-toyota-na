@@ -1,7 +1,7 @@
 from toyota_na.vehicle.base_vehicle import VehicleFeatures
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
-from homeassistant.components.sensor import SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE, UnitOfPressure
 
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand
@@ -455,6 +455,7 @@ SENSORS = [
         "name": "Last Update Timestamp",
         "unit": "",
         "electric": False,
+        "enabled_default": False,
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
@@ -463,17 +464,37 @@ SENSORS = [
         "name": "Last Tire Pressure Update Timestamp",
         "unit": "",
         "electric": False,
+        "enabled_default": False,
+    },
+    {
+        "state_class": None,
+        "device_class": SensorDeviceClass.TIMESTAMP,
+        "icon": "mdi:clock-outline",
+        "feature": VehicleFeatures.LastTimeStamp,
+        "name": "Last Update",
+        "unit": None,
+        "electric": False,
+    },
+    {
+        "state_class": None,
+        "device_class": SensorDeviceClass.TIMESTAMP,
+        "icon": "mdi:clock-outline",
+        "feature": VehicleFeatures.LastTirePressureTimeStamp,
+        "name": "Last Tire Pressure Update",
+        "unit": None,
+        "electric": False,
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
         "icon": "mdi:gauge",
         "feature": VehicleFeatures.Speed,
         "name": "Speed",
+        "device_class": SensorDeviceClass.SPEED,
         "unit": "km/h",
         "electric": False,
     },
     {
-        "state_class": SensorStateClass.MEASUREMENT,
+        "state_class": None,
         "icon": "mdi:ev-plug-type1",
         "feature": VehicleFeatures.PlugStatus,
         "name": "Plug Status",
@@ -497,7 +518,7 @@ SENSORS = [
         "electric": True,
     },
     {
-        "state_class": SensorStateClass.MEASUREMENT,
+        "state_class": None,
         "icon": "mdi:ev-plug-type1",
         "feature": VehicleFeatures.ChargeType,
         "name": "Charge Type",
@@ -505,7 +526,7 @@ SENSORS = [
         "electric": True,
     },
     {
-        "state_class": SensorStateClass.MEASUREMENT,
+        "state_class": None,
         "icon": "mdi:ev-plug-type1",
         "feature": VehicleFeatures.ConnectorStatus,
         "name": "Connector Status",

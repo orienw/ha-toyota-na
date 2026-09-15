@@ -110,7 +110,7 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         vehicle = behavior.make_vehicle()
         vehicle.features[VehicleFeatures.ChargeLevel] = ha.ToyotaNumeric(80, "%")
         coordinator = ha.DataUpdateCoordinator([vehicle])
-        sensor = ha.sensor_platform.ToyotaNumericSensor(
+        sensor = ha.sensor_platform.ToyotaSensor(
             VehicleFeatures.ChargeLevel, "mdi:battery", "%", "measurement",
             coordinator, "Charge Level", vehicle.vin,
         )

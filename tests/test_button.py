@@ -48,6 +48,19 @@ class SensorStateClass(Enum):
     TOTAL_INCREASING = "total_increasing"
 
 
+class SensorDeviceClass(Enum):
+    SPEED = "speed"
+    TIMESTAMP = "timestamp"
+
+
+class SensorEntity:
+    state = property(lambda self: self.native_value)
+    unit_of_measurement = property(lambda self: self.native_unit_of_measurement)
+    state_class = property(lambda self: self._attr_state_class)
+    device_class = property(lambda self: self._attr_device_class)
+    entity_registry_enabled_default = property(lambda self: self._attr_entity_registry_enabled_default)
+
+
 class SourceType(Enum):
     GPS = "gps"
 
@@ -145,6 +158,8 @@ device_tracker_component.SourceType = SourceType
 device_tracker_component.TrackerEntity = type("TrackerEntity", (), {})
 sensor = module("homeassistant.components.sensor")
 sensor.SensorStateClass = SensorStateClass
+sensor.SensorDeviceClass = SensorDeviceClass
+sensor.SensorEntity = SensorEntity
 
 config_entries = module("homeassistant.config_entries")
 config_entries.ConfigEntry = ConfigEntry
@@ -570,7 +585,7 @@ class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
     async def test_native_and_missing_pressure_values_do_not_need_conversion(self):
         vehicle = FakeVehicle(set())
         coordinator = DataUpdateCoordinator([vehicle])
-        pressure = sensor_platform.ToyotaNumericSensor(
+        pressure = sensor_platform.ToyotaSensor(
             VehicleFeatures.SpareTirePressure,
             "mdi:car-tire-alert",
             "psi",
