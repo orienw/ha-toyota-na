@@ -107,11 +107,20 @@ GRAPHQL_VEHICLE_STATUS_FIELDS = """
         remainingChargeTimeTo80Percent { unit value }
         connector { status plugInInfo plugStatus }
         chargeSettings {
+          schedules {
+            enabled settingId startTime endTime daysOfTheWeek status nextChargeSettingId
+          }
           targetLimit { value unit }
           maxACCurrent { value setting }
           maxDCPower { value setting }
+          electricSupplyModeLimit { value setting }
+          electricSupplyLimitFunction
+          acCurrentSelections { key enabled }
+          dcPowerSelections { key enabled }
+          electricSupplyLimitSelections { key enabled }
           lastUpdateDateTime
         }
+        limitSelectionValues
         lastUpdateDateTime
       }
       gasoline {
@@ -137,6 +146,30 @@ GRAPHQL_SEND_REMOTE_COMMAND = """mutation SendRemoteCommand($command: String!, $
   executeRemoteCommand(commandInputBody: {
     command: $command
     autofixCommands: $autoFixCommands
+  }) {
+    payload { requestNo correlationId returnCode }
+    status { messages { responseCode description detailedDescription } }
+  }
+}"""
+
+GRAPHQL_CHARGE_SETTINGS = """mutation PostChargeSettings(
+  $chargingTargetLimit: Int, $quickChargePowerLimit: Int, $currentCharge: Int
+) {
+  postChargeSettings(postChargeSettingsInputBody: {
+    chargingTargetLimit: $chargingTargetLimit
+    quickChargePowerLimit: $quickChargePowerLimit
+    currentCharge: $currentCharge
+  }) {
+    payload { correlationId returnCode message }
+    status { messages { responseCode description detailedDescription } }
+  }
+}"""
+
+GRAPHQL_POWER_SUPPLY_LIMIT = """mutation PostPowerSupplyModeLimit(
+  $command: String!, $minimumElectricSupply: String
+) {
+  executeRemoteCommand(commandInputBody: {
+    command: $command minimumElectricSupply: $minimumElectricSupply
   }) {
     payload { requestNo correlationId returnCode }
     status { messages { responseCode description detailedDescription } }
@@ -597,6 +630,10 @@ async def graphql_send_remote_command(
         raise_errors=True,
     )
     execution = data.get("executeRemoteCommand") if data else None
+    return _require_remote_execution(execution)
+
+
+def _require_remote_execution(execution):
     correlation_id = ((execution or {}).get("payload") or {}).get(
         "correlationId"
     )
@@ -716,6 +753,43 @@ async def _wait_for_remote_command_result(
 
 async def remote_request_24mm(self, vin, command, region="US"):
     """Run an AppSync command and await Toyota's callback."""
+    return await _run_appsync_operation(
+        self, vin, lambda: self.graphql_send_remote_command(vin, command, region), region,
+    )
+
+
+async def update_charge_settings(self, vin, variable, value, region="US"):
+    """Change one charging preference and await Toyota's completion callback."""
+    async def submit():
+        if variable == "minimumElectricSupply":
+            operation, document, key = (
+                "PostPowerSupplyModeLimit", GRAPHQL_POWER_SUPPLY_LIMIT, "executeRemoteCommand",
+            )
+            variables = {"command": "set-power-supply", variable: str(value)}
+        elif variable in ("chargingTargetLimit", "quickChargePowerLimit", "currentCharge"):
+            operation, document, key = "PostChargeSettings", GRAPHQL_CHARGE_SETTINGS, "postChargeSettings"
+            variables = {variable: value}
+        else:
+            raise ValueError("Unknown charging preference.")
+        data = await self.graphql_request(
+            operation, document, variables, vin=vin, region=region, raise_errors=True,
+        )
+        return _require_remote_execution(data.get(key) if data else None)
+
+    return await _run_appsync_operation(self, vin, submit, region)
+
+
+async def _run_appsync_operation(self, vin, submit, region):
+    # Some callbacks omit request numbers. Keep this account's operations for a
+    # vehicle sequential so they cannot complete one another.
+    if not hasattr(self, "_remote_locks"):
+        self._remote_locks = {}
+    lock = self._remote_locks.setdefault(vin, asyncio.Lock())
+    async with lock:
+        return await _execute_appsync_operation(self, vin, submit, region)
+
+
+async def _execute_appsync_operation(self, vin, submit, region):
     token = await self.auth.get_access_token()
     guid = await self.auth.get_guid()
     authorization = appsync_authorization(
@@ -761,9 +835,7 @@ async def remote_request_24mm(self, vin, command, region="US"):
             await _wait_for_remote_socket_event(
                 ws, "start_ack", subscription_id
             )
-            execution = await self.graphql_send_remote_command(
-                vin, command, region
-            )
+            execution = await submit()
             request_no = ((execution or {}).get("payload") or {}).get(
                 "requestNo"
             )

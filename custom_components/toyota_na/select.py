@@ -1,12 +1,14 @@
-"""Saved seat climate and airflow preferences."""
+"""Vehicle climate and charging preferences."""
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.const import EntityCategory
 
 from .base_entity import ToyotaNABaseEntity
 from .climate_helpers import AIRFLOWS, SEATS, climate_parameters, seat_modes
+from .charging_helpers import CHARGE_SETTINGS, charge_options, current_charge_option
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
+from .wake_policy import record_vehicle_wake
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
@@ -22,6 +24,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 ("rearPassenger", "Rear Passenger Seat Climate"),
             ):
                 entity = ToyotaClimateSelect(setting, coordinator, name, vehicle.vin)
+                if entity.available:
+                    yield entity
+            for field, (name, *_) in CHARGE_SETTINGS.items():
+                entity = ToyotaChargeSelect(field, config_entry, coordinator, name, vehicle.vin)
                 if entity.available:
                     yield entity
 
@@ -76,4 +82,33 @@ class ToyotaClimateSelect(ToyotaNABaseEntity, SelectEntity):
             await self.vehicle.update_climate_settings(airflow=key)
         else:
             await self.vehicle.update_climate_settings(seat=(self._setting, option))
+        self.coordinator.async_set_updated_data(self.coordinator.data)
+
+
+class ToyotaChargeSelect(ToyotaNABaseEntity, SelectEntity):
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(self, field, config_entry, *args):
+        super().__init__(*args)
+        self._field = field
+        self._config_entry = config_entry
+
+    @property
+    def options(self):
+        return list(charge_options(self.vehicle.charge_settings, self._field)) if self.vehicle else []
+
+    @property
+    def available(self):
+        return self.vehicle is not None and self.vehicle.supports_charge_settings and bool(self.options)
+
+    @property
+    def current_option(self):
+        return current_charge_option(self.vehicle.charge_settings, self._field) if self.vehicle else None
+
+    async def async_select_option(self, option):
+        if not self.available or option not in self.options:
+            raise ValueError("This charging preference is unavailable for this vehicle.")
+        await self.vehicle.set_charge_setting(self._field, option)
+        record_vehicle_wake(self.hass, self._config_entry, self.vin)
         self.coordinator.async_set_updated_data(self.coordinator.data)

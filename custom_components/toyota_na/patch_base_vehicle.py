@@ -12,6 +12,7 @@ from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .vehicle_helpers import endpoint_generation, first_capability, is_appsync_generation
 from .climate_helpers import apply_climate_changes
+from .charging_helpers import CHARGE_SETTINGS, charge_options
 
 
 @unique
@@ -100,6 +101,7 @@ class RemoteRequestCommand(Enum):
     ChargeStart = auto()
     ChargeResume = auto()
     ChargeStop = auto()
+    PowerSupplyStop = auto()
     SoundHorn = auto()
     HeadlightsOn = auto()
     SoundBuzzer = auto()
@@ -218,6 +220,7 @@ class ToyotaVehicle(ABC):
         self._legacy_capabilities = legacy_capabilities or []
         self._climate_settings = {}
         self._climate_lock = asyncio.Lock()
+        self._charge_settings = {}
 
     @abstractmethod
     async def poll_vehicle_refresh(self) -> None:
@@ -373,6 +376,7 @@ class ToyotaVehicle(ABC):
             RemoteRequestCommand.ChargeStart: "immediate-charge",
             RemoteRequestCommand.ChargeResume: "resume-charge",
             RemoteRequestCommand.ChargeStop: "charge-stop",
+            RemoteRequestCommand.PowerSupplyStop: "power-supply-stop",
         }[command]
         if self.uses_appsync:
             await self._client.remote_request_24mm(self.vin, command_name, self.region)
@@ -382,6 +386,31 @@ class ToyotaVehicle(ABC):
             )
             if status:
                 self._parse_electric_status(status)
+
+    @property
+    def charge_settings(self):
+        return self._charge_settings
+
+    @property
+    def supports_charge_settings(self):
+        return self.uses_appsync and self.electric and self.subscribed and self.feature_enabled("remoteCommands")
+
+    async def set_charge_setting(self, field, option):
+        if not self.supports_charge_settings:
+            raise ValueError("Charging preferences are unavailable for this vehicle.")
+        status = await self._client.graphql_get_vehicle_status(self.vin, self.backdoor_type, self.region)
+        if not status:
+            raise ValueError("Toyota did not return charging preferences.")
+        self.apply_graphql_status(status)
+        options = charge_options(self.charge_settings, field)
+        if option not in options:
+            raise ValueError("This charging option is unavailable for this vehicle.")
+        await self._client.update_charge_settings(
+            self.vin, CHARGE_SETTINGS[field][3], options[option], self.region,
+        )
+        self.apply_graphql_status(
+            await self._client.graphql_get_vehicle_status(self.vin, self.backdoor_type, self.region)
+        )
 
     async def send_extended_command(self, command: RemoteRequestCommand) -> None:
         command_name, _ = self._EXTENDED_COMMANDS[command]
@@ -410,6 +439,7 @@ class ToyotaVehicle(ABC):
             RemoteRequestCommand.ChargeStart,
             RemoteRequestCommand.ChargeResume,
             RemoteRequestCommand.ChargeStop,
+            RemoteRequestCommand.PowerSupplyStop,
         ):
             if not self.electric:
                 return False
@@ -417,6 +447,7 @@ class ToyotaVehicle(ABC):
                 RemoteRequestCommand.ChargeStart: ("36", "charge_now"),
                 RemoteRequestCommand.ChargeResume: ("resume_charging",),
                 RemoteRequestCommand.ChargeStop: ("charging",),
+                RemoteRequestCommand.PowerSupplyStop: ("external_power_active", "external_power_active_hybrid"),
             }
             state = self.features.get(VehicleFeatures.ChargingState)
             state = str(state.value).lower() if state is not None else None
@@ -454,6 +485,7 @@ class ToyotaVehicle(ABC):
         self._features = previous.features
         self._climate_settings = previous.climate_settings
         self._climate_lock = previous._climate_lock
+        self._charge_settings = previous.charge_settings
         return True
 
     @property

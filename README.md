@@ -60,11 +60,13 @@ Native controls:
 * Saved climate temperature, fan speed, airflow, and seat preferences, when supported
 * Defroster, steering-wheel heat, recirculation, and longer climate runtime preferences, when supported
 * Use Climate Settings switch, when supported
+* Charge limit, AC current, DC power, and power supply battery limit, when reported
+* Stop Power Supply button, while external power is active
 
 Climate controls save preferences for Remote Start and appear under device
 configuration. Remote Start runs the engine or climate system supported by the
-vehicle. Charging buttons become
-available according to the vehicle's reported charging state.
+vehicle. Charging settings use the choices reported by the vehicle. Charging
+buttons become available according to the vehicle's reported charging state.
 
 Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,
 and `26BEV`. EV readings can remain available without Remote Connect when Toyota

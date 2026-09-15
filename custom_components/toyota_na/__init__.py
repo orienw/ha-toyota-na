@@ -18,6 +18,7 @@ from .patch_client import (
     get_electric_status,
     get_climate_settings,
     update_climate_settings,
+    update_charge_settings,
     electric_command,
     api_request,
     _auth_headers,
@@ -46,6 +47,7 @@ from .patch_client import (
 ToyotaOneClient.get_electric_realtime_status = get_electric_realtime_status
 ToyotaOneClient.get_electric_status = get_electric_status
 ToyotaOneClient.get_climate_settings = get_climate_settings
+ToyotaOneClient.update_charge_settings = update_charge_settings
 ToyotaOneClient.update_climate_settings = update_climate_settings
 ToyotaOneClient.electric_command = electric_command
 ToyotaOneClient.api_request = api_request

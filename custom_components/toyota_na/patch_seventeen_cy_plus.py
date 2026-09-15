@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 from typing import Optional
 
 from toyota_na.client import ToyotaOneClient
@@ -329,6 +330,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             RemoteRequestCommand.ChargeStart,
             RemoteRequestCommand.ChargeResume,
             RemoteRequestCommand.ChargeStop,
+            RemoteRequestCommand.PowerSupplyStop,
         ):
             await self.send_charging_command(command)
             return
@@ -828,6 +830,17 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             charging_observed_at,
         )
         settings = charging.get("chargeSettings") or {}
+        settings_observed_at = parse_api_timestamp(settings.get("lastUpdateDateTime")) or charging_observed_at
+        for key, value in {**settings, "limitSelectionValues": charging.get("limitSelectionValues")}.items():
+            timestamp_key = ("charge_settings", key)
+            previous = self._feature_timestamps.get(timestamp_key)
+            if value is None or (previous is not None and (
+                settings_observed_at is None or settings_observed_at < previous
+            )):
+                continue
+            self._charge_settings[key] = deepcopy(value)
+            if settings_observed_at is not None:
+                self._feature_timestamps[timestamp_key] = settings_observed_at
         target = settings.get("targetLimit") or {}
         self._store_numeric(
             VehicleFeatures.ChargeTargetLimit, target.get("value"), target.get("unit", "%"),

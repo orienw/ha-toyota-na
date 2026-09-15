@@ -185,3 +185,15 @@ moonroof_close:
       selector:
         device:
           integration: toyota_na
+
+power_supply_stop:
+  name: Stop power supply
+  description: Stop external power supply on a supported vehicle.
+  fields:
+    vin:
+      name: VIN
+      description: Vehicle identification number.
+      required: true
+      example: "JTMWRREV1JD243123"
+      selector:
+        text:

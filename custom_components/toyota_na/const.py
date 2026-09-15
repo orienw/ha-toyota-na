@@ -20,6 +20,7 @@ REFRESH = "refresh"
 CHARGE_START = "charge_start"
 CHARGE_RESUME = "charge_resume"
 CHARGE_STOP = "charge_stop"
+POWER_SUPPLY_STOP = "power_supply_stop"
 SOUND_HORN = "sound_horn"
 HEADLIGHTS_ON = "headlights_on"
 SOUND_BUZZER = "sound_buzzer"
@@ -44,6 +45,7 @@ COMMAND_MAP = {
     CHARGE_START: RemoteRequestCommand.ChargeStart,
     CHARGE_RESUME: RemoteRequestCommand.ChargeResume,
     CHARGE_STOP: RemoteRequestCommand.ChargeStop,
+    POWER_SUPPLY_STOP: RemoteRequestCommand.PowerSupplyStop,
     SOUND_HORN: RemoteRequestCommand.SoundHorn,
     HEADLIGHTS_ON: RemoteRequestCommand.HeadlightsOn,
     SOUND_BUZZER: RemoteRequestCommand.SoundBuzzer,
@@ -55,6 +57,11 @@ COMMAND_MAP = {
 }
 
 COMMAND_BUTTONS = (
+    {
+        "command": RemoteRequestCommand.PowerSupplyStop,
+        "icon": "mdi:power-plug-off",
+        "name": "Stop Power Supply",
+    },
     {
         "command": RemoteRequestCommand.ChargeStart,
         "icon": "mdi:ev-station",
