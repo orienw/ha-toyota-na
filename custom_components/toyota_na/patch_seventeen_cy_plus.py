@@ -582,6 +582,14 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         "spare": VehicleFeatures.SpareTirePressure,
     }
 
+    _graphql_tire_warning_map = {
+        "frontLeft": VehicleFeatures.FrontDriverTireWarning,
+        "frontRight": VehicleFeatures.FrontPassengerTireWarning,
+        "rearLeft": VehicleFeatures.RearDriverTireWarning,
+        "rearRight": VehicleFeatures.RearPassengerTireWarning,
+        "spare": VehicleFeatures.SpareTireWarning,
+    }
+
     def apply_graphql_status(self, status: dict) -> bool:
         """Apply a pushed AppSync status to this vehicle."""
         if not status or not any(
@@ -649,6 +657,11 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             )
             for tire_key, feature in self._graphql_tire_map.items():
                 tire = tires.get(tire_key) or {}
+                warning = tire.get("displayLowTirePressureWarning")
+                if isinstance(warning, bool):
+                    self._store_opening(
+                        self._graphql_tire_warning_map[tire_key], not warning, None, tire_observed_at,
+                    )
                 for pressure_key, default_unit in (
                     ("psi", "psi"),
                     ("kpa", "kPa"),
@@ -678,6 +691,11 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                         break
 
             # Hood (position only)
+            glass_hatch = vehicle_state.get("glassHatch")
+            if glass_hatch:
+                closed, _ = opening_state_from_graphql(glass_hatch)
+                self._store_opening(VehicleFeatures.GlassHatch, closed, None, observed_at)
+
             hood = vehicle_state.get("hood")
             if hood:
                 closed, _ = opening_state_from_graphql(hood)
@@ -859,6 +877,10 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             charging_observed_at,
         )
         remaining_to_80 = charging.get("remainingChargeTimeTo80Percent") or {}
+        rate = charging.get("actualChargingRate") or {}
+        self._store_numeric(
+            VehicleFeatures.ChargingRate, rate.get("value"), rate.get("unit", ""), charging_observed_at,
+        )
         self._store_numeric(
             VehicleFeatures.RemainingChargeTimeTo80,
             remaining_to_80.get("value"), remaining_to_80.get("unit", ""),

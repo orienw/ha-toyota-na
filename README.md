@@ -36,6 +36,7 @@ Sensors:
 * EV Charge End Time
 * EV Connector Status
 * EV Charging Status
+* Charging rate, glass-hatch state, and tire-pressure warnings, when reported
 * Charge target and remaining time to 80%, when reported
 * Battery and gasoline power supply time, when reported
 * Average and trip fuel consumption, trip count, and gasoline range, when reported

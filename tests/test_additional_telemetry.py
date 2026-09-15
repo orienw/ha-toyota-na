@@ -7,6 +7,7 @@ import test_button as ha
 import test_vehicle_behavior as behavior
 
 from custom_components.toyota_na import sensor
+from custom_components.toyota_na import binary_sensor
 from custom_components.toyota_na.patch_base_vehicle import VehicleFeatures
 
 
@@ -33,6 +34,44 @@ STATUS = {
 
 
 class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_hatch_and_tire_warnings_use_reported_states_without_pressure(self):
+        vehicle = behavior.make_24mm_vehicle()
+        vehicle._has_remote_subscription = False
+        vehicle.apply_graphql_status({
+            "vehicleState": {
+                "glassHatch": {"position": {"status": "Open"}},
+                "tires": {
+                    "frontLeft": {"displayLowTirePressureWarning": True},
+                    "frontRight": {"displayLowTirePressureWarning": False},
+                    "rearLeft": {"displayLowTirePressureWarning": None},
+                    "rearRight": {"displayLowTirePressureWarning": "unknown"},
+                },
+            },
+        })
+        coordinator = ha.DataUpdateCoordinator([vehicle])
+        entities = []
+        await binary_sensor.async_setup_entry(
+            ha.FakeHass(coordinator), ha.ConfigEntry(),
+            lambda added, update: entities.extend(added),
+        )
+        entities = {entity.sensor_name: entity for entity in entities}
+        self.assertTrue(entities["Glass Hatch"].is_on)
+        self.assertTrue(entities["Front Driver Tire Pressure Warning"].is_on)
+        self.assertFalse(entities["Front Passenger Tire Pressure Warning"].is_on)
+        self.assertNotIn("Rear Driver Tire Pressure Warning", entities)
+        self.assertNotIn("Rear Passenger Tire Pressure Warning", entities)
+        vehicle.apply_graphql_status({"vehicleState": {"glassHatch": {"position": {"status": None}}}})
+        self.assertTrue(entities["Glass Hatch"].is_on)
+
+    async def test_charging_rate_retains_precision_and_actual_unit(self):
+        vehicle = behavior.make_24mm_vehicle()
+        vehicle.apply_graphql_status({"electric": {"charging": {
+            "actualChargingRate": {"value": 7.25, "unit": "kW"},
+        }}})
+        measurement = vehicle.features[VehicleFeatures.ChargingRate]
+        self.assertEqual(7.25, measurement.value)
+        self.assertEqual("kW", measurement.unit)
+
     async def test_returned_measurements_are_discovered_without_subscription(self):
         vehicle = behavior.make_vehicle()
         vehicle._has_electric = True

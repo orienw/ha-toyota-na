@@ -150,6 +150,48 @@ COMMAND_REFRESH_DELAY = 10
 
 BINARY_SENSORS = [
     {
+        "device_class": BinarySensorDeviceClass.WINDOW,
+        "feature": VehicleFeatures.GlassHatch,
+        "icon": "mdi:car-back",
+        "name": "Glass Hatch",
+        "electric": False,
+    },
+    {
+        "device_class": BinarySensorDeviceClass.PROBLEM,
+        "feature": VehicleFeatures.FrontDriverTireWarning,
+        "icon": "mdi:car-tire-alert",
+        "name": "Front Driver Tire Pressure Warning",
+        "electric": False,
+    },
+    {
+        "device_class": BinarySensorDeviceClass.PROBLEM,
+        "feature": VehicleFeatures.FrontPassengerTireWarning,
+        "icon": "mdi:car-tire-alert",
+        "name": "Front Passenger Tire Pressure Warning",
+        "electric": False,
+    },
+    {
+        "device_class": BinarySensorDeviceClass.PROBLEM,
+        "feature": VehicleFeatures.RearDriverTireWarning,
+        "icon": "mdi:car-tire-alert",
+        "name": "Rear Driver Tire Pressure Warning",
+        "electric": False,
+    },
+    {
+        "device_class": BinarySensorDeviceClass.PROBLEM,
+        "feature": VehicleFeatures.RearPassengerTireWarning,
+        "icon": "mdi:car-tire-alert",
+        "name": "Rear Passenger Tire Pressure Warning",
+        "electric": False,
+    },
+    {
+        "device_class": BinarySensorDeviceClass.PROBLEM,
+        "feature": VehicleFeatures.SpareTireWarning,
+        "icon": "mdi:car-tire-alert",
+        "name": "Spare Tire Pressure Warning",
+        "electric": False,
+    },
+    {
         "device_class": BinarySensorDeviceClass.DOOR,
         "feature": VehicleFeatures.FrontDriverDoor,
         "icon": "mdi:car-door",
@@ -278,6 +320,14 @@ BINARY_SENSORS = [
 ]
 
 SENSORS = [
+    {
+        "state_class": SensorStateClass.MEASUREMENT,
+        "icon": "mdi:ev-station",
+        "feature": VehicleFeatures.ChargingRate,
+        "name": "Charging Rate",
+        "unit": None,
+        "electric": True,
+    },
     {
         "state_class": SensorStateClass.MEASUREMENT,
         "icon": "mdi:gauge",

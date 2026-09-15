@@ -41,6 +41,12 @@ class VehicleFeatures(Enum):
     Trunk = auto()
     Moonroof = auto()
     Hood = auto()
+    GlassHatch = auto()
+    FrontDriverTireWarning = auto()
+    FrontPassengerTireWarning = auto()
+    RearDriverTireWarning = auto()
+    RearPassengerTireWarning = auto()
+    SpareTireWarning = auto()
 
     # Charging Status
     ChargingStatus = auto()
@@ -77,6 +83,7 @@ class VehicleFeatures(Enum):
     AverageFuelConsumption = auto()
     TripFuelConsumption = auto()
     TripCount = auto()
+    ChargingRate = auto()
 
     #Times
     OccurrenceDate = auto()

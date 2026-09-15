@@ -63,6 +63,7 @@ GRAPHQL_VEHICLE_STATUS_FIELDS = """
       }
       hatch { lock { status } position { status } }
       hood { position { status } }
+      glassHatch { position { status } }
       moonroof { position { status } }
       trunk { lock { status } position { status } }
       tailgate { lock { status } position { status } }
@@ -105,6 +106,7 @@ GRAPHQL_VEHICLE_STATUS_FIELDS = """
         chargeType chargingStatus chargingState
         remainingChargeTime { unit value }
         remainingChargeTimeTo80Percent { unit value }
+        actualChargingRate { unit value }
         connector { status plugInInfo plugStatus }
         chargeSettings {
           schedules {
