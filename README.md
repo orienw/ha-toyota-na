@@ -88,6 +88,10 @@ with a schedule ID to remove it.
 Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,
 `26BEV`, and `NG86`.
 
+### Sensor display
+
+Remaining Charge Time shows Unknown when Toyota reports no estimate.
+
 ## Installation
 Requires Home Assistant 2022.11 or newer.
 

@@ -421,7 +421,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             ("evDistanceAC", VehicleFeatures.ChargeDistanceAC, distance_unit),
             ("chargeRemainingAmount", VehicleFeatures.ChargeLevel, "%"),
             ("plugStatus", VehicleFeatures.PlugStatus, ""),
-            ("remainingChargeTime", VehicleFeatures.RemainingChargeTime, ""),
+            ("remainingChargeTime", VehicleFeatures.RemainingChargeTime, "min"),
             ("evTravelableDistance", VehicleFeatures.EvTravelableDistance, ""),
             ("chargeType", VehicleFeatures.ChargeType, ""),
             ("connectorStatus", VehicleFeatures.ConnectorStatus, ""),
@@ -479,6 +479,10 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             return False
         if observed_at is not None:
             self._feature_timestamps[(feature, "value")] = observed_at
+        if value == 65535 and feature in (
+            VehicleFeatures.RemainingChargeTime, VehicleFeatures.RemainingChargeTimeTo80,
+        ):
+            value = None
         self._features[feature] = ToyotaNumeric(value, unit)
         return True
 

@@ -631,6 +631,48 @@ class VehicleStateTests(unittest.TestCase):
                     })
                     self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
 
+    def test_rest_unavailable_charge_time_clears_estimate_and_preserves_order(self):
+        for make in (make_vehicle, make_17cy_vehicle):
+            vehicle = make()
+            for timestamp, value, expected in (
+                ("07:00:00", 30, 30),
+                ("07:02:00", 65535, None),
+                ("07:01:00", 20, None),
+                ("07:03:00", None, None),
+                ("07:04:00", 0, 0),
+            ):
+                vehicle._parse_electric_status({
+                    "vehicleInfo": {
+                        "acquisitionDatetime": f"2026-09-15T{timestamp}Z",
+                        "chargeInfo": {"remainingChargeTime": value},
+                    },
+                })
+                feature = vehicle.features[VehicleFeatures.RemainingChargeTime]
+                self.assertEqual(feature.value, expected)
+                self.assertEqual(feature.unit, "min")
+
+    def test_appsync_unavailable_charge_times_clear_only_newer_estimates(self):
+        vehicle = make_24mm_vehicle()
+        for timestamp, value, expected in (
+            ("07:00:00", 30, 30),
+            ("07:02:00", 65535, None),
+            ("07:01:00", 20, None),
+            ("07:03:00", None, None),
+            ("07:04:00", 0, 0),
+        ):
+            vehicle.apply_graphql_status({
+                "electric": {"charging": {
+                    "lastUpdateDateTime": f"2026-09-15T{timestamp}Z",
+                    "remainingChargeTime": {"value": value, "unit": "min"},
+                    "remainingChargeTimeTo80Percent": {"value": value, "unit": "min"},
+                }},
+            })
+            for key in (VehicleFeatures.RemainingChargeTime, VehicleFeatures.RemainingChargeTimeTo80):
+                self.assertEqual(vehicle.features[key].value, expected)
+
+        vehicle.apply_graphql_status({"telemetry": {"odo": {"value": 65535, "unit": "mi"}}})
+        self.assertEqual(vehicle.features[VehicleFeatures.Odometer].value, 65535)
+
     def test_partial_electric_status_preserves_existing_values(self):
         for make in (make_vehicle, make_17cy_vehicle):
             vehicle = make()
