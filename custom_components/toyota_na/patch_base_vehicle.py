@@ -286,19 +286,8 @@ class ToyotaVehicle(ABC):
         return type(value) is int and value == 1
 
     @property
-    def can_read_status(self) -> bool:
-        return self.subscribed and self.feature_enabled("vehicleState")
-
-    @property
-    def can_read_electric(self) -> bool:
-        return self.electric and (
-            self.feature_enabled("evBattery")
-            or self.feature_enabled("evVehicleStatus")
-        )
-
-    @property
     def can_receive_status(self) -> bool:
-        return self.can_read_status or (self.uses_appsync and self.can_read_electric)
+        return self.subscribed or (self.uses_appsync and self.electric)
 
     @property
     def can_start_climate(self) -> bool:
@@ -381,33 +370,10 @@ class ToyotaVehicle(ABC):
             if status:
                 self._parse_electric_status(status)
 
-    def feature_available(self, feature: VehicleFeatures) -> bool:
-        if feature in (
-            VehicleFeatures.ChargeLevel, VehicleFeatures.ChargeDistance,
-            VehicleFeatures.ChargeDistanceAC, VehicleFeatures.EvTravelableDistance,
-        ):
-            return self.feature_enabled("evBattery")
-        if feature in (
-            VehicleFeatures.PlugStatus, VehicleFeatures.ConnectorStatus,
-            VehicleFeatures.ChargingStatus, VehicleFeatures.RemainingChargeTime,
-            VehicleFeatures.ChargeType,
-        ):
-            return self.feature_enabled("evVehicleStatus")
-        if feature in (
-            VehicleFeatures.FrontDriverDoor, VehicleFeatures.FrontPassengerDoor,
-            VehicleFeatures.RearDriverDoor, VehicleFeatures.RearPassengerDoor,
-            VehicleFeatures.FrontDriverWindow, VehicleFeatures.FrontPassengerWindow,
-            VehicleFeatures.RearDriverWindow, VehicleFeatures.RearPassengerWindow,
-            VehicleFeatures.Trunk, VehicleFeatures.Hood, VehicleFeatures.Moonroof,
-            VehicleFeatures.RemoteStartStatus,
-        ):
-            return self.feature_enabled("vehicleState")
-        return True
-
     def supports_command(self, command: RemoteRequestCommand) -> bool:
         """Return whether the API transport and vehicle support a command."""
         if command == RemoteRequestCommand.Refresh:
-            return self.can_read_status
+            return self.subscribed and self.feature_enabled("vehicleState")
         if not self.subscribed or not self.feature_enabled("remoteCommands"):
             return False
         if command in (
@@ -415,7 +381,7 @@ class ToyotaVehicle(ABC):
             RemoteRequestCommand.ChargeResume,
             RemoteRequestCommand.ChargeStop,
         ):
-            if not self.can_read_electric:
+            if not self.electric:
                 return False
             states = {
                 RemoteRequestCommand.ChargeStart: ("36", "charge_now"),
@@ -452,7 +418,6 @@ class ToyotaVehicle(ABC):
             previous.vin != self.vin
             or previous.generation != self.generation
             or previous.region != self.region
-            or previous.subscribed != self.subscribed
             or previous.electric != self.electric
         ):
             return False

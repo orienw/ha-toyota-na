@@ -99,11 +99,13 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(vehicle.vin, ha.integration_runtime._websocket_contexts([vehicle]))
             vehicle._feature_flags["evBattery"] = 2
             client.graphql_get_vehicle_status.reset_mock()
+            client.graphql_get_vehicle_status.return_value["electric"]["battery"]["chargeRemainingAmount"]["value"] = 64
             await vehicle.update()
-            client.graphql_get_vehicle_status.assert_not_awaited()
-            self.assertEqual(ha.integration_runtime._websocket_contexts([vehicle]), {})
+            client.graphql_get_vehicle_status.assert_awaited_once()
+            self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 64)
+            self.assertIn(vehicle.vin, ha.integration_runtime._websocket_contexts([vehicle]))
 
-    def test_maintenance_hides_cached_sensor_values_and_restores_them(self):
+    def test_app_feature_flags_do_not_hide_observed_sensor_values(self):
         vehicle = behavior.make_vehicle()
         vehicle.features[VehicleFeatures.ChargeLevel] = ha.ToyotaNumeric(80, "%")
         coordinator = ha.DataUpdateCoordinator([vehicle])
@@ -112,14 +114,12 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
             coordinator, "Charge Level", vehicle.vin,
         )
         self.assertEqual(sensor.state, 80)
-        vehicle._feature_flags = {"evBattery": 2}
-        self.assertFalse(sensor.available)
-        self.assertIsNone(sensor.state)
-        vehicle._feature_flags["evBattery"] = 1
-        self.assertTrue(sensor.available)
-        self.assertEqual(sensor.state, 80)
+        for flags in ({}, {"evBattery": 0}, {"evBattery": 2}):
+            vehicle._feature_flags = flags
+            self.assertTrue(sensor.available)
+            self.assertEqual(sensor.state, 80)
 
-    def test_lock_state_respects_vehicle_status_maintenance(self):
+    def test_app_maintenance_does_not_hide_observed_lock_state(self):
         vehicle = behavior.make_vehicle()
         vehicle.features[VehicleFeatures.FrontDriverDoor] = ha.ToyotaLockableOpening(
             closed=True, locked=True,
@@ -130,9 +130,48 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(entity.is_locked)
         vehicle._feature_flags = {"vehicleState": 2, "remoteCommands": 1}
         self.assertTrue(entity.available)
-        self.assertIsNone(entity.is_locked)
+        self.assertTrue(entity.is_locked)
         vehicle._feature_flags["vehicleState"] = 1
         self.assertTrue(entity.is_locked)
+
+    async def test_legacy_reads_and_entities_do_not_require_remote_subscription(self):
+        client = types.SimpleNamespace(
+            get_telemetry=AsyncMock(return_value={}),
+            get_engine_status_17cy=AsyncMock(return_value={"status": "off"}),
+            get_electric_status=AsyncMock(return_value={"vehicleInfo": {
+                "chargeInfo": {"chargeRemainingAmount": 71, "plugStatus": 40},
+            }}),
+        )
+        vehicle = behavior.make_17cy_vehicle(client)
+        vehicle._has_remote_subscription = False
+        vehicle._feature_flags = {"evBattery": 0, "evVehicleStatus": 2}
+        await vehicle.update()
+        client.get_engine_status_17cy.assert_awaited_once()
+        self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 71)
+        vehicle.features[VehicleFeatures.FrontDriverDoor] = ha.ToyotaLockableOpening(
+            closed=True, locked=True,
+        )
+        coordinator = ha.DataUpdateCoordinator([vehicle])
+        entities = []
+        for platform in (ha.binary_sensor_platform, ha.sensor_platform):
+            await platform.async_setup_entry(
+                ha.FakeHass(coordinator), ha.ConfigEntry(),
+                lambda added, update: entities.extend(added),
+            )
+        battery = next(entity for entity in entities if entity.sensor_name == "EV Battery Level")
+        self.assertEqual(battery.state, 71)
+        self.assertTrue(battery.available)
+        self.assertTrue(any(entity.sensor_name == "Front Driver Door" for entity in entities))
+        self.assertFalse(vehicle.supports_command(RemoteRequestCommand.ChargeStop))
+
+    def test_subscription_changes_preserve_last_known_vehicle_observations(self):
+        previous = behavior.make_24mm_vehicle()
+        previous.features[VehicleFeatures.ChargeLevel] = ha.ToyotaNumeric(62, "%")
+        vehicle = behavior.make_24mm_vehicle()
+        vehicle._has_remote_subscription = False
+        self.assertTrue(vehicle.inherit_state(previous))
+        self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 62)
+        self.assertFalse(vehicle.supports_command(RemoteRequestCommand.EngineStart))
 
     async def test_services_enforce_live_feature_and_charging_state(self):
         client = types.SimpleNamespace(remote_request_24mm=AsyncMock())

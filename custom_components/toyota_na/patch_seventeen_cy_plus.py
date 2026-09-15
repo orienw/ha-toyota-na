@@ -185,7 +185,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             except Exception as e:
                 _LOGGER.debug("Error fetching vehicle status: %s", e)
 
-            if not self.uses_appsync and self.can_read_status:
+            if not self.uses_appsync and self.subscribed:
                 try:
                     previous_engine = self._features.get(VehicleFeatures.RemoteStartStatus)
                     if self._generation == ApiVehicleGeneration.MM21:
@@ -203,7 +203,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
         try:
             if (
-                self.can_read_electric
+                self.electric
                 and not self.uses_appsync
             ):
                 electric_status = await self._client.get_electric_status(
@@ -284,7 +284,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
         try:
             if (
-                self.can_read_electric
+                self.electric
                 and not self.uses_appsync
             ):
                 electric_status = await self._client.get_electric_realtime_status(

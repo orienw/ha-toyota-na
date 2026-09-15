@@ -129,7 +129,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
     async def update(self):
         
         try:
-            if self.can_read_status:
+            if self.subscribed:
                 # vehicle_health_status
                 vehicle_status = await self._client.get_vehicle_status_17cy(
                     self._vin, self._region
@@ -154,18 +154,17 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             pass
 
         try:
-            if self.can_read_status:
-                engine_status = await self._client.get_engine_status_17cy(
-                    self._vin, self._region
-                )
-                if engine_status:
-                    self._parse_engine_status(engine_status)
+            engine_status = await self._client.get_engine_status_17cy(
+                self._vin, self._region
+            )
+            if engine_status:
+                self._parse_engine_status(engine_status)
         except Exception as e:
             _LOGGER.debug("Error parsing engine status: %s", e)
             pass
 
         try:
-            if self.can_read_electric:
+            if self.electric:
                 # electric_status
                 electric_status = await self._client.get_electric_status(
                     self.vin, region=self._region, generation=self.api_generation
@@ -191,7 +190,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
         """Tell Toyota to refresh electric status if applicable"""
         try:
-            if self.can_read_electric:
+            if self.electric:
                 # electric_status
                 electric_status = await self._client.get_electric_realtime_status(
                     self.vin,

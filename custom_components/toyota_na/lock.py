@@ -88,9 +88,8 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
 
         lock_states = [
             feature.locked
-            for key, feature in self.vehicle.features.items()
+            for feature in self.vehicle.features.values()
             if isinstance(feature, ToyotaLockableOpening)
-            and self.vehicle.feature_available(key)
             and feature.locked is not None
         ]
 

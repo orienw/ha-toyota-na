@@ -84,7 +84,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.FrontDriverDoor,
         "icon": "mdi:car-door",
         "name": "Front Driver Door",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -92,7 +91,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.FrontPassengerDoor,
         "icon": "mdi:car-door",
         "name": "Front Passenger Door",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -100,7 +98,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.RearDriverDoor,
         "icon": "mdi:car-door",
         "name": "Rear Driver Door",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -108,7 +105,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.RearPassengerDoor,
         "icon": "mdi:car-door",
         "name": "Rear Passenger Door",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -116,7 +112,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.Hood,
         "icon": "mdi:car-door",
         "name": "Hood",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -124,7 +119,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.Trunk,
         "icon": "mdi:car-door",
         "name": "Trunk",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -132,7 +126,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.Moonroof,
         "icon": "mdi:window-closed-variant",
         "name": "Moonroof",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -140,7 +133,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.FrontDriverWindow,
         "icon": "mdi:window-closed-variant",
         "name": "Front Driver Window",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -148,7 +140,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.FrontPassengerWindow,
         "icon": "mdi:window-closed-variant",
         "name": "Front Passenger Window",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -156,7 +147,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.RearDriverWindow,
         "icon": "mdi:window-closed-variant",
         "name": "Rear Driver Window",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -164,7 +154,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.RearPassengerWindow,
         "icon": "mdi:window-closed-variant",
         "name": "Rear Passenger Window",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -172,7 +161,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.FrontDriverDoor,
         "icon": "mdi:car-door-lock",
         "name": "Front Driver Door Lock",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -180,7 +168,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.FrontPassengerDoor,
         "icon": "mdi:car-door-lock",
         "name": "Front Passenger Door Lock",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -188,7 +175,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.RearDriverDoor,
         "icon": "mdi:car-door-lock",
         "name": "Rear Driver Door Lock",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -196,7 +182,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.RearPassengerDoor,
         "icon": "mdi:car-door-lock",
         "name": "Rear Passenger Door Lock",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -204,7 +189,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.Trunk,
         "icon": "mdi:car-door-lock",
         "name": "Trunk Door Lock",
-        "subscription": True,
         "electric": False,
     },
     {
@@ -212,7 +196,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.RemoteStartStatus,
         "icon": "mdi:car-hatchback",
         "name": "Remote Start",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -220,7 +203,6 @@ BINARY_SENSORS = [
         "feature": VehicleFeatures.ChargingStatus,
         "icon": "mdi:ev-station",
         "name": "Charging Status",
-        "subscription": False,
         "electric": True,
     },
 ]
@@ -232,7 +214,6 @@ SENSORS = [
         "feature": VehicleFeatures.DistanceToEmpty,
         "name": "Distance To Empty",
         "unit": "MI_OR_KM",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -241,7 +222,6 @@ SENSORS = [
         "feature": VehicleFeatures.FuelLevel,
         "name": "Fuel Level",
         "unit": PERCENTAGE,
-        "subscription": False,
         "electric": False,
     },
     {
@@ -250,7 +230,6 @@ SENSORS = [
         "feature": VehicleFeatures.Odometer,
         "name": "Odometer",
         "unit": "MI_OR_KM",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -259,7 +238,6 @@ SENSORS = [
         "feature": VehicleFeatures.TripDetailsA,
         "name": "Trip Details A",
         "unit": "MI_OR_KM",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -268,7 +246,6 @@ SENSORS = [
         "feature": VehicleFeatures.TripDetailsB,
         "name": "Trip Details B",
         "unit": "MI_OR_KM",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -277,7 +254,6 @@ SENSORS = [
         "feature": VehicleFeatures.FrontDriverTire,
         "name": "Front Driver Tire",
         "unit": UnitOfPressure.PSI,
-        "subscription": False,
         "electric": False,
     },
     {
@@ -286,7 +262,6 @@ SENSORS = [
         "feature": VehicleFeatures.FrontPassengerTire,
         "name": "Front Passenger Tire",
         "unit": UnitOfPressure.PSI,
-        "subscription": False,
         "electric": False,
     },
     {
@@ -295,7 +270,6 @@ SENSORS = [
         "feature": VehicleFeatures.RearDriverTire,
         "name": "Rear Driver Tire",
         "unit": UnitOfPressure.PSI,
-        "subscription": False,
         "electric": False,
     },
     {
@@ -304,7 +278,6 @@ SENSORS = [
         "feature": VehicleFeatures.RearPassengerTire,
         "name": "Rear Passenger Tire",
         "unit": UnitOfPressure.PSI,
-        "subscription": False,
         "electric": False,
     },
     {
@@ -313,7 +286,6 @@ SENSORS = [
         "feature": VehicleFeatures.SpareTirePressure,
         "name": "Spare Tire Pressure",
         "unit": UnitOfPressure.PSI,
-        "subscription": False,
         "electric": False,
     },
     {
@@ -322,7 +294,6 @@ SENSORS = [
         "feature": VehicleFeatures.NextService,
         "name": "Next Service",
         "unit": "MI_OR_KM",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -331,7 +302,6 @@ SENSORS = [
         "feature": VehicleFeatures.ChargeDistance,
         "name": "EV Range",
         "unit": "MI_OR_KM",
-        "subscription": False,
         "electric": True,
     },
     {
@@ -340,7 +310,6 @@ SENSORS = [
         "feature": VehicleFeatures.ChargeDistanceAC,
         "name": "EV Range AC",
         "unit": "MI_OR_KM",
-        "subscription": False,
         "electric": True,
     },
     {
@@ -349,7 +318,6 @@ SENSORS = [
         "feature": VehicleFeatures.ChargeLevel,
         "name": "EV Battery Level",
         "unit": PERCENTAGE,
-        "subscription": False,
         "electric": True,
     },
     {
@@ -358,7 +326,6 @@ SENSORS = [
         "feature": VehicleFeatures.LastTimeStamp,
         "name": "Last Update Timestamp",
         "unit": "",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -367,7 +334,6 @@ SENSORS = [
         "feature": VehicleFeatures.LastTirePressureTimeStamp,
         "name": "Last Tire Pressure Update Timestamp",
         "unit": "",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -376,7 +342,6 @@ SENSORS = [
         "feature": VehicleFeatures.Speed,
         "name": "Speed",
         "unit": "km/h",
-        "subscription": False,
         "electric": False,
     },
     {
@@ -385,7 +350,6 @@ SENSORS = [
         "feature": VehicleFeatures.PlugStatus,
         "name": "Plug Status",
         "unit": "",
-        "subscription": False,
         "electric": True,
     },
     {
@@ -394,7 +358,6 @@ SENSORS = [
         "feature": VehicleFeatures.RemainingChargeTime,
         "name": "Remaining Charge Time",
         "unit": "",
-        "subscription": False,
         "electric": True,
     },
     {
@@ -403,7 +366,6 @@ SENSORS = [
         "feature": VehicleFeatures.EvTravelableDistance,
         "name": "EV Travelable Distance",
         "unit": "",
-        "subscription": False,
         "electric": True,
     },
     {
@@ -412,7 +374,6 @@ SENSORS = [
         "feature": VehicleFeatures.ChargeType,
         "name": "Charge Type",
         "unit": "",
-        "subscription": False,
         "electric": True,
     },
     {
@@ -421,7 +382,6 @@ SENSORS = [
         "feature": VehicleFeatures.ConnectorStatus,
         "name": "Connector Status",
         "unit": "",
-        "subscription": False,
         "electric": True,
     },
 ]

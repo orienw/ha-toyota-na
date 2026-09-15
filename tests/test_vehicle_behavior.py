@@ -767,7 +767,6 @@ class VehicleStateTests(unittest.TestCase):
             ("_vin", "OTHERVIN"),
             ("_region", "CA"),
             ("_generation", ApiVehicleGeneration.MM24),
-            ("_has_remote_subscription", False),
             ("_has_electric", True),
         ):
             with self.subTest(attribute=attribute):

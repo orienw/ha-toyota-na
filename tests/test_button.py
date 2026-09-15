@@ -221,7 +221,6 @@ runtime_spec.loader.exec_module(integration_runtime)
 class FakeVehicle:
     _feature_flags = None
     feature_enabled = ToyotaVehicle.feature_enabled
-    feature_available = ToyotaVehicle.feature_available
 
     def __init__(self, supported, vin="TESTVIN"):
         self.vin = vin
