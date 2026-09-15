@@ -276,14 +276,22 @@ async def remote_request_17cyplus(self, vin, command, region="US"):
     )
 
 async def remote_request_21mm(self, vin, command, region="US"):
+    return await remote_request_route(self, vin, "21MM", command, region)
+
+
+async def remote_request_route(self, vin, generation, command, region="US", brand="T"):
+    body = {"command": command, "autoFixPopup": False}
+    if command == "buzzer-warning":
+        body["beepCount"] = 10
     return await self.api_post(
         REMOTE_ROUTE + "command",
-        {"command": command, "autoFixPopup": False},
+        body,
         _vehicle_headers(
             vin,
             region,
             **{
-                "X-GENERATION": "21MM",
+                "X-GENERATION": generation,
+                "X-BRAND": brand,
                 "X-CORRELATIONID": str(uuid.uuid4()),
                 "Content-Type": "application/json",
             },

@@ -105,3 +105,83 @@ refresh:
       selector:
         device:
           integration: toyota_na
+
+sound_horn:
+  name: Sound Horn
+  description: Sound the vehicle's horn.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+
+headlights_on:
+  name: Turn On Headlights
+  description: Turn on the vehicle's headlights.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+
+sound_buzzer:
+  name: Sound Buzzer
+  description: Sound the vehicle's buzzer.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+
+trunk_lock:
+  name: Lock Cargo Door
+  description: Lock the trunk, hatch, or tailgate when supported.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+
+trunk_unlock:
+  name: Unlock Cargo Door
+  description: Unlock the trunk, hatch, or tailgate when supported.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+
+windows_open:
+  name: Open Windows
+  description: Open the vehicle's power windows when supported.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+
+windows_close:
+  name: Close Windows
+  description: Close the vehicle's power windows when supported.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+
+moonroof_close:
+  name: Close Sunroof
+  description: Close the vehicle's sunroof when supported.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na

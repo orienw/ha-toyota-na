@@ -322,6 +322,9 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         """Send a generation-appropriate remote command."""
         if not self.supports_command(command):
             raise ValueError("This command is unavailable for this vehicle.")
+        if command in self._EXTENDED_COMMANDS:
+            await self.send_extended_command(command)
+            return
         if command in (
             RemoteRequestCommand.ChargeStart,
             RemoteRequestCommand.ChargeResume,

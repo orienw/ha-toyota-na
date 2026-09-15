@@ -92,6 +92,14 @@ class RemoteRequestCommand(Enum):
     ChargeStart = auto()
     ChargeResume = auto()
     ChargeStop = auto()
+    SoundHorn = auto()
+    HeadlightsOn = auto()
+    SoundBuzzer = auto()
+    TrunkLock = auto()
+    TrunkUnlock = auto()
+    WindowsOpen = auto()
+    WindowsClose = auto()
+    MoonroofClose = auto()
 
 
 class ToyotaVehicle(ABC):
@@ -116,6 +124,21 @@ class ToyotaVehicle(ABC):
     _vin: str
     _region: str
     _command_map: dict[RemoteRequestCommand, str] = {}
+
+    _EXTENDED_COMMANDS = {
+        RemoteRequestCommand.SoundHorn: ("sound-horn", ("hornCapable",)),
+        RemoteRequestCommand.HeadlightsOn: ("headlight-on", ("lightsCapable",)),
+        RemoteRequestCommand.SoundBuzzer: ("buzzer-warning", ("buzzerCapable",)),
+        RemoteRequestCommand.TrunkLock: (
+            "trunk-lock", ("trunkLockUnlockCapable", "powerTailgateCapable"),
+        ),
+        RemoteRequestCommand.TrunkUnlock: (
+            "trunk-unlock", ("trunkLockUnlockCapable", "powerTailgateCapable"),
+        ),
+        RemoteRequestCommand.WindowsOpen: ("power-window-open", ("powerWindowsOpenCapable",)),
+        RemoteRequestCommand.WindowsClose: ("power-window-close", ("powerWindowsCloseCapable",)),
+        RemoteRequestCommand.MoonroofClose: ("sunroof-close", ("moonroofCloseCapable",)),
+    }
 
     _COMMAND_CAPABILITIES = {
         RemoteRequestCommand.DoorLock: (
@@ -370,12 +393,29 @@ class ToyotaVehicle(ABC):
             if status:
                 self._parse_electric_status(status)
 
+    async def send_extended_command(self, command: RemoteRequestCommand) -> None:
+        command_name, _ = self._EXTENDED_COMMANDS[command]
+        if self.uses_appsync:
+            await self._client.remote_request_24mm(self.vin, command_name, self.region)
+        else:
+            await self._client.remote_request_route(
+                self.vin, self.api_generation, command_name, self.region, self.brand,
+            )
+
     def supports_command(self, command: RemoteRequestCommand) -> bool:
         """Return whether the API transport and vehicle support a command."""
         if command == RemoteRequestCommand.Refresh:
             return self.subscribed and self.feature_enabled("vehicleState")
         if not self.subscribed or not self.feature_enabled("remoteCommands"):
             return False
+        if command in self._EXTENDED_COMMANDS:
+            if command == RemoteRequestCommand.TrunkLock and self.uses_appsync:
+                return False
+            _, keys = self._EXTENDED_COMMANDS[command]
+            return any(
+                first_capability(self._remote_capabilities, self._extended_capabilities, (key,)) is True
+                for key in keys
+            )
         if command in (
             RemoteRequestCommand.ChargeStart,
             RemoteRequestCommand.ChargeResume,

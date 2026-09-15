@@ -30,6 +30,7 @@ from .patch_client import (
     send_refresh_request_21mm,
     remote_request_17cyplus,
     remote_request_21mm,
+    remote_request_route,
     get_vehicle_status_17cy,
     get_engine_status_17cy,
     send_refresh_request_17cy,
@@ -58,6 +59,7 @@ ToyotaOneClient.send_refresh_request_17cyplus = send_refresh_request_17cyplus
 ToyotaOneClient.send_refresh_request_21mm = send_refresh_request_21mm
 ToyotaOneClient.remote_request_17cyplus = remote_request_17cyplus
 ToyotaOneClient.remote_request_21mm = remote_request_21mm
+ToyotaOneClient.remote_request_route = remote_request_route
 ToyotaOneClient.get_vehicle_status_17cy = get_vehicle_status_17cy
 ToyotaOneClient.get_engine_status_17cy = get_engine_status_17cy
 ToyotaOneClient.send_refresh_request_17cy = send_refresh_request_17cy
@@ -113,17 +115,6 @@ from .const import (
     COMMAND_MAP,
     COMMAND_REFRESH_DELAY,
     DOMAIN,
-    CHARGE_START,
-    CHARGE_RESUME,
-    CHARGE_STOP,
-    ENGINE_START,
-    ENGINE_STOP,
-    HAZARDS_ON,
-    HAZARDS_OFF,
-    VEHICLE_FINDER,
-    DOOR_LOCK,
-    DOOR_UNLOCK,
-    REFRESH,
     UPDATE_INTERVAL,
     REFRESH_STATUS_INTERVAL,
 )
@@ -222,17 +213,8 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
 
         return
 
-    hass.services.async_register(DOMAIN, CHARGE_START, async_service_handle)
-    hass.services.async_register(DOMAIN, CHARGE_RESUME, async_service_handle)
-    hass.services.async_register(DOMAIN, CHARGE_STOP, async_service_handle)
-    hass.services.async_register(DOMAIN, ENGINE_START, async_service_handle)
-    hass.services.async_register(DOMAIN, ENGINE_STOP, async_service_handle)
-    hass.services.async_register(DOMAIN, HAZARDS_ON, async_service_handle)
-    hass.services.async_register(DOMAIN, HAZARDS_OFF, async_service_handle)
-    hass.services.async_register(DOMAIN, VEHICLE_FINDER, async_service_handle)
-    hass.services.async_register(DOMAIN, DOOR_LOCK, async_service_handle)
-    hass.services.async_register(DOMAIN, DOOR_UNLOCK, async_service_handle)
-    hass.services.async_register(DOMAIN, REFRESH, async_service_handle)
+    for action in COMMAND_MAP:
+        hass.services.async_register(DOMAIN, action, async_service_handle)
 
     return True
 

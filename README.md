@@ -50,6 +50,8 @@ Native controls:
 * Remote Start and Remote Stop buttons
 * Flash Hazards button
 * Find Vehicle button, when reported supported
+* Horn, headlights, and buzzer buttons, when supported
+* Open/close windows, close sunroof, and cargo-door controls, when supported
 * Refresh Status button
 * Charge Now, Resume Charging, and Stop Charging buttons, when available
 * Climate Temperature and Use Climate Settings controls, when supported

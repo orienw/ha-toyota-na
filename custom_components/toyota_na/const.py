@@ -20,6 +20,14 @@ REFRESH = "refresh"
 CHARGE_START = "charge_start"
 CHARGE_RESUME = "charge_resume"
 CHARGE_STOP = "charge_stop"
+SOUND_HORN = "sound_horn"
+HEADLIGHTS_ON = "headlights_on"
+SOUND_BUZZER = "sound_buzzer"
+TRUNK_LOCK = "trunk_lock"
+TRUNK_UNLOCK = "trunk_unlock"
+WINDOWS_OPEN = "windows_open"
+WINDOWS_CLOSE = "windows_close"
+MOONROOF_CLOSE = "moonroof_close"
 
 UPDATE_INTERVAL = 600
 REFRESH_STATUS_INTERVAL = 2 * 3600
@@ -36,6 +44,14 @@ COMMAND_MAP = {
     CHARGE_START: RemoteRequestCommand.ChargeStart,
     CHARGE_RESUME: RemoteRequestCommand.ChargeResume,
     CHARGE_STOP: RemoteRequestCommand.ChargeStop,
+    SOUND_HORN: RemoteRequestCommand.SoundHorn,
+    HEADLIGHTS_ON: RemoteRequestCommand.HeadlightsOn,
+    SOUND_BUZZER: RemoteRequestCommand.SoundBuzzer,
+    TRUNK_LOCK: RemoteRequestCommand.TrunkLock,
+    TRUNK_UNLOCK: RemoteRequestCommand.TrunkUnlock,
+    WINDOWS_OPEN: RemoteRequestCommand.WindowsOpen,
+    WINDOWS_CLOSE: RemoteRequestCommand.WindowsClose,
+    MOONROOF_CLOSE: RemoteRequestCommand.MoonroofClose,
 }
 
 COMMAND_BUTTONS = (
@@ -73,6 +89,46 @@ COMMAND_BUTTONS = (
         "command": RemoteRequestCommand.VehicleFinder,
         "icon": "mdi:map-marker-radius",
         "name": "Find Vehicle",
+    },
+    {
+        "command": RemoteRequestCommand.SoundHorn,
+        "icon": "mdi:bullhorn",
+        "name": "Sound Horn",
+    },
+    {
+        "command": RemoteRequestCommand.HeadlightsOn,
+        "icon": "mdi:car-light-high",
+        "name": "Turn On Headlights",
+    },
+    {
+        "command": RemoteRequestCommand.SoundBuzzer,
+        "icon": "mdi:volume-high",
+        "name": "Sound Buzzer",
+    },
+    {
+        "command": RemoteRequestCommand.TrunkLock,
+        "icon": "mdi:car-back",
+        "name": "Lock Cargo Door",
+    },
+    {
+        "command": RemoteRequestCommand.TrunkUnlock,
+        "icon": "mdi:car-back",
+        "name": "Unlock Cargo Door",
+    },
+    {
+        "command": RemoteRequestCommand.WindowsOpen,
+        "icon": "mdi:car-door",
+        "name": "Open Windows",
+    },
+    {
+        "command": RemoteRequestCommand.WindowsClose,
+        "icon": "mdi:car-door",
+        "name": "Close Windows",
+    },
+    {
+        "command": RemoteRequestCommand.MoonroofClose,
+        "icon": "mdi:car-convertible",
+        "name": "Close Sunroof",
     },
 )
 

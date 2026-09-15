@@ -220,6 +220,9 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         """Start the engine. Periodically refreshes the vehicle status to determine if the engine is running."""
         if not self.supports_command(command):
             raise ValueError("This command is unavailable for this vehicle.")
+        if command in self._EXTENDED_COMMANDS:
+            await self.send_extended_command(command)
+            return
         if command == RemoteRequestCommand.ChargeStart:
             await self.send_charging_command(command)
             return

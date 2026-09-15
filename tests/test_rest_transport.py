@@ -73,6 +73,21 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(call.args, ("PUT", "https://onecdn.telematicsct.com/v1/remote/route/climate-settings"))
                 self.assertEqual(call.kwargs["json"], settings)
 
+    async def test_extended_commands_keep_generation_brand_and_buzzer_parameters(self):
+        for generation in ("17CY", "17CYPLUS", "21MM"):
+            for command in ("sound-horn", "buzzer-warning"):
+                with self.subTest(generation=generation, command=command):
+                    await client_module.remote_request_route(Client(), "TESTVIN", generation, command, "CA", "L")
+                    call = self.session.request.call_args
+                    self.assertEqual(call.args, ("POST", "https://onecdn.telematicsct.com/v1/remote/route/command"))
+                    self.assertEqual(call.kwargs["headers"]["X-GENERATION"], generation)
+                    self.assertEqual(call.kwargs["headers"]["X-BRAND"], "L")
+                    self.assertEqual(call.kwargs["headers"]["x-region"], "CA")
+                    body = {"command": command, "autoFixPopup": False}
+                    if command == "buzzer-warning":
+                        body["beepCount"] = 10
+                    self.assertEqual(call.kwargs["json"], body)
+
     async def test_charge_now_uses_electric_command_and_acceptance_response(self):
         completed = {"remoteControlResult": {"status": 0, "result": 0}, "vehicleInfo": {"chargeInfo": {"plugStatus": 40}}}
         self.response.json.side_effect = [
