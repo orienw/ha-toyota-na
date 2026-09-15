@@ -931,7 +931,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
         is_charging = normalize_charging_state(charging.get("chargingState"))
         if is_charging is None and not charging.get("chargingState"):
-            is_charging = normalize_charging_state(charging.get("chargingStatus"))
+            is_charging = normalize_charging_state(charging.get("chargingStatus") or plug_status)
         if is_charging is not None:
             self._store_opening(
                 VehicleFeatures.ChargingStatus,

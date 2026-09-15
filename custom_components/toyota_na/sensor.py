@@ -39,7 +39,9 @@ async def async_setup_entry(
                     config["feature"], config["icon"], config["unit"], config["state_class"],
                     coordinator, config["name"], vehicle.vin,
                     device_class=config.get("device_class"),
+                    states=config.get("states"),
                     enabled_default=config.get("enabled_default", True),
+                    translation_key=config.get("translation_key"),
                 )
 
     setup_entity_discovery(config_entry, coordinator, async_add_devices, discover_sensors)
@@ -54,13 +56,18 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         state_class: SensorStateClass | None,
         *args: Any,
         device_class: SensorDeviceClass | None = None,
+        states: dict[str, str] | None = None,
         enabled_default: bool = True,
+        translation_key: str | None = None,
     ):
         super().__init__(*args)
         self._attr_icon = icon
         self._attr_state_class = state_class
         self._attr_device_class = device_class
         self._attr_entity_registry_enabled_default = enabled_default
+        self._attr_translation_key = translation_key
+        self._attr_options = list(dict.fromkeys(states.values())) if states else None
+        self._states = states
         self._unit_of_measurement = unit_of_measurement
         self._vehicle_feature = vehicle_feature
 
@@ -69,6 +76,8 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         feature = self.feature(self._vehicle_feature)
         if not isinstance(feature, ToyotaNumeric) or feature.value is None:
             return None
+        if self._states:
+            return self._states.get(str(feature.value).lower())
         if self.device_class == SensorDeviceClass.TIMESTAMP:
             return datetime.fromtimestamp(feature.value, timezone.utc)
         if (
@@ -81,7 +90,7 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def native_unit_of_measurement(self):
-        if self.device_class == SensorDeviceClass.TIMESTAMP:
+        if self.device_class in (SensorDeviceClass.ENUM, SensorDeviceClass.TIMESTAMP):
             return None
         feature = self.feature(self._vehicle_feature)
         unit = feature.unit if isinstance(feature, ToyotaNumeric) else None
@@ -97,6 +106,9 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
+        if self._states:
+            feature = self.feature(self._vehicle_feature)
+            return {"raw_value": feature.value if isinstance(feature, ToyotaNumeric) else None}
         if self._vehicle_feature == VehicleFeatures.ChargeScheduleCount and self.vehicle:
             return {"schedules": self.vehicle.charge_settings.get("schedules", [])}
         return None

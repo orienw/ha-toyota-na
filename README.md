@@ -90,14 +90,17 @@ Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,
 
 ### Sensor display
 
-Last Update and Last Tire Pressure Update show dates and times.
+Plug State and Connector State show readable charging and connection states.
+Unrecognized values show Unknown, with Toyota's value in the `raw_value`
+attribute. Last Update and Last Tire Pressure Update show dates and times.
 Choose km/h or mph in the Speed sensor's settings.
 
-The original numeric timestamp sensors retain their IDs and values for existing
-automations. They are disabled by default on new installations and can be
-enabled in the device's entity list.
+The original Plug Status, Connector Status, and numeric timestamp sensors retain
+their IDs and values for existing automations. They are disabled by default on
+new installations and can be enabled in the device's entity list.
 
-Remaining Charge Time shows Unknown when Toyota reports no estimate.
+Remaining Charge Time shows Unknown when Toyota reports no estimate. Unplugging
+the vehicle clears Charging Status.
 
 ### Removing a vehicle
 

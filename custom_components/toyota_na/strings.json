@@ -33,5 +33,30 @@
         }
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "plug_state": {
+        "state": {
+          "unplugged": "Unplugged",
+          "waiting": "Waiting to charge",
+          "charging": "Charging",
+          "charge_complete": "Charging complete",
+          "fast_charging": "Fast charging",
+          "fast_charge_complete": "Fast charging complete",
+          "paused": "Charging paused",
+          "power_supply": "Supplying power",
+          "plugged_in": "Plugged in"
+        }
+      },
+      "connector_state": {
+        "state": {
+          "disconnected": "Disconnected",
+          "unlocked": "Unlocked",
+          "locked": "Locked",
+          "connected": "Connected"
+        }
+      }
+    }
   }
 }

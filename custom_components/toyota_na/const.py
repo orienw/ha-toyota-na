@@ -319,6 +319,34 @@ BINARY_SENSORS = [
     },
 ]
 
+PLUG_STATES = {
+    "12": "unplugged",
+    "36": "waiting",
+    "40": "charging",
+    "45": "charge_complete",
+    "56": "fast_charging",
+    "60": "fast_charge_complete",
+    "no_controls": "unplugged",
+    "unavailable": "unplugged",
+    "charge_now": "waiting",
+    "resume_charging": "paused",
+    "charging": "charging",
+    "external_power_active": "power_supply",
+    "external_power_active_hybrid": "power_supply",
+    "plugged_in": "plugged_in",
+    "unplugged": "unplugged",
+}
+
+CONNECTOR_STATES = {
+    "2": "disconnected",
+    "4": "unlocked",
+    "5": "locked",
+    "disconnected": "disconnected",
+    "connected": "connected",
+    "unlocked": "unlocked",
+    "locked": "locked",
+}
+
 SENSORS = [
     {
         "state_class": SensorStateClass.MEASUREMENT,
@@ -500,6 +528,18 @@ SENSORS = [
         "name": "Plug Status",
         "unit": "",
         "electric": True,
+        "enabled_default": False,
+    },
+    {
+        "state_class": None,
+        "device_class": SensorDeviceClass.ENUM,
+        "icon": "mdi:ev-plug-type1",
+        "feature": VehicleFeatures.PlugStatus,
+        "name": "Plug State",
+        "unit": None,
+        "electric": True,
+        "states": PLUG_STATES,
+        "translation_key": "plug_state",
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
@@ -532,6 +572,18 @@ SENSORS = [
         "name": "Connector Status",
         "unit": "",
         "electric": True,
+        "enabled_default": False,
+    },
+    {
+        "state_class": None,
+        "device_class": SensorDeviceClass.ENUM,
+        "icon": "mdi:ev-plug-type1",
+        "feature": VehicleFeatures.ConnectorStatus,
+        "name": "Connector State",
+        "unit": None,
+        "electric": True,
+        "states": CONNECTOR_STATES,
+        "translation_key": "connector_state",
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,

@@ -631,6 +631,22 @@ class VehicleStateTests(unittest.TestCase):
                     })
                     self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
 
+    def test_unplugging_clears_charging_without_accepting_older_status(self):
+        for make in (make_vehicle, make_17cy_vehicle):
+            vehicle = make()
+            for timestamp, code, charging in (
+                ("07:00:00", 40, True),
+                ("07:02:00", 12, False),
+                ("07:01:00", 40, False),
+            ):
+                vehicle._parse_electric_status({
+                    "vehicleInfo": {
+                        "acquisitionDatetime": f"2026-09-15T{timestamp}Z",
+                        "chargeInfo": {"plugStatus": code},
+                    },
+                })
+                self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
+
     def test_rest_unavailable_charge_time_clears_estimate_and_preserves_order(self):
         for make in (make_vehicle, make_17cy_vehicle):
             vehicle = make()
@@ -650,6 +666,19 @@ class VehicleStateTests(unittest.TestCase):
                 feature = vehicle.features[VehicleFeatures.RemainingChargeTime]
                 self.assertEqual(feature.value, expected)
                 self.assertEqual(feature.unit, "min")
+
+    def test_appsync_unplugged_connector_clears_charging(self):
+        for code in ("12", "unplugged"):
+            vehicle = make_24mm_vehicle()
+            for timestamp, fields, charging in (
+                ("07:00:00", {"chargingState": "charging"}, True),
+                ("07:02:00", {"connector": {"plugStatus": code}}, False),
+                ("07:01:00", {"chargingState": "charging"}, False),
+            ):
+                vehicle.apply_graphql_status({"electric": {"charging": {
+                    "lastUpdateDateTime": f"2026-09-15T{timestamp}Z", **fields,
+                }}})
+                self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
 
     def test_appsync_unavailable_charge_times_clear_only_newer_estimates(self):
         vehicle = make_24mm_vehicle()

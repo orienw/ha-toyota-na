@@ -49,6 +49,7 @@ class SensorStateClass(Enum):
 
 
 class SensorDeviceClass(Enum):
+    ENUM = "enum"
     SPEED = "speed"
     TIMESTAMP = "timestamp"
 
@@ -58,6 +59,7 @@ class SensorEntity:
     unit_of_measurement = property(lambda self: self.native_unit_of_measurement)
     state_class = property(lambda self: self._attr_state_class)
     device_class = property(lambda self: self._attr_device_class)
+    options = property(lambda self: self._attr_options)
     entity_registry_enabled_default = property(lambda self: self._attr_entity_registry_enabled_default)
 
 

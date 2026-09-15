@@ -111,7 +111,7 @@ def normalize_charging_state(value: Any) -> bool | None:
     if normalized in ("charging", "40", "56", "active", "in_progress", "in-progress"):
         return True
     if normalized in (
-        "36", "45", "60", "charge_now", "resume_charging", "no_controls",
+        "12", "36", "45", "60", "unplugged", "charge_now", "resume_charging", "no_controls",
         "unavailable", "external_power_active", "external_power_active_hybrid",
     ):
         return False
