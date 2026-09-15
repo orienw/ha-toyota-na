@@ -40,7 +40,6 @@ async def async_setup_entry(
                     coordinator, config["name"], vehicle.vin,
                     device_class=config.get("device_class"),
                     states=config.get("states"),
-                    enabled_default=config.get("enabled_default", True),
                     translation_key=config.get("translation_key"),
                 )
 
@@ -57,14 +56,12 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         *args: Any,
         device_class: SensorDeviceClass | None = None,
         states: dict[str, str] | None = None,
-        enabled_default: bool = True,
         translation_key: str | None = None,
     ):
         super().__init__(*args)
         self._attr_icon = icon
         self._attr_state_class = state_class
         self._attr_device_class = device_class
-        self._attr_entity_registry_enabled_default = enabled_default
         self._attr_translation_key = translation_key
         self._attr_options = list(dict.fromkeys(states.values())) if states else None
         self._states = states

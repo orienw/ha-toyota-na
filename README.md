@@ -90,17 +90,54 @@ Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,
 
 ### Sensor display
 
-Plug State and Connector State show readable charging and connection states.
+Plug Status and Connector Status show readable charging and connection states.
 Unrecognized values show Unknown, with Toyota's value in the `raw_value`
-attribute. Last Update and Last Tire Pressure Update show dates and times.
+attribute. Last Update Timestamp and Last Tire Pressure Update Timestamp show
+dates and times.
 Choose km/h or mph in the Speed sensor's settings.
-
-The original Plug Status, Connector Status, and numeric timestamp sensors retain
-their IDs and values for existing automations. They are disabled by default on
-new installations and can be enabled in the device's entity list.
 
 Remaining Charge Time shows Unknown when Toyota reports no estimate. Unplugging
 the vehicle clears Charging Status.
+
+#### Updating automations for 2.9
+
+The four status and timestamp sensors keep their existing entity IDs, but their
+state formats change. Update triggers, conditions, and templates that compare
+Toyota's codes to use these state strings. Home Assistant displays translated
+labels for these states.
+
+| Sensor | Previous value | State in 2.9 |
+| --- | --- | --- |
+| Plug Status | `12`, `no_controls`, `unavailable`, `unplugged` | `unplugged` |
+| Plug Status | `36`, `charge_now` | `waiting` |
+| Plug Status | `40`, `charging` | `charging` |
+| Plug Status | `45` | `charge_complete` |
+| Plug Status | `56` | `fast_charging` |
+| Plug Status | `60` | `fast_charge_complete` |
+| Plug Status | `resume_charging` | `paused` |
+| Plug Status | `external_power_active`, `external_power_active_hybrid` | `power_supply` |
+| Plug Status | `plugged_in` | `plugged_in` |
+| Connector Status | `2`, `disconnected` | `disconnected` |
+| Connector Status | `4`, `unlocked` | `unlocked` |
+| Connector Status | `5`, `locked` | `locked` |
+| Connector Status | `connected` | `connected` |
+
+For example, replace a Plug Status comparison to `40` with:
+
+```jinja
+{{ is_state('sensor.my_car_plug_status', 'charging') }}
+```
+
+Both timestamp sensors now return ISO 8601 dates, such as
+`2026-09-15T12:00:00+00:00`, instead of Unix seconds. Replace numeric casts such as
+`| int` with `as_timestamp` when a template needs seconds:
+
+```jinja
+{{ as_timestamp(states('sensor.my_car_last_update_timestamp'), default=none) }}
+```
+
+Use your existing entity IDs in these examples. The timestamp conversion returns
+`none` when the sensor is Unknown or Unavailable.
 
 ### Removing a vehicle
 
