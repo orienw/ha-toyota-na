@@ -169,6 +169,7 @@ unit_conversion.PressureConverter = types.SimpleNamespace(convert=mock.Mock())
 entity = module("homeassistant.helpers.entity")
 entity.DeviceInfo = dict
 device_registry = module("homeassistant.helpers.device_registry")
+device_registry.DeviceEntry = types.SimpleNamespace
 device_registry.async_get = lambda hass: hass.device_registry
 entity_registry = module("homeassistant.helpers.entity_registry")
 entity_registry.async_get = lambda hass: hass.entity_registry

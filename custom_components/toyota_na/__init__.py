@@ -389,6 +389,24 @@ async def update_vehicles_status(
         raise UpdateFailed(e) from e
 
 
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry,
+) -> bool:
+    """Allow removing a vehicle that is no longer in the Toyota account."""
+    entry_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {})
+    client = entry_data.get("toyota_na_client")
+    if client is None or not any(domain == DOMAIN for domain, _ in device_entry.identifiers):
+        return False
+    vehicles = await client.get_user_vehicle_list()
+    if not isinstance(vehicles, list) or any(
+        not isinstance(vehicle, dict) or not vehicle.get("vin") for vehicle in vehicles
+    ):
+        return False
+    return not any(
+        (DOMAIN, vehicle["vin"]) in device_entry.identifiers for vehicle in vehicles
+    )
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

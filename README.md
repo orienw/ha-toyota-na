@@ -92,6 +92,12 @@ Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,
 
 Remaining Charge Time shows Unknown when Toyota reports no estimate.
 
+### Removing a vehicle
+
+After removing a vehicle from your Toyota account, delete its device under
+**Settings > Devices & services**. The integration checks the account before
+allowing deletion. Vehicles still listed by Toyota cannot be deleted this way.
+
 ## Installation
 Requires Home Assistant 2022.11 or newer.
 
