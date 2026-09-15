@@ -12,13 +12,17 @@ Report problems and request features in [this fork's issue tracker](https://gith
 [![GitHub release](https://img.shields.io/github/v/release/orienw/ha-toyota-na?include_prereleases&style=for-the-badge)](https://github.com/orienw/ha-toyota-na/releases)
 
 ## Current features
-Certain entities and services require the Remote Subscription.
+
+Readings depend on the data Toyota returns for each vehicle. Cached readings can
+remain available without Remote Connect when Toyota grants the account access.
+Remote commands and vehicle wake requests require the appropriate remote access.
 
 Sensors:
-* Door lock status (Remote Subscription Required)
-* Window/Moonroof status (Remote Subscription Required)
-* Trunk Status (Remote Subscription Required)
-* Real time location (Remote Subscription Required)
+
+* Door lock status
+* Window/Moonroof status
+* Trunk Status
+* Vehicle location
 * Last Parked Location
 * Tire Pressure
 * Fuel Level
@@ -43,6 +47,7 @@ Sensors:
 * Charge schedule count and saved schedules, when reported
 
 Services:
+
 * Lock/Unlock Doors (Remote Subscription Required)
 * Remote Start/Stop Engine (Remote Subscription Required)
 * Hazards On/Off (Remote Subscription Required)
@@ -52,6 +57,7 @@ Services:
 * Create, update, or delete multi-day charge schedules, when supported
 
 Native controls:
+
 * Door lock
 * Remote Start and Remote Stop buttons
 * Extend Remote Runtime button for an eligible active remote-start session
@@ -80,9 +86,7 @@ change. Times use the vehicle's local time. Use `toyota_na.delete_charge_schedul
 with a schedule ID to remove it.
 
 Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,
-`26BEV`, and `NG86`. Cached readings can remain available without Remote Connect when Toyota
-grants the account access to that data. Commands and vehicle wake requests
-require the appropriate remote access.
+`26BEV`, and `NG86`.
 
 ## Installation
 Requires Home Assistant 2022.11 or newer.
