@@ -70,7 +70,7 @@ vehicle. Charging settings use the choices reported by the vehicle. Charging
 buttons become available according to the vehicle's reported charging state.
 
 Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,
-and `26BEV`. Cached readings can remain available without Remote Connect when Toyota
+`26BEV`, and `NG86`. Cached readings can remain available without Remote Connect when Toyota
 grants the account access to that data. Commands and vehicle wake requests
 require the appropriate remote access.
 

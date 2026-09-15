@@ -175,7 +175,11 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                             self._last_graphql_status
                         )
                 else:
-                    if self._generation == ApiVehicleGeneration.MM21:
+                    if self._generation == ApiVehicleGeneration.NG86:
+                        vehicle_status = await self._client.get_vehicle_status_route(
+                            self.vin, self.api_generation, self.region, self.brand,
+                        )
+                    elif self._generation == ApiVehicleGeneration.MM21:
                         vehicle_status = await self._client.get_vehicle_status_21mm(
                             self._vin, self._region
                         )
@@ -196,7 +200,11 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             if not self.uses_appsync:
                 try:
                     previous_engine = self._features.get(VehicleFeatures.RemoteStartStatus)
-                    if self._generation == ApiVehicleGeneration.MM21:
+                    if self._generation == ApiVehicleGeneration.NG86:
+                        engine_status = await self._client.get_engine_status_route(
+                            self.vin, self.api_generation, self.region, self.brand,
+                        )
+                    elif self._generation == ApiVehicleGeneration.MM21:
                         engine_status = await self._client.get_engine_status_21mm(
                             self._vin, self._region
                         )
@@ -280,9 +288,14 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         if self._generation in (
             ApiVehicleGeneration.CY17PLUS,
             ApiVehicleGeneration.MM21,
+            ApiVehicleGeneration.NG86,
         ):
             try:
-                if self._generation == ApiVehicleGeneration.MM21:
+                if self._generation == ApiVehicleGeneration.NG86:
+                    await self._client.send_refresh_request_route(
+                        self.vin, self.api_generation, self.region, self.brand,
+                    )
+                elif self._generation == ApiVehicleGeneration.MM21:
                     await self._client.send_refresh_request_21mm(
                         self._vin, self._region
                     )
@@ -352,6 +365,11 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         if self._generation == ApiVehicleGeneration.MM21:
             await self._client.remote_request_21mm(
                 self._vin, command_name, self._region
+            )
+            return
+        if self._generation == ApiVehicleGeneration.NG86:
+            await self._client.remote_request_route(
+                self.vin, self.api_generation, command_name, self.region, self.brand,
             )
             return
         await self._client.remote_request_17cyplus(

@@ -47,7 +47,7 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
 
     def test_climate_start_uses_capabilities_and_generation(self):
         for generation in ApiVehicleGeneration:
-            if generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.PRE17CY):
+            if generation in (ApiVehicleGeneration.GR86, ApiVehicleGeneration.PRE17CY):
                 continue
             vehicle = behavior.make_17cy_vehicle() if generation == ApiVehicleGeneration.CY17 else behavior.make_vehicle()
             vehicle._generation = generation

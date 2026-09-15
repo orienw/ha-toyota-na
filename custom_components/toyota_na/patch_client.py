@@ -247,9 +247,13 @@ async def get_vehicle_status_17cyplus(self, vin, region="US"):
     return None
 
 async def get_vehicle_status_21mm(self, vin, region="US"):
+    return await get_vehicle_status_route(self, vin, "21MM", region)
+
+
+async def get_vehicle_status_route(self, vin, generation, region="US", brand="T"):
     res = await self.api_get(
         REMOTE_ROUTE + "status",
-        _vehicle_headers(vin, region, **{"X-GENERATION": "21MM"}),
+        _vehicle_headers(vin, region, **{"X-GENERATION": generation, "X-BRAND": brand}),
     )
     return res.get("status", res) if res else res
 
@@ -269,9 +273,13 @@ async def get_engine_status_17cyplus(self, vin, region="US"):
     return None
 
 async def get_engine_status_21mm(self, vin, region="US"):
+    return await get_engine_status_route(self, vin, "21MM", region)
+
+
+async def get_engine_status_route(self, vin, generation, region="US", brand="T"):
     return await self.api_get(
         REMOTE_ROUTE + "engine-status",
-        _vehicle_headers(vin, region, **{"X-GENERATION": "21MM"}),
+        _vehicle_headers(vin, region, **{"X-GENERATION": generation, "X-BRAND": brand}),
     )
 
 async def send_refresh_request_17cyplus(self, vin, region="US"):
@@ -287,6 +295,10 @@ async def send_refresh_request_17cyplus(self, vin, region="US"):
     )
 
 async def send_refresh_request_21mm(self, vin, region="US"):
+    return await send_refresh_request_route(self, vin, "21MM", region)
+
+
+async def send_refresh_request_route(self, vin, generation, region="US", brand="T"):
     return await self.api_post(
         REMOTE_ROUTE + "refresh-status",
         {"autoFixPopup": False},
@@ -294,7 +306,8 @@ async def send_refresh_request_21mm(self, vin, region="US"):
             vin,
             region,
             **{
-                "X-GENERATION": "21MM",
+                "X-GENERATION": generation,
+                "X-BRAND": brand,
                 "X-CORRELATIONID": str(uuid.uuid4()),
             },
         ),

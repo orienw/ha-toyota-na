@@ -53,6 +53,7 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
             or generation == ApiVehicleGeneration.MM21
             or generation == ApiVehicleGeneration.MM24
             or generation == ApiVehicleGeneration.BEV26
+            or generation == ApiVehicleGeneration.NG86
         ):
             vehicle = SeventeenCYPlusToyotaVehicle(generation=generation, **common)
 

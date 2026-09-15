@@ -183,6 +183,20 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(headers["Content-Type"], "application/json")
         UUID(headers["X-CORRELATIONID"])
 
+    async def test_ng86_routed_reads_and_refresh_keep_generation(self):
+        for method, path, verb in (
+            (client_module.get_vehicle_status_route, "status", "GET"),
+            (client_module.get_engine_status_route, "engine-status", "GET"),
+            (client_module.send_refresh_request_route, "refresh-status", "POST"),
+        ):
+            with self.subTest(path=path):
+                await method(Client(), "TESTNG86", "NG86", "CA", "T")
+                args, kwargs = self.session.request.call_args
+                self.assertEqual((verb, f"https://onecdn.telematicsct.com/v1/remote/route/{path}"), args)
+                self.assertEqual("NG86", kwargs["headers"]["X-GENERATION"])
+                self.assertEqual("CA", kwargs["headers"]["x-region"])
+                self.assertEqual("T", kwargs["headers"]["X-BRAND"])
+
     async def test_21mm_engine_status_reaches_cdn_root(self):
         result = await client_module.get_engine_status_21mm(Client(), "TESTVIN", "CA")
 

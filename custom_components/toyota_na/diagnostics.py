@@ -76,6 +76,10 @@ async def async_get_config_entry_diagnostics(
                 user_vehicle_status = await client.get_vehicle_status_21mm(
                     vin, region
                 )
+            elif api_generation == "NG86":
+                user_vehicle_status = await client.get_vehicle_status_route(
+                    vin, api_generation, region, vehicle.get("brand") or "T",
+                )
             elif generation == "17CYPLUS":
                 user_vehicle_status = await client.get_vehicle_status_17cyplus(
                     vin, region
@@ -108,6 +112,10 @@ async def async_get_config_entry_diagnostics(
             elif api_generation == "17CYPLUS":
                 user_engine_status = await client.get_engine_status_17cyplus(
                     vin, region
+                )
+            elif api_generation == "NG86":
+                user_engine_status = await client.get_engine_status_route(
+                    vin, api_generation, region, vehicle.get("brand") or "T",
                 )
         except Exception as err:
             _LOGGER.debug(

@@ -22,7 +22,8 @@ class ApiVehicleGeneration(Enum):
     MM21 = "21MM"
     MM24 = "24MM"
     BEV26 = "26BEV"
-    NG86 = "GR86"
+    GR86 = "GR86"
+    NG86 = "NG86"
     PRE17CY = "PRE17CY"
 
 
@@ -326,6 +327,7 @@ class ToyotaVehicle(ABC):
         return self.generation in (
             ApiVehicleGeneration.CY17, ApiVehicleGeneration.CY17PLUS,
             ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24, ApiVehicleGeneration.BEV26,
+            ApiVehicleGeneration.NG86,
         )
 
     @property
@@ -480,7 +482,7 @@ class ToyotaVehicle(ABC):
             self._extended_capabilities,
             keys,
         )
-        if command in self._COMMANDS_REQUIRING_EXPLICIT_CAPABILITY:
+        if command in self._COMMANDS_REQUIRING_EXPLICIT_CAPABILITY or self.generation == ApiVehicleGeneration.NG86:
             return supported is True
         return supported is not False
 
