@@ -1,11 +1,12 @@
-"""Vehicle climate temperature preferences."""
+"""Vehicle climate temperature and fan preferences."""
 
 import math
 
 from homeassistant.components.number import NumberDeviceClass, NumberEntity
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import EntityCategory, UnitOfTemperature
 
 from .base_entity import ToyotaNABaseEntity
+from .climate_helpers import climate_bounds
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
 
@@ -15,16 +16,19 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     def discover_numbers():
         for vehicle in coordinator.data or []:
-            entity = ToyotaClimateTemperature(coordinator, "Climate Temperature", vehicle.vin)
-            if entity.available:
-                yield entity
+            for entity in (
+                ToyotaClimateTemperature(coordinator, "Climate Temperature", vehicle.vin),
+                ToyotaClimateFanSpeed(coordinator, "Climate Fan Speed", vehicle.vin),
+            ):
+                if entity.available:
+                    yield entity
 
     setup_entity_discovery(config_entry, coordinator, async_add_entities, discover_numbers)
 
 
-class ToyotaClimateTemperature(ToyotaNABaseEntity, NumberEntity):
-    _attr_device_class = NumberDeviceClass.TEMPERATURE
-    _attr_icon = "mdi:thermometer"
+class ToyotaClimateNumber(ToyotaNABaseEntity, NumberEntity):
+    _key: str
+    _attr_entity_category = EntityCategory.CONFIG
 
     @property
     def settings(self):
@@ -33,32 +37,42 @@ class ToyotaClimateTemperature(ToyotaNABaseEntity, NumberEntity):
 
     @property
     def available(self):
-        settings = self.settings
-        values = [settings.get(key) for key in ("temperature", "minTemp", "maxTemp", "tempInterval")]
+        value = self.native_value
         return (
             self.vehicle is not None
             and self.vehicle.supports_climate_settings
-            and all(type(value) in (int, float) and math.isfinite(value) for value in values)
-            and settings["minTemp"] <= settings["maxTemp"]
-            and settings["tempInterval"] > 0
-            and self.native_unit_of_measurement is not None
+            and type(value) in (int, float) and math.isfinite(value)
+            and climate_bounds(self.settings, self._key) is not None
+            and (self._key != "temperature" or self.native_unit_of_measurement is not None)
         )
 
     @property
     def native_value(self):
-        return self.settings.get("temperature")
+        return self.settings.get(self._key)
 
     @property
     def native_min_value(self):
-        return self.settings.get("minTemp", 0)
+        return (climate_bounds(self.settings, self._key) or (0, 0, 1))[0]
 
     @property
     def native_max_value(self):
-        return self.settings.get("maxTemp", 0)
+        return (climate_bounds(self.settings, self._key) or (0, 0, 1))[1]
 
     @property
     def native_step(self):
-        return self.settings.get("tempInterval", 1)
+        return (climate_bounds(self.settings, self._key) or (0, 0, 1))[2]
+
+    async def async_set_native_value(self, value):
+        if not self.available:
+            raise ValueError("This climate setting is unavailable for this vehicle.")
+        await self.vehicle.update_climate_settings(**{self._key: value})
+        self.coordinator.async_set_updated_data(self.coordinator.data)
+
+
+class ToyotaClimateTemperature(ToyotaClimateNumber):
+    _key = "temperature"
+    _attr_device_class = NumberDeviceClass.TEMPERATURE
+    _attr_icon = "mdi:thermometer"
 
     @property
     def native_unit_of_measurement(self):
@@ -70,8 +84,7 @@ class ToyotaClimateTemperature(ToyotaNABaseEntity, NumberEntity):
             "°F": UnitOfTemperature.FAHRENHEIT,
         }.get(unit)
 
-    async def async_set_native_value(self, value):
-        if not self.available:
-            raise ValueError("Climate temperature is unavailable for this vehicle.")
-        await self.vehicle.update_climate_settings(temperature=value)
-        self.coordinator.async_set_updated_data(self.coordinator.data)
+
+class ToyotaClimateFanSpeed(ToyotaClimateNumber):
+    _key = "airFlowVolume"
+    _attr_icon = "mdi:fan"

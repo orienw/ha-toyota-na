@@ -54,10 +54,13 @@ Native controls:
 * Open/close windows, close sunroof, and cargo-door controls, when supported
 * Refresh Status button
 * Charge Now, Resume Charging, and Stop Charging buttons, when available
-* Climate Temperature and Use Climate Settings controls, when supported
+* Saved climate temperature, fan speed, airflow, and seat preferences, when supported
+* Defroster, steering-wheel heat, recirculation, and longer climate runtime preferences, when supported
+* Use Climate Settings switch, when supported
 
-Climate controls update the saved preferences used for remote starts. Use Remote
-Start and Remote Stop to start or stop the vehicle. Charging buttons become
+Climate controls save preferences for Remote Start and appear under device
+configuration. Remote Start runs the engine or climate system supported by the
+vehicle. Charging buttons become
 available according to the vehicle's reported charging state.
 
 Supported connected-vehicle generations are `17CY`, `17CYPLUS`, `21MM`, `24MM`,

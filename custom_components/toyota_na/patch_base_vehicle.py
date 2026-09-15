@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 import asyncio
 from enum import Enum, auto, unique
-import math
 from typing import Optional, Union
 
 from toyota_na.client import ToyotaOneClient
@@ -12,6 +11,7 @@ from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .vehicle_helpers import endpoint_generation, first_capability, is_appsync_generation
+from .climate_helpers import apply_climate_changes
 
 
 @unique
@@ -343,25 +343,7 @@ class ToyotaVehicle(ABC):
             )
             if not isinstance(settings, dict) or not settings:
                 raise ValueError("Toyota did not return climate settings.")
-            if "temperature" in changes:
-                temperature = changes["temperature"]
-                minimum, maximum = settings.get("minTemp"), settings.get("maxTemp")
-                step = settings.get("tempInterval")
-                if (
-                    any(
-                        type(value) not in (int, float) or not math.isfinite(value)
-                        for value in (temperature, minimum, maximum, step)
-                    )
-                    or step <= 0
-                    or not minimum <= temperature <= maximum
-                    or not math.isclose(
-                        (temperature - minimum) / step,
-                        round((temperature - minimum) / step),
-                        abs_tol=1e-6,
-                    )
-                ):
-                    raise ValueError("Temperature does not match the vehicle's range and step.")
-            settings = {**settings, **changes}
+            settings = apply_climate_changes(settings, changes)
             await self._client.update_climate_settings(
                 self.vin, self.api_generation, settings, self.region, self.brand
             )

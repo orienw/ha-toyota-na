@@ -120,7 +120,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["binary_sensor", "button", "device_tracker", "lock", "number", "sensor", "switch"]
+PLATFORMS = ["binary_sensor", "button", "device_tracker", "lock", "number", "select", "sensor", "switch"]
 
 
 async def _refresh_coordinator_after_command(coordinator) -> None:

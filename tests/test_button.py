@@ -135,6 +135,8 @@ number_component.NumberEntity = type("NumberEntity", (), {})
 number_component.NumberDeviceClass = types.SimpleNamespace(TEMPERATURE="temperature")
 switch_component = module("homeassistant.components.switch")
 switch_component.SwitchEntity = type("SwitchEntity", (), {})
+select_component = module("homeassistant.components.select")
+select_component.SelectEntity = type("SelectEntity", (), {})
 lock_component = module("homeassistant.components.lock")
 lock_component.LockEntity = LockEntity
 device_tracker_component = module("homeassistant.components.device_tracker")
@@ -158,6 +160,7 @@ ha_const = module("homeassistant.const")
 ha_const.PERCENTAGE = "%"
 ha_const.UnitOfPressure = UnitOfPressure
 ha_const.UnitOfTemperature = types.SimpleNamespace(CELSIUS="°C", FAHRENHEIT="°F")
+ha_const.EntityCategory = types.SimpleNamespace(CONFIG="config", DIAGNOSTIC="diagnostic")
 ha_const.UnitOfLength = types.SimpleNamespace(MILES="mi", KILOMETERS="km")
 module("homeassistant.util")
 unit_conversion = module("homeassistant.util.unit_conversion")
