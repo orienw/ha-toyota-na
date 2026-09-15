@@ -67,6 +67,14 @@ class VehicleFeatures(Enum):
     EvTravelableDistance = auto()
     ChargeType = auto()
     ConnectorStatus = auto()
+    RemainingChargeTimeTo80 = auto()
+    ChargeTargetLimit = auto()
+    BatteryPowerSupplyTime = auto()
+    GasolinePowerSupplyTime = auto()
+    GasolineRange = auto()
+    AverageFuelConsumption = auto()
+    TripFuelConsumption = auto()
+    TripCount = auto()
 
     #Times
     OccurrenceDate = auto()

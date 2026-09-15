@@ -36,6 +36,9 @@ Sensors:
 * EV Charge End Time
 * EV Connector Status
 * EV Charging Status
+* Charge target and remaining time to 80%, when reported
+* Battery and gasoline power supply time, when reported
+* Average and trip fuel consumption, trip count, and gasoline range, when reported
 
 Services:
 * Lock/Unlock Doors (Remote Subscription Required)

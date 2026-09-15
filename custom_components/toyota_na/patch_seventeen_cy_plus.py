@@ -707,6 +707,15 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                     range_val.get("unit", ""),
                     telemetry_observed_at,
                 )
+            for key, feature in (
+                ("totalAverageFuelConsumption", VehicleFeatures.AverageFuelConsumption),
+                ("averageFuelConsumptionSinceStart", VehicleFeatures.TripFuelConsumption),
+            ):
+                measurement = telemetry.get(key) or {}
+                self._store_numeric(
+                    feature, measurement.get("value"), measurement.get("unit", ""),
+                    telemetry_observed_at,
+                )
 
         trip_details = status.get("tripdetails") or {}
         trip_observed_at = parse_api_timestamp(
@@ -716,6 +725,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         for key, feature in (
             ("tripA", VehicleFeatures.TripDetailsA),
             ("tripB", VehicleFeatures.TripDetailsB),
+            ("tripCount", VehicleFeatures.TripCount),
         ):
             trip = trip_details.get(key) or {}
             self._store_numeric(
@@ -774,6 +784,17 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             observed_at,
         )
 
+        gasoline = electric.get("gasoline") or {}
+        for source, key, feature in (
+            (battery, "powerSupplyPossibleTime", VehicleFeatures.BatteryPowerSupplyTime),
+            (gasoline, "powerSupplyPossibleTime", VehicleFeatures.GasolinePowerSupplyTime),
+            (gasoline, "travelableDistance", VehicleFeatures.GasolineRange),
+        ):
+            measurement = source.get(key) or {}
+            self._store_numeric(
+                feature, measurement.get("value"), measurement.get("unit", ""), observed_at,
+            )
+
         charging = electric.get("charging") or {}
         if not charging:
             return
@@ -799,6 +820,18 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             remaining.get("value"),
             remaining.get("unit", ""),
             charging_observed_at,
+        )
+        remaining_to_80 = charging.get("remainingChargeTimeTo80Percent") or {}
+        self._store_numeric(
+            VehicleFeatures.RemainingChargeTimeTo80,
+            remaining_to_80.get("value"), remaining_to_80.get("unit", ""),
+            charging_observed_at,
+        )
+        settings = charging.get("chargeSettings") or {}
+        target = settings.get("targetLimit") or {}
+        self._store_numeric(
+            VehicleFeatures.ChargeTargetLimit, target.get("value"), target.get("unit", "%"),
+            parse_api_timestamp(settings.get("lastUpdateDateTime")) or charging_observed_at,
         )
 
         connector = charging.get("connector") or {}
