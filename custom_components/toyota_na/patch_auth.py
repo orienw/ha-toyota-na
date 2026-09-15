@@ -103,7 +103,10 @@ async def authorize(self, username, password, otp=None):
     should re-call with otp set).
     """
     async with aiohttp.ClientSession() as session:
-        headers = {"Accept-API-Version": "resource=2.1, protocol=1.0"}
+        headers = {
+            "Accept-API-Version": "resource=2.1, protocol=1.0",
+            "Accept-Language": "en-US",
+        }
 
         data = {}
         otp_brake = False

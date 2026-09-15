@@ -344,6 +344,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         def post(url, *, json=None, headers=None, data=None):
             if json is not None:
+                self.assertEqual(headers["Accept-Language"], "en-US")
                 sent.append(copy.deepcopy(json))
             return response
 
