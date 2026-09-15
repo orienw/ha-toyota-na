@@ -2,15 +2,19 @@ import asyncio
 import base64
 import hashlib
 import logging
+import math
 import secrets
+import time
 import aiohttp
+import jwt
 from urllib.parse import urlparse, parse_qs, urlencode
 
 from toyota_na import ToyotaOneAuth
-from toyota_na.exceptions import LoginError
+from toyota_na.exceptions import LoginError, NotLoggedIn, TokenExpired
 
 _LOGGER = logging.getLogger(__name__)
-_check_tokens = ToyotaOneAuth.check_tokens
+_get_tokens = ToyotaOneAuth.get_tokens
+_set_tokens = ToyotaOneAuth.set_tokens
 
 
 async def check_tokens(self):
@@ -18,7 +22,67 @@ async def check_tokens(self):
     if lock is None:
         lock = self._token_lock = asyncio.Lock()
     async with lock:
-        await _check_tokens(self)
+        if self._expires_at is None:
+            raise NotLoggedIn()
+        now = time.time()
+        if (
+            now >= self._expires_at
+            or self._refresh_secs == 0
+            or (self._refresh_secs > 0 and now >= self._updated_at + self._refresh_secs)
+            or (self._refresh_secs < 0 and now >= self._expires_at + self._refresh_secs)
+        ):
+            try:
+                await self.refresh_tokens()
+            except LoginError as err:
+                raise TokenExpired() from err
+
+
+def logged_in(self):
+    return self._expires_at is not None and time.time() < self._expires_at
+
+
+def get_tokens(self):
+    return {**_get_tokens(self), "clock": "unix"}
+
+
+def set_tokens(self, tokens):
+    _set_tokens(self, tokens)
+    if tokens.get("clock") != "unix":
+        # Refresh once instead of guessing which local timezone produced the
+        # old SDK's naive UTC timestamps.
+        self._expires_at = self._updated_at = 0
+
+
+def extract_tokens(self, response):
+    """Replace tokens atomically, retaining fields omitted during refresh."""
+    access_token = response.get("access_token")
+    refresh_token = response.get("refresh_token") or self._refresh_token
+    id_token = response.get("id_token") or self._id_token
+    try:
+        lifetime = float(response["expires_in"])
+    except (KeyError, TypeError, ValueError) as err:
+        raise RuntimeError("Toyota returned an invalid token lifetime.") from err
+    if (
+        not all(isinstance(token, str) and token for token in (access_token, refresh_token, id_token))
+        or not math.isfinite(lifetime) or lifetime <= 0
+    ):
+        raise RuntimeError("Toyota returned an incomplete token response.")
+    guid = jwt.decode(
+        id_token, algorithms=["RS256"], options={"verify_signature": False},
+        audience="oneappsdkclient",
+    )["sub"]
+    now = time.time()
+    self._access_token = access_token
+    self._refresh_token = refresh_token
+    self._id_token = id_token
+    self._guid = guid
+    self._expires_at = now + lifetime
+    self._updated_at = now
+    if self._callback:
+        try:
+            self._callback(self.get_tokens())
+        except Exception:
+            _LOGGER.exception("Token persistence callback failed")
 
 
 async def authorize(self, username, password, otp=None):
@@ -50,7 +114,7 @@ async def authorize(self, username, password, otp=None):
             if "callbacks" in data:
                 for cb in data["callbacks"]:
                     cb_type = cb["type"]
-                    _LOGGER.debug("Callback: %s — %s", cb_type, cb["output"][0]["value"] if cb.get("output") else "")
+                    _LOGGER.debug("Toyota authentication callback: %s", cb_type)
 
                     if cb_type == "NameCallback":
                         prompt = cb["output"][0].get("value", "")
@@ -120,12 +184,12 @@ async def authorize(self, username, password, otp=None):
         AUTHORIZE_URL_QS = f"{ToyotaOneAuth.AUTHORIZE_URL}?{urlencode(auth_params)}"
         async with session.get(AUTHORIZE_URL_QS, headers=headers, allow_redirects=False) as resp:
             if resp.status != 302:
-                _LOGGER.error(await resp.text())
+                _LOGGER.error("Toyota authentication request failed with HTTP %s", resp.status)
                 raise LoginError()
             redir = resp.headers["Location"]
             query = parse_qs(urlparse(redir).query)
             if "code" not in query:
-                _LOGGER.error(redir)
+                _LOGGER.error("Toyota authentication redirect did not contain a code")
                 raise LoginError()
             return query["code"][0]
             

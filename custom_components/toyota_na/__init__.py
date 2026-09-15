@@ -4,13 +4,20 @@ import asyncio
 
 from toyota_na.auth import ToyotaOneAuth
 from toyota_na.client import ToyotaOneClient
-from .patch_auth import authorize, check_tokens, login, refresh_tokens, request_tokens
+from .patch_auth import (
+    authorize, check_tokens, extract_tokens, get_tokens, logged_in, login,
+    refresh_tokens, request_tokens, set_tokens,
+)
 
 ToyotaOneAuth.authorize = authorize
 ToyotaOneAuth.check_tokens = check_tokens
 ToyotaOneAuth.login = login
 ToyotaOneAuth.request_tokens = request_tokens
 ToyotaOneAuth.refresh_tokens = refresh_tokens
+ToyotaOneAuth._extract_tokens = extract_tokens
+ToyotaOneAuth.get_tokens = get_tokens
+ToyotaOneAuth.set_tokens = set_tokens
+ToyotaOneAuth.logged_in = logged_in
 
 # Patch client code
 from .patch_client import (

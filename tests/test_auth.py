@@ -4,6 +4,8 @@ import copy
 import base64
 import hashlib
 import asyncio
+import os
+import time
 import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,6 +17,84 @@ import jwt
 import test_button as platform
 from custom_components.toyota_na import patch_auth
 from toyota_na.exceptions import LoginError, TokenExpired
+
+
+class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
+    def token_response(self):
+        return {
+            "access_token": "access", "refresh_token": "refresh",
+            "id_token": jwt.encode({"sub": "guid"}, key="", algorithm="none"),
+            "expires_in": 3600,
+        }
+
+    async def test_expiry_is_independent_of_local_timezone(self):
+        old_timezone = os.environ.get("TZ")
+        try:
+            for zone in ("UTC", "America/Los_Angeles", "Asia/Tokyo"):
+                with self.subTest(zone=zone):
+                    os.environ["TZ"] = zone
+                    time.tzset()
+                    auth = patch_auth.ToyotaOneAuth(refresh_secs=-30)
+                    with patch.object(patch_auth.time, "time", return_value=1800000000):
+                        auth._extract_tokens(self.token_response())
+                        self.assertEqual(1800003600, auth.get_tokens()["expires_at"])
+                        self.assertTrue(auth.logged_in())
+                    auth.refresh_tokens = AsyncMock()
+                    with patch.object(patch_auth.time, "time", return_value=1800003570):
+                        await auth.check_tokens()
+                    auth.refresh_tokens.assert_awaited_once()
+        finally:
+            if old_timezone is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = old_timezone
+            time.tzset()
+
+    async def test_saved_legacy_sessions_refresh_once_without_a_new_login(self):
+        auth = patch_auth.ToyotaOneAuth()
+        auth._extract_tokens(self.token_response())
+        tokens = auth.get_tokens()
+        del tokens["clock"]
+        migrated = patch_auth.ToyotaOneAuth(initial_tokens=tokens)
+        migrated.refresh_tokens = AsyncMock(side_effect=lambda: migrated._extract_tokens(self.token_response()))
+        await migrated.check_tokens()
+        await migrated.check_tokens()
+        migrated.refresh_tokens.assert_awaited_once()
+        self.assertEqual("refresh", migrated.get_tokens()["refresh_token"])
+        self.assertEqual("unix", migrated.get_tokens()["clock"])
+
+        reloaded = patch_auth.ToyotaOneAuth(initial_tokens=migrated.get_tokens())
+        reloaded.refresh_tokens = AsyncMock()
+        await reloaded.check_tokens()
+        reloaded.refresh_tokens.assert_not_awaited()
+
+    async def test_refresh_keeps_omitted_tokens_and_persists_rotated_tokens(self):
+        callback = MagicMock()
+        auth = patch_auth.ToyotaOneAuth(callback=callback)
+        auth._extract_tokens(self.token_response())
+        identity = auth._id_token
+        auth._extract_tokens({"access_token": "next-access", "expires_in": 1800})
+        self.assertEqual("refresh", auth._refresh_token)
+        self.assertEqual(identity, auth._id_token)
+        self.assertEqual("guid", auth._guid)
+        auth._extract_tokens({"access_token": "third-access", "refresh_token": "rotated", "expires_in": 1800})
+        self.assertEqual("rotated", callback.call_args.args[0]["refresh_token"])
+        self.assertEqual("unix", callback.call_args.args[0]["clock"])
+
+    async def test_malformed_refresh_preserves_the_entire_saved_session(self):
+        auth = patch_auth.ToyotaOneAuth()
+        auth._extract_tokens(self.token_response())
+        before = auth.get_tokens()
+        for response in (
+            {"expires_in": 3600},
+            {"access_token": "new", "expires_in": None},
+            {"access_token": "new", "expires_in": "NaN"},
+            {"access_token": "new", "expires_in": -1},
+            {"access_token": "new", "expires_in": 3600, "id_token": "invalid"},
+        ):
+            with self.subTest(response=response), self.assertRaises((RuntimeError, jwt.InvalidTokenError)):
+                auth._extract_tokens(response)
+            self.assertEqual(before, auth.get_tokens())
 
 
 class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
