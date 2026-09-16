@@ -23,7 +23,7 @@ class SsoAccountError(LoginError):
     """Raised when a Toyota account cannot sign in with a password."""
 
 
-async def check_tokens(self):
+async def check_tokens(self, *, rejected_token=None):
     lock = getattr(self, "_token_lock", None)
     if lock is None:
         lock = self._token_lock = asyncio.Lock()
@@ -33,6 +33,7 @@ async def check_tokens(self):
         now = time.time()
         if (
             now >= self._expires_at
+            or (rejected_token is not None and self._access_token == rejected_token)
             or self._refresh_secs == 0
             or (self._refresh_secs > 0 and now >= self._updated_at + self._refresh_secs)
             or (self._refresh_secs < 0 and now >= self._expires_at + self._refresh_secs)

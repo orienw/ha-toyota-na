@@ -6,7 +6,7 @@ import uuid
 from urllib.parse import urlencode, urljoin
 
 import aiohttp
-from toyota_na.exceptions import AuthError
+from toyota_na.exceptions import AuthError, TokenExpired
 
 API_GATEWAY = "https://onecdn.telematicsct.com/oneapi/"
 REMOTE_ROUTE = "https://onecdn.telematicsct.com/v1/remote/route/"
@@ -515,7 +515,6 @@ async def graphql_request(
         "Content-Type": "application/json",
         "x-api-key": APPSYNC_API_KEY,
         "x-resolver-api-key": RESOLVER_API_KEY,
-        "Authorization": "Bearer " + await self.auth.get_access_token(),
         "vin": vin or variables.get("vin", ""),
         "x-guid": await self.auth.get_guid(),
         "x-deviceid": self.auth.get_device_id(),
@@ -536,25 +535,58 @@ async def graphql_request(
         "query": query,
         "variables": variables,
     })
+    is_read = query.lstrip().startswith("query ")
+    auth_retried = False
+    retries = 0
     async with aiohttp.ClientSession() as session:
-        async with session.post(GRAPHQL_ENDPOINT, headers=headers, data=payload) as resp:
-            body = await resp.text()
-            if resp.status >= 400:
+        while True:
+            token = await self.auth.get_access_token()
+            headers["Authorization"] = "Bearer " + token
+            async with session.post(GRAPHQL_ENDPOINT, headers=headers, data=payload) as resp:
+                body = await resp.text()
+                status = resp.status
+            try:
+                result = json.loads(body)
+            except json.JSONDecodeError:
+                if status < 400:
+                    raise
+                result = {}
+            errors = result.get("errors") or []
+            auth_errors = errors or ([result] if status == 403 else [])
+            auth_failed = status == 401 or any(
+                err.get("errorType") in ("APIGW-403", "APPSYNC-AUTH-403")
+                or (err.get("extensions") or {}).get("code") in ("APIGW-403", "APPSYNC-AUTH-403")
+                or str(err.get("message", "")).lower() == "unauthorized"
+                or "jwt expired" in str(err.get("message", "")).lower()
+                for err in auth_errors
+            )
+            if auth_failed:
+                if auth_retried:
+                    raise TokenExpired("Toyota rejected the refreshed access token.")
+                await self.auth.check_tokens(rejected_token=token)
+                if not is_read:
+                    raise RuntimeError("Toyota could not authenticate the request. Credentials were refreshed; retry the action.")
+                auth_retried = True
+                continue
+            if is_read and (status == 429 or status >= 500) and retries < 2:
+                await asyncio.sleep(2 ** retries)
+                retries += 1
+                continue
+            if status >= 400:
                 _LOGGER.debug(
                     "GraphQL %s error: HTTP %d: %s",
                     operation_name,
-                    resp.status,
+                    status,
                     body[:500],
                 )
                 if raise_errors:
                     raise RuntimeError(
                         "Toyota GraphQL %s failed with HTTP %d"
-                        % (operation_name, resp.status)
+                        % (operation_name, status)
                     )
                 return None
-            result = json.loads(body)
-            if result.get("errors"):
-                err = result["errors"][0]
+            if errors:
+                err = errors[0]
                 _LOGGER.debug(
                     "GraphQL %s error: %s: %s",
                     operation_name,

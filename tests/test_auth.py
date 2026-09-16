@@ -96,6 +96,17 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
                 auth._extract_tokens(response)
             self.assertEqual(before, auth.get_tokens())
 
+    async def test_concurrent_rejections_of_one_token_share_a_refresh(self):
+        auth = patch_auth.ToyotaOneAuth()
+        auth._extract_tokens(self.token_response())
+        auth.refresh_tokens = AsyncMock(side_effect=lambda: auth._extract_tokens({
+            **self.token_response(), "access_token": "replacement",
+        }))
+        await asyncio.gather(*(auth.check_tokens(rejected_token="access") for _ in range(4)))
+        auth.refresh_tokens.assert_awaited_once()
+        await auth.check_tokens(rejected_token="access")
+        auth.refresh_tokens.assert_awaited_once()
+
 
 class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
