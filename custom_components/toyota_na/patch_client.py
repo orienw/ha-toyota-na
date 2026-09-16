@@ -513,8 +513,9 @@ async def graphql_request(
     region="US",
     backdoor_type=None,
     raise_errors=False,
+    read_only=False,
 ):
-    """Make a GraphQL request to the AppSync endpoint."""
+    """Make an AppSync request, retrying only explicitly read-only operations."""
     headers = {
         "Content-Type": "application/json",
         "x-api-key": APPSYNC_API_KEY,
@@ -539,7 +540,6 @@ async def graphql_request(
         "query": query,
         "variables": variables,
     })
-    is_read = query.lstrip().startswith("query ")
     auth_retried = False
     retries = 0
     async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
@@ -568,11 +568,11 @@ async def graphql_request(
                 if auth_retried:
                     raise TokenExpired("Toyota rejected the refreshed access token.")
                 await self.auth.check_tokens(rejected_token=token)
-                if not is_read:
+                if not read_only:
                     raise RuntimeError("Toyota could not authenticate the request. Credentials were refreshed; retry the action.")
                 auth_retried = True
                 continue
-            if is_read and (status == 429 or status >= 500) and retries < 2:
+            if read_only and (status == 429 or status >= 500) and retries < 2:
                 await asyncio.sleep(2 ** retries)
                 retries += 1
                 continue
@@ -663,6 +663,7 @@ async def graphql_get_vehicle_status(
         {"vin": vin},
         region=region,
         backdoor_type=backdoor_type,
+        read_only=True,
     )
     return data.get("getVehicleStatus") if data else None
 

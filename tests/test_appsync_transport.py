@@ -268,7 +268,8 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
             get_device_id=lambda: "device",
             check_tokens=AsyncMock(),
         )
-        self.client = SimpleNamespace(auth=self.auth)
+        self.client = _HttpClient()
+        self.client.auth = self.auth
         self.session = MagicMock()
         self.session.__aenter__.return_value = self.session
         session_patch = patch.object(patch_client.aiohttp, "ClientSession", return_value=self.session)
@@ -287,7 +288,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 self.auth.check_tokens.reset_mock()
                 self.session.post.reset_mock()
                 self.session.post.side_effect = [response, _Response()]
-                result = await patch_client.graphql_request(self.client, "Read", "query Read { vin }", {})
+                result = await patch_client.graphql_request(self.client, "Read", "query Read { vin }", {}, read_only=True)
                 self.assertEqual({"getVehicleStatus": {"vin": "TESTVIN24"}}, result)
                 self.auth.check_tokens.assert_awaited_once_with(rejected_token="old-token")
                 self.assertEqual(2, self.session.post.call_count)
@@ -296,7 +297,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_rejected_refreshed_token_requests_reauthentication(self):
         self.session.post.return_value = _Response(401, {})
         with self.assertRaises(patch_client.TokenExpired):
-            await patch_client.graphql_request(self.client, "Read", "query Read { vin }", {})
+            await patch_client.graphql_request(self.client, "Read", "query Read { vin }", {}, read_only=True)
         self.assertEqual(2, self.session.post.call_count)
         self.auth.check_tokens.assert_awaited_once()
 
@@ -307,7 +308,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(status=response.status):
                 self.session.post.return_value = response
-                self.assertEqual(expected, await patch_client.graphql_request(self.client, "Read", "query Read { vin }", {}))
+                self.assertEqual(expected, await patch_client.graphql_request(self.client, "Read", "query Read { vin }", {}, read_only=True))
         self.auth.check_tokens.assert_not_awaited()
 
     async def test_mutation_auth_failure_refreshes_without_replaying(self):
@@ -322,13 +323,63 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.session.post.return_value = _Response(status, {})
             self.session.post.reset_mock()
             with patch.object(patch_client.asyncio, "sleep", AsyncMock()) as sleep:
-                self.assertIsNone(await patch_client.graphql_request(self.client, "Read", "query Read { vin }", {}))
+                self.assertIsNone(await patch_client.graphql_request(self.client, "Read", "query Read { vin }", {}, read_only=True))
                 self.assertEqual([1, 2], [call.args[0] for call in sleep.await_args_list])
             self.assertEqual(3, self.session.post.call_count)
             self.session.post.reset_mock()
             with self.assertRaises(RuntimeError):
                 await patch_client.graphql_request(self.client, "Write", "mutation Write { command }", {}, raise_errors=True)
             self.session.post.assert_called_once()
+
+    async def test_read_retries_do_not_depend_on_document_formatting(self):
+        for operation, document in (
+            (None, "query{ vin }"),
+            (None, "{ vin }"),
+            ("Read", "# cached vehicle status\nquery Read { vin }"),
+            ("Read", "query\nRead { vin }"),
+        ):
+            for status in (401, 503):
+                with self.subTest(document=document, status=status):
+                    self.session.post.reset_mock()
+                    self.session.post.side_effect = [_Response(status, {}), _Response()]
+                    with patch.object(patch_client.asyncio, "sleep", AsyncMock()):
+                        result = await patch_client.graphql_request(
+                            self.client, operation, document, {}, read_only=True,
+                        )
+                    self.assertEqual({"getVehicleStatus": {"vin": "TESTVIN24"}}, result)
+                    self.assertEqual(2, self.session.post.call_count)
+
+    async def test_document_text_does_not_enable_retries(self):
+        for operation, document in (
+            ("Read", "query Read { vin }"),
+            ("Write", "query Read { vin }\nmutation Write { command }"),
+        ):
+            for status in (401, 429, 503):
+                with self.subTest(operation=operation, status=status):
+                    self.auth.check_tokens.reset_mock()
+                    self.session.post.reset_mock()
+                    self.session.post.return_value = _Response(status, {})
+                    with patch.object(patch_client.asyncio, "sleep", AsyncMock()) as sleep:
+                        with self.assertRaises(RuntimeError):
+                            await patch_client.graphql_request(
+                                self.client, operation, document, {}, raise_errors=True,
+                            )
+                    self.session.post.assert_called_once()
+                    sleep.assert_not_awaited()
+                    if status == 401:
+                        self.auth.check_tokens.assert_awaited_once_with(rejected_token="old-token")
+                    else:
+                        self.auth.check_tokens.assert_not_awaited()
+
+    async def test_vehicle_status_read_enables_recovery(self):
+        for status in (401, 503):
+            with self.subTest(status=status):
+                self.session.post.reset_mock()
+                self.session.post.side_effect = [_Response(status, {}), _Response()]
+                with patch.object(patch_client.asyncio, "sleep", AsyncMock()):
+                    result = await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24")
+                self.assertEqual({"vin": "TESTVIN24"}, result)
+                self.assertEqual(2, self.session.post.call_count)
 
 
 if __name__ == "__main__":
