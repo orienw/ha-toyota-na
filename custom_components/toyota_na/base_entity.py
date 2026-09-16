@@ -48,7 +48,7 @@ class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
         model = None
 
         if self.vehicle is not None:
-            model = f"{self.vehicle.model_year} {self.vehicle.model_name}"
+            model = f"{self.vehicle.model_year} {self.vehicle.model_name}".strip()
 
         brand = self.vehicle.brand if self.vehicle is not None else "T"
         manufacturer = {

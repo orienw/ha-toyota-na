@@ -223,6 +223,31 @@ class VehicleMetadataTests(unittest.TestCase):
 
 
 class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_vehicle_names_do_not_block_other_vehicles(self):
+        client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
+            {"vin": "MISSING", "generation": "21MM"},
+            {"vin": "NULL", "generation": "17CY", "modelName": None, "modelYear": None},
+            {**LEXUS_21MM_COUPE, "vin": "COMPLETE"},
+        ]))
+        with (
+            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
+            patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
+        ):
+            vehicles = await get_vehicles(client)
+        self.assertEqual(["MISSING", "NULL", "COMPLETE"], [vehicle.vin for vehicle in vehicles])
+        self.assertEqual(["Vehicle", "Vehicle", "LC 500 2-DOOR COUPE"], [vehicle.model_name for vehicle in vehicles])
+        self.assertEqual(["", "", "2024"], [vehicle.model_year for vehicle in vehicles])
+
+    async def test_missing_vehicle_names_preserve_previous_identity(self):
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(return_value=[{"vin": "TESTVIN", "generation": "21MM"}]),
+            _vehicle_state_cache={"TESTVIN": make_vehicle()},
+        )
+        with patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()):
+            vehicle = (await get_vehicles(client))[0]
+        self.assertEqual("LC 500 2-DOOR COUPE", vehicle.model_name)
+        self.assertEqual("2024", vehicle.model_year)
+
     async def test_vehicle_finder_uses_newer_remote_command(self):
         calls = []
 

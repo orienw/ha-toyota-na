@@ -28,12 +28,13 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
         brand = api_vehicle.get("brand")
         region = api_vehicle.get("region")
         backdoor_type = api_vehicle.get("backdoorType")
+        previous = state_cache.get(vin)
         common = {
             "client": client,
             "has_remote_subscription": has_remote_subscription(api_vehicle),
             "has_electric": is_electric_vehicle(api_vehicle),
-            "model_name": api_vehicle["modelName"],
-            "model_year": api_vehicle["modelYear"],
+            "model_name": api_vehicle.get("modelName") or (previous.model_name if previous else "Vehicle"),
+            "model_year": api_vehicle.get("modelYear") or (previous.model_year if previous else ""),
             "vin": vin,
             "region": region.upper() if isinstance(region, str) and region else "US",
             "brand": brand.upper() if isinstance(brand, str) and brand else "T",
@@ -62,7 +63,6 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
         else:
             continue
 
-        previous = state_cache.get(vehicle.vin)
         if previous is not None:
             vehicle.inherit_state(previous)
         await vehicle.update()
