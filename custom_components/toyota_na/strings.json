@@ -17,6 +17,10 @@
         }
       }
     },
+    "abort": {
+      "reauth_successful": "Authentication updated.",
+      "reauth_wrong_account": "Sign in with the Toyota or Lexus account already configured for this integration."
+    },
     "error": {
       "not_logged_in": "Not logged in",
       "otp_not_logged_in": "Invalid verification code",

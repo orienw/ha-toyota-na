@@ -126,6 +126,13 @@ class LockEntity:
 
 
 class ConfigFlow:
+    def __init__(self):
+        self.context = {"source": "user"}
+
+    @property
+    def source(self):
+        return self.context["source"]
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__()
 
@@ -166,6 +173,7 @@ sensor.SensorEntity = SensorEntity
 config_entries = module("homeassistant.config_entries")
 config_entries.ConfigEntry = ConfigEntry
 config_entries.ConfigFlow = ConfigFlow
+config_entries.SOURCE_REAUTH = "reauth"
 config_entries.OptionsFlow = OptionsFlow
 core = module("homeassistant.core")
 core.callback = lambda function: function

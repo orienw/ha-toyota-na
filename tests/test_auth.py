@@ -229,6 +229,53 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         entries.async_reload.assert_awaited_once_with(entry.entry_id)
 
 
+    async def test_reauth_updates_original_entry_when_account_email_changes(self):
+        entry = platform.ConfigEntry()
+        entry.data = {"email": "old@example.com", "device_id": "existing-device", "tokens": {"guid": "same-account"}}
+        self.flow.context = {"source": "reauth", "entry_id": entry.entry_id}
+        self.flow._get_reauth_entry = lambda: entry
+        self.flow.async_update_reload_and_abort = MagicMock(return_value={"type": "abort", "reason": "reauth_successful"})
+        self.auth.get_tokens = lambda: {"guid": "same-account", "access_token": "new"}
+        self.auth.authorize.return_value = "code"
+
+        await self.flow.async_step_reauth(entry.data)
+        result = await self.flow.async_step_user(self.credentials)
+
+        self.assertEqual("reauth_successful", result["reason"])
+        call = self.flow.async_update_reload_and_abort.call_args
+        self.assertIs(entry, call.args[0])
+        self.assertEqual("owner@example.com", call.kwargs["data_updates"]["email"])
+        self.flow.async_set_unique_id.assert_not_awaited()
+        self.assertEqual("existing-device", entry.data["device_id"])
+
+    async def test_reauth_rejects_another_account_without_updating_any_entry(self):
+        entry = platform.ConfigEntry()
+        entry.data = {"email": "owner@example.com", "tokens": {"guid": "original-account"}}
+        self.flow.context = {"source": "reauth", "entry_id": entry.entry_id}
+        self.flow._get_reauth_entry = lambda: entry
+        self.flow.async_abort = lambda **kwargs: {"type": "abort", **kwargs}
+        self.flow.async_update_reload_and_abort = MagicMock()
+        self.auth.get_tokens = lambda: {"guid": "different-account"}
+        self.auth.authorize.return_value = "code"
+
+        result = await self.flow.async_step_user(self.credentials)
+
+        self.assertEqual("reauth_wrong_account", result["reason"])
+        self.flow.async_set_unique_id.assert_not_awaited()
+        self.flow.async_update_reload_and_abort.assert_not_called()
+
+    async def test_reauth_email_fallback_is_case_insensitive(self):
+        entry = platform.ConfigEntry()
+        entry.data = {"email": "OWNER@EXAMPLE.COM", "tokens": {}}
+        self.flow.context = {"source": "reauth", "entry_id": entry.entry_id}
+        self.flow._get_reauth_entry = lambda: entry
+        self.flow.async_update_reload_and_abort = MagicMock(return_value={"type": "abort", "reason": "reauth_successful"})
+        self.auth.authorize.return_value = "code"
+        result = await self.flow.async_step_user(self.credentials)
+        self.assertEqual("reauth_successful", result["reason"])
+        self.flow.async_update_reload_and_abort.assert_called_once()
+
+
 class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_each_login_exchanges_its_own_s256_verifier(self):
         response = AsyncMock()

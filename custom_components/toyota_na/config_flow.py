@@ -96,6 +96,16 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
 
     async def async_create_or_update_entry(self, data):
+        if self.source == config_entries.SOURCE_REAUTH:
+            entry = self._get_reauth_entry()
+            guid = entry.data.get("tokens", {}).get("guid")
+            same_account = (
+                guid == data["tokens"].get("guid") if guid
+                else entry.data["email"].casefold() == data["email"].casefold()
+            )
+            if not same_account:
+                return self.async_abort(reason="reauth_wrong_account")
+            return self.async_update_reload_and_abort(entry, data_updates=data)
         existing_entry = await self.async_set_unique_id(f"{DOMAIN}:{data['email']}")
         if existing_entry:
             self.hass.config_entries.async_update_entry(
