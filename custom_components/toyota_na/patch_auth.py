@@ -125,6 +125,8 @@ async def authorize(self, username, password, otp=None):
 
         data = {}
         otp_brake = False
+        otp_submitted = False
+        password_submitted = False
         if otp is not None:    # Retrieve callbacks if we have the otp code
             data = self.otp_callbacks
             
@@ -140,6 +142,8 @@ async def authorize(self, username, password, otp=None):
                             cb["input"][0]["value"] = username
                         elif prompt == "ui_locales":
                             cb["input"][0]["value"] = "en-US"
+                        else:
+                            raise LoginError("Unsupported username challenge.")
 
                     elif cb_type == "PasswordCallback":
                         prompt = cb["output"][0].get("value", "")
@@ -147,9 +151,18 @@ async def authorize(self, username, password, otp=None):
                             if otp is None:
                                 otp_brake = True
                                 break
+                            if otp_submitted:
+                                self.otp_callbacks = data
+                                raise LoginError("Toyota requested another one-time password.")
                             cb["input"][0]["value"] = otp
+                            otp_submitted = True
                         elif prompt == "Password":
+                            if password_submitted:
+                                raise LoginError("Toyota did not accept the password.")
                             cb["input"][0]["value"] = password
+                            password_submitted = True
+                        else:
+                            raise LoginError("Unsupported password challenge.")
 
                     elif cb_type == "ChoiceCallback":
                         # Local is the password option; its position is not fixed.
@@ -172,8 +185,11 @@ async def authorize(self, username, password, otp=None):
                         # Verify OTP=0, Resend OTP=1
                         cb["input"][0]["value"] = 0
 
-                    elif cb_type == "HiddenValueCallback":
+                    elif cb_type in ("HiddenValueCallback", "TextOutputCallback"):
                         pass  # devicePrint etc — pass through unchanged
+                    else:
+                        _LOGGER.error("Unsupported Toyota authentication callback: %s", cb_type)
+                        raise LoginError("Unsupported authentication challenge.")
 
             if otp_brake:
                 self.otp_callbacks = data # Store callback to restart auth loop when we have the otp
@@ -187,14 +203,20 @@ async def authorize(self, username, password, otp=None):
                 data = await resp.json()
                 if any(
                     cb["type"] == "TextOutputCallback"
-                    and any(output.get("value") == "Invalid OTP" for output in cb.get("output", []))
+                    and any(
+                        (output.get("name") == "messageType" and output.get("value") == 2)
+                        or str(output.get("value", "")).strip().casefold() == "invalid otp"
+                        for output in cb.get("output", [])
+                    )
                     for cb in data.get("callbacks", [])
                 ):
                     self.otp_callbacks = data
-                    _LOGGER.error("Invalid OTP")
+                    _LOGGER.error("Toyota rejected the authentication challenge")
                     raise LoginError()
                 if "tokenId" in data:
                     break
+                if not any(cb.get("input") for cb in data.get("callbacks", [])):
+                    raise LoginError("Toyota returned no actionable authentication challenge.")
 
         if "tokenId" not in data:
             _LOGGER.error("Toyota login did not complete its authentication challenge")

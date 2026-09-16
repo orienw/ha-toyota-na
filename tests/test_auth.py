@@ -362,7 +362,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         rejected = challenge("retry-auth-id")
         rejected["callbacks"].append({
             "type": "TextOutputCallback",
-            "output": [{"name": "message", "value": "Invalid OTP"}],
+            "output": [{"name": "message", "value": " iNvAlId OtP "}],
         })
         response = AsyncMock()
         response.status = 200
@@ -402,6 +402,34 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], "correct")
         self.assertEqual(session.post.call_args.kwargs["data"]["code_verifier"], verifier)
         auth._extract_tokens.assert_called_once_with({"access_token": "new-token"})
+
+    async def test_failed_and_unsupported_challenges_are_not_resubmitted(self):
+        otp_callback = {
+            "type": "PasswordCallback",
+            "output": [{"name": "prompt", "value": "One Time Password"}],
+            "input": [{"name": "IDToken1", "value": ""}],
+        }
+        for callbacks in (
+            [{"type": "TextOutputCallback", "output": [{"name": "message", "value": "invalid otp"}]}],
+            [{"type": "TextOutputCallback", "output": [{"name": "messageType", "value": 2}]}],
+            [{"type": "UnknownCallback", "input": [{"value": ""}]}],
+            [otp_callback],
+        ):
+            with self.subTest(callbacks=callbacks):
+                response = AsyncMock(status=200)
+                response.json.return_value = {"authId": "next", "callbacks": copy.deepcopy(callbacks)}
+                response.__aenter__.return_value = response
+                session = MagicMock()
+                session.__aenter__.return_value = session
+                session.post.return_value = response
+                auth = types.SimpleNamespace(otp_callbacks={"authId": "first", "callbacks": [copy.deepcopy(otp_callback)]})
+                with (
+                    patch.object(patch_auth.aiohttp, "ClientSession", return_value=session),
+                    patch.object(patch_auth._LOGGER, "error"),
+                    self.assertRaises(LoginError),
+                ):
+                    await patch_auth.authorize(auth, "owner", "password", "123456")
+                session.post.assert_called_once()
 
     async def test_login_method_choice_is_selected_by_name(self):
         challenge = {
