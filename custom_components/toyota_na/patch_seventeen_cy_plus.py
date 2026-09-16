@@ -59,6 +59,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         "Other Trunk": VehicleFeatures.Trunk,
         "Other Moonroof": VehicleFeatures.Moonroof,
         "Other Hood": VehicleFeatures.Hood,
+        "Other Back window": VehicleFeatures.GlassHatch,
+        "Other Glass Hatch": VehicleFeatures.GlassHatch,
     }
 
     _vehicle_telemetry_map = {
@@ -401,14 +403,15 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         self._store_numeric(
             VehicleFeatures.ChargingState, charge_info.get("plugStatus"), "", observed_at
         )
-        distance_unit = charge_info.get("evDistanceUnit", "")
+        distance_unit = charge_info.get("evDistanceUnit") or "mi"
         for key, feature, unit in (
             ("evDistance", VehicleFeatures.ChargeDistance, distance_unit),
             ("evDistanceAC", VehicleFeatures.ChargeDistanceAC, distance_unit),
             ("chargeRemainingAmount", VehicleFeatures.ChargeLevel, "%"),
             ("plugStatus", VehicleFeatures.PlugStatus, ""),
             ("remainingChargeTime", VehicleFeatures.RemainingChargeTime, "min"),
-            ("evTravelableDistance", VehicleFeatures.EvTravelableDistance, ""),
+            ("evTravelableDistance", VehicleFeatures.EvTravelableDistance, distance_unit),
+            ("gasolineTravelableDistance", VehicleFeatures.GasolineRange, distance_unit),
             ("chargeType", VehicleFeatures.ChargeType, ""),
             ("connectorStatus", VehicleFeatures.ConnectorStatus, ""),
         ):
@@ -547,6 +550,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 closed, locked = opening_state_from_values(
                     section.get("values", [])
                 )
+                if feature == VehicleFeatures.GlassHatch:
+                    locked = None
                 self._store_opening(feature, closed, locked, observed_at)
 
     #
@@ -605,6 +610,16 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         if not status:
             return
 
+        sections = [status] + [
+            status.get(key) or {} for key in ("vehicleState", "telemetry", "location", "electric", "tripdetails")
+        ]
+        for section in sections:
+            updated_at = parse_api_timestamp(section.get("lastUpdateDateTime"))
+            if updated_at is not None:
+                self._store_numeric(
+                    VehicleFeatures.LastTimeStamp, updated_at.timestamp(), observed_at=updated_at,
+                )
+
         location = status.get("location")
         if location:
             self._store_location(
@@ -648,6 +663,11 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 or vehicle_state.get("lastUpdateDateTime")
                 or status.get("lastUpdateDateTime")
             )
+            if tires and tire_observed_at is not None:
+                self._store_numeric(
+                    VehicleFeatures.LastTirePressureTimeStamp,
+                    tire_observed_at.timestamp(), observed_at=tire_observed_at,
+                )
             for tire_key, feature in self._graphql_tire_map.items():
                 tire = tires.get(tire_key) or {}
                 warning = tire.get("displayLowTirePressureWarning")
@@ -937,8 +957,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         observed_at = parse_api_timestamp(telemetry.get("lastTimestamp"))
         tire_observed_at = parse_api_timestamp(telemetry.get("tirePressureTimestamp"))
         if observed_at is not None:
-            self._features[VehicleFeatures.LastTimeStamp] = ToyotaNumeric(
-                observed_at.timestamp(), ""
+            self._store_numeric(
+                VehicleFeatures.LastTimeStamp, observed_at.timestamp(), observed_at=observed_at,
             )
 
         for key, value in telemetry.items():
