@@ -135,6 +135,42 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
                 await vehicle.update_charge_schedule(1, enabled=False)
         self.assertTrue(vehicle.charge_settings["schedules"][0]["enabled"])
 
+    async def test_lagging_schedule_readback_backs_off_within_ninety_seconds(self):
+        vehicle = self.make_vehicle()
+        self.client.save_charge_schedule.side_effect = None
+        elapsed = 0
+        sleeps = []
+
+        async def sleep(delay):
+            nonlocal elapsed
+            sleeps.append(delay)
+            elapsed += delay
+
+        with (
+            patch.object(patch_base_vehicle.asyncio, "get_running_loop", return_value=types.SimpleNamespace(time=lambda: elapsed)),
+            patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+            self.assertRaisesRegex(RuntimeError, "accepted.*did not return"),
+        ):
+            await vehicle.update_charge_schedule(1, enabled=False)
+        self.assertEqual([5, 10, 20, 30, 25], sleeps)
+        self.assertEqual(90, elapsed)
+        self.assertEqual(6, self.client.graphql_get_vehicle_status.await_count)
+        self.client.save_charge_schedule.assert_awaited_once()
+        self.assertTrue(vehicle.charge_settings["schedules"][0]["enabled"])
+
+    async def test_readback_stops_as_soon_as_toyota_reports_the_saved_change(self):
+        vehicle = self.make_vehicle()
+        self.client.save_charge_schedule.side_effect = None
+
+        async def saved_after_delay(delay):
+            self.schedules[0]["enabled"] = False
+
+        with patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=saved_after_delay) as sleep:
+            await vehicle.update_charge_schedule(1, enabled=False)
+        sleep.assert_awaited_once_with(5)
+        self.assertEqual(3, self.client.graphql_get_vehicle_status.await_count)
+        self.assertFalse(vehicle.charge_settings["schedules"][0]["enabled"])
+
     async def test_reported_capacity_blocks_create_without_blocking_edits(self):
         vehicle = self.make_vehicle(ApiVehicleGeneration.MM21)
         self.schedules.extend({**deepcopy(SCHEDULE), "settingId": identifier} for identifier in (2, 3))

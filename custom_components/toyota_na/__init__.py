@@ -253,6 +253,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     client = ToyotaOneClient(
         ToyotaOneAuth(
+            refresh_secs=-180,
             initial_tokens=entry.data["tokens"],
             callback=lambda tokens: update_tokens(tokens, hass, entry),
         )

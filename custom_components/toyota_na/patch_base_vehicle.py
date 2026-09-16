@@ -500,6 +500,7 @@ class ToyotaVehicle(ABC):
             )
             loop = asyncio.get_running_loop()
             deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT
+            readback_delay = 5
             while loop.time() < deadline:
                 try:
                     schedules = await asyncio.wait_for(self._read_charge_schedules(), deadline - loop.time())
@@ -512,7 +513,8 @@ class ToyotaVehicle(ABC):
                     candidates = [item for item in candidates if str(item.get("settingId")) == str(identifier)]
                 if (delete and not candidates) or (not delete and any(schedule_matches(item, body) for item in candidates)):
                     return
-                await asyncio.sleep(min(2, max(0, deadline - loop.time())))
+                await asyncio.sleep(min(readback_delay, max(0, deadline - loop.time())))
+                readback_delay = min(30, readback_delay * 2)
             raise RuntimeError("Toyota accepted the schedule change but did not return the updated schedule.")
 
     async def set_charge_setting(self, field, option):

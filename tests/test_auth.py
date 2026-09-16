@@ -107,6 +107,35 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
         await auth.check_tokens(rejected_token="access")
         auth.refresh_tokens.assert_awaited_once()
 
+    async def test_runtime_refreshes_near_expiry_instead_of_every_five_minutes(self):
+        auth = patch_auth.ToyotaOneAuth(refresh_secs=-180)
+        with patch.object(patch_auth.time, "time", return_value=1800000000):
+            auth._extract_tokens(self.token_response())
+        auth.refresh_tokens = AsyncMock(side_effect=lambda: auth._extract_tokens(self.token_response()))
+        for elapsed in (0, 300, 600, 1200, 1800, 2400, 3000, 3419):
+            with patch.object(patch_auth.time, "time", return_value=1800000000 + elapsed):
+                await auth.check_tokens()
+        auth.refresh_tokens.assert_not_awaited()
+        with patch.object(patch_auth.time, "time", return_value=1800003420):
+            await asyncio.gather(*(auth.get_access_token() for _ in range(4)))
+        auth.refresh_tokens.assert_awaited_once()
+
+    async def test_short_lived_tokens_do_not_refresh_repeatedly_inside_the_margin(self):
+        for lifetime in (120, 10):
+            with self.subTest(lifetime=lifetime):
+                auth = patch_auth.ToyotaOneAuth(refresh_secs=-180)
+                response = {**self.token_response(), "expires_in": lifetime}
+                with patch.object(patch_auth.time, "time", return_value=1800000000):
+                    auth._extract_tokens(response)
+                    auth.refresh_tokens = AsyncMock(side_effect=lambda: auth._extract_tokens(response))
+                    await auth.check_tokens()
+                    await auth.check_tokens()
+                auth.refresh_tokens.assert_not_awaited()
+                with patch.object(patch_auth.time, "time", return_value=1800000000 + lifetime * 0.9):
+                    await asyncio.gather(*(auth.check_tokens() for _ in range(4)))
+                    await auth.check_tokens()
+                auth.refresh_tokens.assert_awaited_once()
+
 
 class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -286,13 +315,14 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         hass = platform.FakeHass(None)
         auth = MagicMock(check_tokens=AsyncMock(side_effect=LoginError()))
         with (
-            patch.object(platform.integration_runtime, "ToyotaOneAuth", return_value=auth),
+            patch.object(platform.integration_runtime, "ToyotaOneAuth", return_value=auth) as auth_type,
             patch.object(platform.integration_runtime, "ToyotaOneClient", return_value=types.SimpleNamespace(auth=auth)),
             self.assertLogs(platform.integration_runtime.__name__, level="ERROR"),
             self.assertRaises(platform.exceptions.ConfigEntryAuthFailed),
         ):
             await platform.integration_runtime.async_setup_entry(hass, entry)
         self.assertEqual({"device_id": "existing-device", "tokens": {"access_token": "expired"}}, entry.data)
+        self.assertEqual(-180, auth_type.call_args.kwargs["refresh_secs"])
 
 
 class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
