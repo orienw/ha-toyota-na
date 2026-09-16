@@ -325,6 +325,109 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(-180, auth_type.call_args.kwargs["refresh_secs"])
 
 
+class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.auth = types.SimpleNamespace()
+        self.response = AsyncMock(status=200)
+        self.response.__aenter__.return_value = self.response
+        redirect = AsyncMock(status=302)
+        redirect.headers = {"Location": "com.toyota.oneapp:/oauth2Callback?code=code"}
+        redirect.__aenter__.return_value = redirect
+        self.session = MagicMock()
+        self.session.__aenter__.return_value = self.session
+        self.session.get.return_value = redirect
+        self.sent = []
+
+        def post(url, *, json, headers):
+            self.sent.append(copy.deepcopy(json))
+            return self.response
+
+        self.session.post.side_effect = post
+        session_patch = patch.object(patch_auth.aiohttp, "ClientSession", return_value=self.session)
+        session_patch.start()
+        self.addCleanup(session_patch.stop)
+
+    def callback(self, kind, prompt, value=""):
+        return {
+            "type": kind,
+            "output": [{"name": "prompt", "value": prompt}],
+            "input": [{"name": "IDToken1", "value": value}],
+        }
+
+    async def test_renamed_prompts_fill_credentials_and_preserve_metadata(self):
+        for name, password, locale in (
+            ("User Name", "Password", "ui_locales"),
+            ("Username", "Enter your password", "UI Locale"),
+            ("Email address", " password ", " UI_LOCALES "),
+        ):
+            with self.subTest(name=name, password=password, locale=locale):
+                callbacks = [
+                    self.callback("NameCallback", name),
+                    self.callback("NameCallback", locale),
+                    self.callback("NameCallback", "devicePrint", "device-metadata"),
+                    self.callback("NameCallback", "mail", "server@example.com"),
+                    self.callback("PasswordCallback", password),
+                ]
+                callbacks[-1]["output"].insert(0, {"name": "echoOn", "value": False})
+                self.response.json.side_effect = [{"callbacks": callbacks}, {"tokenId": "session"}]
+
+                self.assertEqual("code", await patch_auth.authorize(self.auth, "owner", "secret"))
+
+                self.assertEqual(
+                    ["owner", "en-US", "device-metadata", "server@example.com", "secret"],
+                    [cb["input"][0]["value"] for cb in self.sent[-1]["callbacks"]],
+                )
+
+    async def test_otp_prompts_still_wait_for_a_code(self):
+        for prompt in ("One Time Password", " one time PASSWORD "):
+            with self.subTest(prompt=prompt):
+                self.sent.clear()
+                challenge = {"callbacks": [self.callback("PasswordCallback", prompt)]}
+                self.response.json.side_effect = [challenge, {"tokenId": "session"}]
+
+                self.assertEqual(challenge, await patch_auth.authorize(self.auth, "owner", "secret"))
+                self.assertEqual([{}], self.sent)
+                self.assertEqual("code", await patch_auth.authorize(self.auth, "owner", "secret", "123456"))
+                self.assertEqual("123456", self.sent[-1]["callbacks"][0]["input"][0]["value"])
+
+    async def test_repeated_challenges_stop_even_when_auth_id_changes(self):
+        for kind, prompt in (
+            ("NameCallback", "Username"),
+            ("NameCallback", "devicePrint"),
+            ("PasswordCallback", "Enter your password"),
+        ):
+            with self.subTest(kind=kind, prompt=prompt):
+                self.sent.clear()
+                self.response.json.side_effect = [
+                    {"authId": auth_id, "callbacks": [self.callback(kind, prompt)]}
+                    for auth_id in ("first", "second")
+                ]
+
+                with self.assertRaises(LoginError):
+                    await patch_auth.authorize(self.auth, "owner", "secret")
+
+                self.assertEqual(2, len(self.sent))
+                self.session.get.assert_not_called()
+
+    async def test_password_login_continues_to_otp(self):
+        otp_challenge = {"callbacks": [self.callback("PasswordCallback", "One Time Password")]}
+        self.response.json.side_effect = [
+            {"callbacks": [self.callback("NameCallback", "Email address")]},
+            {"callbacks": [self.callback("PasswordCallback", "Enter your password")]},
+            otp_challenge,
+            {"tokenId": "session"},
+        ]
+
+        self.assertEqual(otp_challenge, await patch_auth.authorize(self.auth, "owner", "secret"))
+        self.session.get.assert_not_called()
+        self.assertEqual(3, len(self.sent))
+        self.assertEqual("code", await patch_auth.authorize(self.auth, "owner", "secret", "123456"))
+        self.assertEqual(
+            ["owner", "secret", "123456"],
+            [data["callbacks"][0]["input"][0]["value"] for data in self.sent[1:]],
+        )
+
+
 class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_each_login_exchanges_its_own_s256_verifier(self):
         response = AsyncMock()

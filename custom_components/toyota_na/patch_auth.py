@@ -5,6 +5,7 @@ import logging
 import math
 import secrets
 import time
+from copy import deepcopy
 import aiohttp
 import jwt
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -135,6 +136,7 @@ async def authorize(self, username, password, otp=None):
         otp_brake = False
         otp_submitted = False
         password_submitted = False
+        previous_callbacks = None
         if otp is not None:    # Retrieve callbacks if we have the otp code
             data = self.otp_callbacks
             
@@ -143,19 +145,21 @@ async def authorize(self, username, password, otp=None):
                 for cb in data["callbacks"]:
                     cb_type = cb["type"]
                     _LOGGER.debug("Toyota authentication callback: %s", cb_type)
+                    if cb_type in ("NameCallback", "PasswordCallback"):
+                        prompt = next((
+                            str(output.get("value", "")).strip().casefold()
+                            for output in cb.get("output", [])
+                            if output.get("name") == "prompt"
+                        ), "")
 
                     if cb_type == "NameCallback":
-                        prompt = cb["output"][0].get("value", "")
-                        if prompt == "User Name":
-                            cb["input"][0]["value"] = username
-                        elif prompt == "ui_locales":
+                        if prompt in ("ui_locales", "ui locale"):
                             cb["input"][0]["value"] = "en-US"
-                        else:
-                            raise LoginError("Unsupported username challenge.")
+                        elif prompt not in ("deviceprint", "mail"):
+                            cb["input"][0]["value"] = username
 
                     elif cb_type == "PasswordCallback":
-                        prompt = cb["output"][0].get("value", "")
-                        if prompt == "One Time Password":
+                        if prompt == "one time password":
                             if otp is None:
                                 otp_brake = True
                                 break
@@ -164,13 +168,11 @@ async def authorize(self, username, password, otp=None):
                                 raise LoginError("Toyota requested another one-time password.")
                             cb["input"][0]["value"] = otp
                             otp_submitted = True
-                        elif prompt == "Password":
+                        else:
                             if password_submitted:
                                 raise LoginError("Toyota did not accept the password.")
                             cb["input"][0]["value"] = password
                             password_submitted = True
-                        else:
-                            raise LoginError("Unsupported password challenge.")
 
                     elif cb_type == "ChoiceCallback":
                         # Local is the password option; its position is not fixed.
@@ -203,7 +205,12 @@ async def authorize(self, username, password, otp=None):
                 self.otp_callbacks = data # Store callback to restart auth loop when we have the otp
                 _LOGGER.debug("Fetching otp...")
                 return data
-        
+
+            if "callbacks" in data:
+                if data["callbacks"] == previous_callbacks:
+                    raise LoginError("Toyota repeated an authentication challenge.")
+                previous_callbacks = deepcopy(data["callbacks"])
+
             async with session.post(f"{ToyotaOneAuth.AUTHENTICATE_URL}", json=data, headers=headers) as resp:
                 if resp.status != 200:
                     _LOGGER.info("Toyota authentication failed with HTTP %s", resp.status)
