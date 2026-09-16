@@ -161,6 +161,32 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         self.auth.authorize.assert_awaited_with("owner", "password", "correct")
         self.auth.request_tokens.assert_awaited_once_with("code")
 
+    async def test_identity_provider_account_reports_password_setup_error(self):
+        self.auth.authorize.side_effect = patch_auth.SsoAccountError()
+
+        with self.assertLogs(platform.config_flow.__name__, level="ERROR"):
+            result = await self.flow.async_step_user(self.credentials)
+
+        self.assertEqual(result["step_id"], "user")
+        self.assertEqual(result["errors"], {"base": "sso_account"})
+        self.auth.request_tokens.assert_not_awaited()
+
+    async def test_identity_provider_error_during_otp_returns_to_credentials(self):
+        self.auth.authorize.side_effect = patch_auth.SsoAccountError()
+        self.flow.user_info = self.credentials
+        self.flow.client = types.SimpleNamespace(auth=self.auth)
+
+        with self.assertLogs(platform.config_flow.__name__, level="ERROR"):
+            result = await self.flow.async_step_otp({"code": "123456"})
+
+        self.assertEqual(result["step_id"], "user")
+        self.assertEqual(result["errors"], {"base": "sso_account"})
+        self.assertEqual(
+            result["data_schema"]({"username": "owner", "password": "password"}),
+            self.credentials,
+        )
+        self.auth.request_tokens.assert_not_awaited()
+
     async def test_expired_credentials_request_home_assistant_reauthentication(self):
         client = types.SimpleNamespace(auth=types.SimpleNamespace(login=AsyncMock()))
         entry = platform.ConfigEntry()
@@ -365,3 +391,134 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], "correct")
         self.assertEqual(session.post.call_args.kwargs["data"]["code_verifier"], verifier)
         auth._extract_tokens.assert_called_once_with({"access_token": "new-token"})
+
+    async def test_login_method_choice_is_selected_by_name(self):
+        challenge = {
+            "authId": "method-auth-id",
+            "callbacks": [{
+                "type": "ChoiceCallback",
+                "output": [
+                    {"name": "prompt", "value": "Choose a login method"},
+                    {"name": "choices", "value": ["Google", "Local", "Apple"]},
+                ],
+                "input": [{"name": "IDToken1", "value": 0}],
+            }],
+        }
+        response = AsyncMock()
+        response.status = 200
+        response.json.side_effect = [challenge, {"tokenId": "session"}]
+        response.__aenter__.return_value = response
+        redirect = AsyncMock()
+        redirect.status = 302
+        redirect.headers = {"Location": "com.toyota.oneapp:/oauth2Callback?code=code"}
+        redirect.__aenter__.return_value = redirect
+        sent = []
+        session = MagicMock()
+        session.__aenter__.return_value = session
+
+        def post(url, *, json=None, headers=None, data=None):
+            sent.append(copy.deepcopy(json))
+            return response
+
+        session.post.side_effect = post
+        session.get.return_value = redirect
+        auth = types.SimpleNamespace(_extract_tokens=MagicMock())
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            self.assertEqual(await patch_auth.authorize(auth, "owner", "password"), "code")
+
+        self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], 1)
+
+    async def test_login_method_choice_falls_back_to_first_password_option(self):
+        challenge = {
+            "authId": "fallback-auth-id",
+            "callbacks": [{
+                "type": "ChoiceCallback",
+                "output": [
+                    {"name": "prompt", "value": "Choose a login method"},
+                    {"name": "choices", "value": ["Google", "Email"]},
+                ],
+                "input": [{"name": "IDToken1", "value": 0}],
+            }],
+        }
+        response = AsyncMock()
+        response.status = 200
+        response.json.side_effect = [challenge, {"tokenId": "session"}]
+        response.__aenter__.return_value = response
+        redirect = AsyncMock()
+        redirect.status = 302
+        redirect.headers = {"Location": "com.toyota.oneapp:/oauth2Callback?code=code"}
+        redirect.__aenter__.return_value = redirect
+        sent = []
+        session = MagicMock()
+        session.__aenter__.return_value = session
+
+        def post(url, *, json=None, headers=None, data=None):
+            sent.append(copy.deepcopy(json))
+            return response
+
+        session.post.side_effect = post
+        session.get.return_value = redirect
+        auth = types.SimpleNamespace(_extract_tokens=MagicMock())
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            self.assertEqual(await patch_auth.authorize(auth, "owner", "password"), "code")
+
+        self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], 1)
+
+    async def test_identity_provider_only_account_raises_sso_error(self):
+        challenge = {
+            "authId": "sso-auth-id",
+            "callbacks": [{
+                "type": "ChoiceCallback",
+                "output": [{"name": "choices", "value": ["Google", "Apple"]}],
+                "input": [{"name": "IDToken1", "value": 0}],
+            }],
+        }
+        response = AsyncMock()
+        response.status = 200
+        response.json.return_value = challenge
+        response.__aenter__.return_value = response
+        session = MagicMock()
+        session.__aenter__.return_value = session
+        session.post.return_value = response
+        auth = types.SimpleNamespace(_extract_tokens=MagicMock())
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            with self.assertLogs(patch_auth.__name__, level="ERROR") as logs:
+                with self.assertRaises(patch_auth.SsoAccountError):
+                    await patch_auth.authorize(auth, "owner", "password")
+
+        session.post.assert_called_once()
+        self.assertIn("Google", " ".join(logs.output))
+        self.assertNotIn("owner", " ".join(logs.output))
+
+    async def test_login_method_without_published_choices_keeps_default(self):
+        challenge = {
+            "authId": "legacy-auth-id",
+            "callbacks": [{
+                "type": "ChoiceCallback",
+                "output": [{"name": "prompt", "value": "Choose a login method"}],
+                "input": [{"name": "IDToken1", "value": 0}],
+            }],
+        }
+        response = AsyncMock()
+        response.status = 200
+        response.json.side_effect = [challenge, {"tokenId": "session"}]
+        response.__aenter__.return_value = response
+        redirect = AsyncMock()
+        redirect.status = 302
+        redirect.headers = {"Location": "com.toyota.oneapp:/oauth2Callback?code=code"}
+        redirect.__aenter__.return_value = redirect
+        sent = []
+        session = MagicMock()
+        session.__aenter__.return_value = session
+
+        def post(url, *, json=None, headers=None, data=None):
+            sent.append(copy.deepcopy(json))
+            return response
+
+        session.post.side_effect = post
+        session.get.return_value = redirect
+        auth = types.SimpleNamespace(_extract_tokens=MagicMock())
+        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
+            self.assertEqual(await patch_auth.authorize(auth, "owner", "password"), "code")
+
+        self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], 0)

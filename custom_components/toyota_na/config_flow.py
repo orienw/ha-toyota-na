@@ -8,6 +8,7 @@ from toyota_na import ToyotaOneClient
 from toyota_na.exceptions import AuthError
 
 from .const import DOMAIN, REFRESH_STATUS_INTERVAL
+from .patch_auth import SsoAccountError
 from .wake_policy import (
     CONF_WAKE_INTERVAL,
     WAKE_INTERVAL_OPTIONS,
@@ -27,7 +28,9 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return ToyotaNAOptionsFlow(config_entry)
 
     async def async_step_user(self, user_input=None):
-        errors = {}
+        return await self._async_user_step(user_input, {})
+
+    async def _async_user_step(self, user_input, errors):
         if user_input is not None:
             try:
                 self.client = ToyotaOneClient()
@@ -39,6 +42,9 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return await self.async_step_otp()
                 data = await self.async_get_entry_data(self.client, authorization)
                 return await self.async_create_or_update_entry(data)
+            except SsoAccountError:
+                errors["base"] = "sso_account"
+                _LOGGER.error("Toyota account requires identity provider sign-in")
             except AuthError:
                 errors["base"] = "not_logged_in"
                 _LOGGER.error("Not logged in with username and password")
@@ -64,6 +70,9 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 data = await self.async_get_entry_data(self.client, authorization)
                 return await self.async_create_or_update_entry(data)
+            except SsoAccountError:
+                _LOGGER.error("Toyota account requires identity provider sign-in")
+                return await self._async_user_step(None, {"base": "sso_account"})
             except AuthError:
                 errors["base"] = "otp_not_logged_in"
                 _LOGGER.error("Not logged in with one time password")

@@ -16,6 +16,12 @@ _LOGGER = logging.getLogger(__name__)
 _get_tokens = ToyotaOneAuth.get_tokens
 _set_tokens = ToyotaOneAuth.set_tokens
 
+SSO_PROVIDER_CHOICES = frozenset({"google", "facebook", "apple"})
+
+
+class SsoAccountError(LoginError):
+    """Raised when a Toyota account cannot sign in with a password."""
+
 
 async def check_tokens(self):
     lock = getattr(self, "_token_lock", None)
@@ -85,6 +91,14 @@ def extract_tokens(self, response):
             _LOGGER.exception("Token persistence callback failed")
 
 
+def _choice_callback_choices(callback):
+    """Return the login methods offered by a ForgeRock ChoiceCallback."""
+    for output in callback.get("output", []):
+        if output.get("name") == "choices" and isinstance(output.get("value"), list):
+            return output["value"]
+    return None
+
+
 async def authorize(self, username, password, otp=None):
     """
     Toyota ForgeRock auth flow.
@@ -137,8 +151,21 @@ async def authorize(self, username, password, otp=None):
                             cb["input"][0]["value"] = password
 
                     elif cb_type == "ChoiceCallback":
-                        # Login method: Local=0, Google=1, Facebook=2, Apple=3
-                        cb["input"][0]["value"] = 0
+                        # Local is the password option; its position is not fixed.
+                        choices = _choice_callback_choices(cb) or []
+                        labels = [str(choice).strip().lower() for choice in choices]
+                        local = [i for i, label in enumerate(labels) if label == "local"]
+                        other = [
+                            i for i, label in enumerate(labels)
+                            if label not in SSO_PROVIDER_CHOICES
+                        ]
+                        if labels and not other:
+                            _LOGGER.error(
+                                "Toyota account does not offer password sign-in, only: %s",
+                                ", ".join(map(str, choices)),
+                            )
+                            raise SsoAccountError()
+                        cb["input"][0]["value"] = (local or other or [0])[0]
 
                     elif cb_type == "ConfirmationCallback":
                         # Verify OTP=0, Resend OTP=1
