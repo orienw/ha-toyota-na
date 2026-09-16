@@ -590,8 +590,10 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
     def apply_graphql_status(self, status: dict) -> bool:
         """Apply a pushed AppSync status to this vehicle."""
-        if not status or not any(
-            status.get(key)
+        if not isinstance(status, dict):
+            return False
+        sections = {
+            key: value if isinstance(value := status.get(key), dict) else {}
             for key in (
                 "vehicleState",
                 "location",
@@ -599,8 +601,10 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 "tripdetails",
                 "electric",
             )
-        ):
+        }
+        if not any(sections.values()):
             return False
+        status = {**status, **sections}
         self._last_graphql_status = status
         self._parse_graphql_vehicle_status(status)
         return True
