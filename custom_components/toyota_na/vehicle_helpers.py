@@ -123,14 +123,20 @@ def opening_state_from_values(
 ) -> tuple[bool | None, bool | None]:
     """Extract position and lock state without relying on response order."""
     closed = None
-    locked = None
+    active_locks = set()
+    fallback_locks = set()
     for item in values:
         value = item.get("value")
         if closed is None:
             closed = normalize_position(value)
-        if locked is None:
-            locked = normalize_lock(value)
-    return closed, locked
+        locked = normalize_lock(value)
+        if locked is not None:
+            if "status" not in item:
+                fallback_locks.add(locked)
+            elif item["status"] == 1:
+                active_locks.add(locked)
+    locks = active_locks or fallback_locks
+    return closed, next(iter(locks)) if len(locks) == 1 else None
 
 
 def opening_state_from_graphql(

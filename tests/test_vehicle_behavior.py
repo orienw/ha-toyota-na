@@ -887,6 +887,25 @@ class VehicleStateTests(unittest.TestCase):
         self.assertTrue(door.closed)
         self.assertFalse(door.locked)
 
+    def test_legacy_lock_flags_override_inactive_and_unflagged_values(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            for values, expected in (
+                ([{"value": "unlocked", "status": 0}, {"value": "locked", "status": 1}], True),
+                ([{"value": "locked", "status": 0}, {"value": "unlocked", "status": 1}], False),
+                ([{"value": "locked"}, {"value": "unlocked", "status": 1}], False),
+                ([{"value": "unlocked", "status": 0}], None),
+                ([{"value": "locked", "status": 1}, {"value": "unlocked", "status": 1}], None),
+            ):
+                for ordered in (values, list(reversed(values))):
+                    with self.subTest(make=make.__name__, values=ordered):
+                        vehicle = make()
+                        vehicle._parse_vehicle_status({"vehicleStatus": [{
+                            "category": "Driver Side",
+                            "sections": [{"section": "Door", "values": ordered}],
+                        }]})
+                        door = vehicle.features.get(VehicleFeatures.FrontDriverDoor)
+                        self.assertIs(door.locked if door else None, expected)
+
     def test_legacy_unknown_status_does_not_become_open(self):
         vehicle = SeventeenCYToyotaVehicle(
             client=object(),
