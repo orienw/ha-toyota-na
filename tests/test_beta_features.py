@@ -135,6 +135,49 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         vehicle._feature_flags["vehicleState"] = 1
         self.assertTrue(entity.is_locked)
 
+    async def test_21mm_zero_status_locked_values_reach_lock_controls(self):
+        class Client:
+            get_vehicle_status_21mm = behavior.get_vehicle_status_21mm
+            api_get = AsyncMock()
+            get_telemetry = AsyncMock(return_value=None)
+            get_engine_status_21mm = AsyncMock(return_value=None)
+            remote_request_21mm = AsyncMock()
+
+        client = Client()
+        vehicle = behavior.make_vehicle(client)
+        coordinator = ha.DataUpdateCoordinator([vehicle])
+        hass = ha.FakeHass(coordinator)
+        entry = ha.ConfigEntry()
+        entities = []
+        await ha.lock_platform.async_setup_entry(hass, entry, lambda added, update: entities.extend(added))
+        entity, = entities
+        entity.hass = hass
+
+        for value, flag, expected in (("locked", 0, True), ("unlocked", 1, False), ("locked", 0, True)):
+            with self.subTest(value=value, flag=flag):
+                client.api_get.return_value = {"status": {"vehicleStatus": [
+                    {"category": category, "sections": [{"section": "Door", "values": [
+                        {"value": "closed", "status": 0}, {"value": value, "status": flag},
+                    ]}]}
+                    for category in ("Driver Side", "Passenger Side")
+                ]}}
+                await vehicle.update()
+
+                self.assertTrue(entity.available)
+                self.assertIs(entity.is_locked, expected)
+                self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverDoor].closed)
+                self.assertTrue(vehicle.features[VehicleFeatures.FrontPassengerDoor].closed)
+                with patch.object(ha.lock_platform, "COMMAND_REFRESH_DELAY", 0):
+                    if expected:
+                        await entity.async_unlock()
+                    else:
+                        await entity.async_lock()
+                    await asyncio.gather(*hass.tasks)
+                client.remote_request_21mm.assert_awaited_with(
+                    vehicle.vin, "door-unlock" if expected else "door-lock", "US",
+                )
+                self.assertFalse(entity._state_changing)
+
     async def test_legacy_reads_and_entities_do_not_require_remote_subscription(self):
         client = types.SimpleNamespace(
             get_telemetry=AsyncMock(return_value={}),

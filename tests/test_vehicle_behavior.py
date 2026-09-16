@@ -915,11 +915,16 @@ class VehicleStateTests(unittest.TestCase):
     def test_legacy_lock_flags_override_inactive_and_unflagged_values(self):
         for make in (make_17cy_vehicle, make_vehicle):
             for values, expected in (
+                ([{"value": "locked", "status": 0}], True),
+                ([{"value": "locked", "status": None}], True),
+                ([{"value": "locked", "status": "0"}], True),
+                ([{"value": "locked", "status": 0}, {"value": "unlocked", "status": 0}], True),
                 ([{"value": "unlocked", "status": 0}, {"value": "locked", "status": 1}], True),
                 ([{"value": "locked", "status": 0}, {"value": "unlocked", "status": 1}], False),
                 ([{"value": "locked"}, {"value": "unlocked", "status": 1}], False),
                 ([{"value": "unlocked", "status": 0}], None),
                 ([{"value": "locked", "status": 1}, {"value": "unlocked", "status": 1}], None),
+                ([{"value": "unknown", "status": 0}], None),
             ):
                 for ordered in (values, list(reversed(values))):
                     with self.subTest(make=make.__name__, values=ordered):
@@ -1356,7 +1361,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                     "sections": [
                         {
                             "section": "Door",
-                            "values": [{"value": "closed"}, {"value": "locked"}],
+                            "values": [{"value": "closed", "status": 0}, {"value": "locked", "status": 0}],
                         },
                     ],
                 },

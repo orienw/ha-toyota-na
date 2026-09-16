@@ -131,9 +131,10 @@ def opening_state_from_values(
             closed = normalize_position(value)
         locked = normalize_lock(value)
         if locked is not None:
-            if "status" not in item:
+            # A reported locked value can carry status=0.
+            if locked or "status" not in item:
                 fallback_locks.add(locked)
-            elif item["status"] == 1:
+            if item.get("status") == 1:
                 active_locks.add(locked)
     locks = active_locks or fallback_locks
     return closed, next(iter(locks)) if len(locks) == 1 else None
