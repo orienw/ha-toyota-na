@@ -167,14 +167,14 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_electric_refresh_followup_keeps_generation_and_request_number(self):
         status = {"vehicleInfo": {"chargeInfo": {"plugStatus": 40}}}
         for generation, version, query in (
-            ("17CY", "v2", ""),
-            ("17CYPLUS", "v3", "?realtime-status=request-123"),
-            ("21MM", "v3", "?realtime-status=request-123"),
+            ("17CY", "v2", "?realtime-status=request%2F123"),
+            ("17CYPLUS", "v3", "?realtime-status=request%2F123"),
+            ("21MM", "v3", "?realtime-status=request%2F123"),
         ):
             with self.subTest(generation=generation):
                 self.session.request.reset_mock()
                 self.response.json.side_effect = [
-                    {"payload": {"appRequestNo": "request-123", "returnCode": "ONE-RES-10000"}},
+                    {"payload": {"appRequestNo": "request/123", "returnCode": "ONE-RES-10000"}},
                     {"payload": status},
                 ]
                 result = await client_module.get_electric_realtime_status(
@@ -185,6 +185,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(refresh.kwargs["headers"]["X-GENERATION"], generation)
                 self.assertEqual(refresh.kwargs["headers"]["device-id"], "device")
                 UUID(refresh.kwargs["headers"]["X-CORRELATIONID"])
+                UUID(refresh.kwargs["headers"]["x-correlation-id"])
                 self.assertEqual(followup.args, ("GET", f"https://onecdn.telematicsct.com/oneapi/{version}/electric/status{query}"))
                 self.assertEqual(followup.kwargs["headers"]["X-GENERATION"], generation)
                 self.assertEqual(result, status)

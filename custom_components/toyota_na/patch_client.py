@@ -463,6 +463,7 @@ async def get_electric_realtime_status(
         headers["device-id"] = self.auth.get_device_id()
         headers["X-GENERATION"] = generation
         headers["X-CORRELATIONID"] = str(uuid.uuid4())
+        headers["x-correlation-id"] = headers["X-CORRELATIONID"]
         realtime_electric_status = await self.api_post(
             "v2/electric/realtime-status",
             {},
@@ -473,7 +474,9 @@ async def get_electric_realtime_status(
                 vin, realtime_electric_status["appRequestNo"], region, generation
             )
         elif realtime_electric_status["returnCode"] == "ONE-RES-10000":
-            return await self.get_electric_status(vin, region=region, generation=generation)
+            return await self.get_electric_status(
+                vin, realtime_electric_status.get("appRequestNo"), region, generation
+            )
     except AuthError:
         raise
     except Exception as e:
