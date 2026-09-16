@@ -285,6 +285,11 @@ class ToyotaWebSocketHandler:
                             e,
                         )
 
+        elif msg_type == "connection_error" or (msg_type == "error" and not msg.get("id")):
+            self._ready = False
+            _LOGGER.warning("WebSocket connection error: %s", msg.get("payload", msg))
+            raise ConnectionError("AppSync rejected the connection")
+
         elif msg_type in ("error", "complete"):
             vin = next(
                 (vin for vin, sub_id in self._subscriptions.items() if sub_id == msg.get("id")),
@@ -301,13 +306,6 @@ class ToyotaWebSocketHandler:
 
         elif msg_type == "ka":
             self._keepalive_deadline = monotonic() + self._keepalive_timeout
-
-        elif msg_type == "connection_error":
-            _LOGGER.warning(
-                "WebSocket connection error: %s",
-                msg.get("payload", msg),
-            )
-            raise ConnectionError("AppSync rejected the connection")
 
     async def _subscribe_vin(self, vin, token, guid):
         """Subscribe to vehicle status updates for a specific VIN."""

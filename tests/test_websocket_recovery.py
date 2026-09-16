@@ -218,6 +218,30 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.socket.close.assert_awaited_once()
         session.close.assert_awaited_once()
 
+    async def test_connection_scoped_errors_close_and_retire_the_connection(self):
+        for error in ({"type": "error"}, {"type": "error", "id": None}, {"type": "connection_error"}):
+            with self.subTest(error=error):
+                self.socket.reset_mock()
+                self.socket.receive.side_effect = [
+                    types.SimpleNamespace(type=websocket_module.aiohttp.WSMsgType.TEXT, data=json.dumps(frame))
+                    for frame in ({"type": "connection_ack"}, error)
+                ]
+                session = MagicMock(closed=False)
+                session.ws_connect = AsyncMock(return_value=self.socket)
+                session.close = AsyncMock()
+                with (
+                    patch.object(websocket_module.aiohttp, "ClientSession", return_value=session),
+                    self.assertLogs(websocket_module.__name__, level="WARNING"),
+                    self.assertRaises(ConnectionError),
+                ):
+                    await self.handler._connect_and_listen()
+                self.assertFalse(self.handler._ready)
+                self.assertFalse(self.handler.is_connected)
+                self.assertEqual({}, self.handler._subscriptions)
+                self.assertEqual({}, self.handler._retry_tasks)
+                self.socket.close.assert_awaited_once()
+                session.close.assert_awaited_once()
+
     async def test_subscribed_electric_and_tire_data_reaches_vehicle(self):
         vehicle = make_24mm_vehicle()
         self.handler._status_callback = lambda vin, status: vehicle.apply_graphql_status(status)
