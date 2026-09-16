@@ -13,6 +13,7 @@ import aiohttp
 from .patch_client import (
     GRAPHQL_VEHICLE_STATUS_FIELDS,
     GRAPHQL_WS_ENDPOINT,
+    HTTP_TIMEOUT,
     appsync_authorization,
 )
 
@@ -166,7 +167,7 @@ class ToyotaWebSocketHandler:
             f"{GRAPHQL_WS_ENDPOINT}?header={header_b64}&payload={payload_b64}"
         )
 
-        self._session = aiohttp.ClientSession()
+        self._session = aiohttp.ClientSession(timeout=HTTP_TIMEOUT)
         try:
             self._ws = await self._session.ws_connect(
                 ws_url, protocols=["graphql-ws"], heartbeat=30

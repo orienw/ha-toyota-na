@@ -1,6 +1,5 @@
 from datetime import timedelta
 import logging
-import asyncio
 
 from toyota_na.auth import ToyotaOneAuth
 from toyota_na.client import ToyotaOneClient
@@ -126,6 +125,7 @@ from homeassistant.helpers import device_registry as dr, service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .websocket_handler import ToyotaWebSocketHandler
+from .command_refresh import refresh_after_command
 from .wake_policy import automatic_wake_due, record_vehicle_wake
 
 from .const import (
@@ -140,13 +140,9 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["binary_sensor", "button", "device_tracker", "lock", "number", "select", "sensor", "switch"]
 
 
-async def _refresh_coordinator_after_command(coordinator) -> None:
+async def _refresh_coordinator_after_command(coordinator, vin=None, command=None) -> None:
     """Poll Toyota's cloud after it has had time to process a command."""
-    try:
-        await asyncio.sleep(COMMAND_REFRESH_DELAY)
-        await coordinator.async_request_refresh()
-    except Exception as err:
-        _LOGGER.debug("Post-command refresh failed: %s", err)
+    await refresh_after_command(coordinator, vin, command, delay=COMMAND_REFRESH_DELAY)
 
 
 async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
@@ -235,7 +231,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
                 record_vehicle_wake(hass, config_entry, vin)
 
         task = hass.async_create_task(
-            _refresh_coordinator_after_command(coordinator)
+            _refresh_coordinator_after_command(coordinator, vin, command)
         )
         if config_entry is not None:
             config_entry.async_on_unload(task.cancel)

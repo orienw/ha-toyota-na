@@ -1,5 +1,6 @@
 """REST routing through the integration and upstream client wrappers."""
 
+import asyncio
 import importlib.util
 import json
 from pathlib import Path
@@ -9,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import aiohttp
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 from toyota_na.client import ToyotaOneClient
 from toyota_na.exceptions import LoginError
 
@@ -30,6 +33,24 @@ class Client:
 
     async def _auth_headers(self):
         return {"AUTHORIZATION": "Bearer test-token"}
+
+
+class RequestTimeoutTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stalled_http_command_times_out_without_replaying(self):
+        calls = []
+
+        async def stall(request):
+            calls.append(request.method)
+            await asyncio.sleep(0.1)
+            return web.json_response({})
+
+        app = web.Application()
+        app.router.add_post("/command", stall)
+        async with TestServer(app) as server:
+            with patch.object(client_module, "HTTP_TIMEOUT", aiohttp.ClientTimeout(total=0.02)):
+                with self.assertRaises(TimeoutError):
+                    await client_module.api_request(Client(), "POST", str(server.make_url("/command")), json={})
+        self.assertEqual(["POST"], calls)
 
 
 class RestTransportTests(unittest.IsolatedAsyncioTestCase):

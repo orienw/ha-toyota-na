@@ -1,5 +1,3 @@
-import asyncio
-import logging
 from typing import Any, cast
 
 from homeassistant.components.button import ButtonEntity
@@ -11,12 +9,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
 
 from .base_entity import ToyotaNABaseEntity
+from .command_refresh import refresh_after_command
 from .const import COMMAND_BUTTONS, COMMAND_REFRESH_DELAY, DOMAIN
 from .entity_discovery import setup_entity_discovery
 from .wake_policy import record_vehicle_wake
-
-_LOGGER = logging.getLogger(__name__)
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -63,16 +59,14 @@ class ToyotaButtonBase(ToyotaNABaseEntity, ButtonEntity):
         super().__init__(*args)
         self._config_entry = config_entry
 
-    def _schedule_refresh(self) -> None:
-        task = self.hass.async_create_task(self._async_refresh_after_delay())
+    def _schedule_refresh(self, command=None) -> None:
+        task = self.hass.async_create_task(self._async_refresh_after_delay(command))
         self._config_entry.async_on_unload(task.cancel)
 
-    async def _async_refresh_after_delay(self) -> None:
-        try:
-            await asyncio.sleep(COMMAND_REFRESH_DELAY)
-            await self.coordinator.async_request_refresh()
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Post-command refresh failed: %s", err)
+    async def _async_refresh_after_delay(self, command=None) -> None:
+        await refresh_after_command(
+            self.coordinator, self.vin, command, delay=COMMAND_REFRESH_DELAY,
+        )
 
 
 class ToyotaCommandButton(ToyotaButtonBase):
@@ -104,7 +98,7 @@ class ToyotaCommandButton(ToyotaButtonBase):
             return
         await vehicle.send_command(self._command)
         record_vehicle_wake(self.hass, self._config_entry, self.vin)
-        self._schedule_refresh()
+        self._schedule_refresh(self._command)
 
 
 class ToyotaRefreshButton(ToyotaButtonBase):

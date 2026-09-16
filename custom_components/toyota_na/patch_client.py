@@ -18,6 +18,7 @@ RESOLVER_API_KEY = "pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG"
 USER_AGENT = "ToyotaOneApp/3.10.0 (com.toyota.oneapp; build:3100; Android 14) okhttp/4.12.0"
 TRANSPORT_BRAND = "T"
 ELECTRIC_COMMAND_TIMEOUT = 90
+HTTP_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=30)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -541,7 +542,7 @@ async def graphql_request(
     is_read = query.lstrip().startswith("query ")
     auth_retried = False
     retries = 0
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         while True:
             token = await self.auth.get_access_token()
             headers["Authorization"] = "Bearer " + token
@@ -752,7 +753,7 @@ async def _wait_for_remote_socket_event(
 
 
 async def _wait_for_remote_command_result(
-    ws, vin, subscription_id, request_no=None
+    ws, vin, subscription_id, request_no=None, *, fail_on_unknown=False
 ):
     loop = asyncio.get_running_loop()
     deadline = loop.time() + 60
@@ -783,13 +784,13 @@ async def _wait_for_remote_command_result(
             and str(callback_request_no) != str(request_no)
         ):
             continue
-        status = str(callback.get("status", "")).lower()
+        status = str(callback.get("status") or "unknown").lower()
         detail = callback.get("message")
         if status == "completed":
             return callback
         if status == "in_progress":
             continue
-        if status in ("error", "timeout") or callback.get("commandEnded") is True:
+        if fail_on_unknown or status in ("error", "timeout") or callback.get("commandEnded") is True:
             raise RuntimeError(
                 detail
                 or f"Toyota ended the remote command with status {status}."
@@ -804,6 +805,9 @@ async def remote_request_24mm(self, vin, command, region="US"):
     """Run an AppSync command and await Toyota's callback."""
     return await _run_appsync_operation(
         self, vin, lambda: self.graphql_send_remote_command(vin, command, region), region,
+        fail_on_unknown=command not in (
+            "immediate-charge", "resume-charge", "charge-stop", "power-supply-stop",
+        ),
     )
 
 
@@ -862,17 +866,19 @@ async def save_charge_schedule(self, vin, generation, schedule, region="US", bra
     return await submit()
 
 
-async def _run_appsync_operation(self, vin, submit, region):
+async def _run_appsync_operation(self, vin, submit, region, *, fail_on_unknown=False):
     # Some callbacks omit request numbers. Keep this account's operations for a
     # vehicle sequential so they cannot complete one another.
     if not hasattr(self, "_remote_locks"):
         self._remote_locks = {}
     lock = self._remote_locks.setdefault(vin, asyncio.Lock())
     async with lock:
-        return await _execute_appsync_operation(self, vin, submit, region)
+        return await _execute_appsync_operation(
+            self, vin, submit, region, fail_on_unknown=fail_on_unknown,
+        )
 
 
-async def _execute_appsync_operation(self, vin, submit, region):
+async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unknown=False):
     token = await self.auth.get_access_token()
     guid = await self.auth.get_guid()
     authorization = appsync_authorization(
@@ -892,7 +898,7 @@ async def _execute_appsync_operation(self, vin, submit, region):
     )
     websocket_url = f"{GRAPHQL_WS_ENDPOINT}?{query}"
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.ws_connect(
             websocket_url, protocols=["graphql-ws"], heartbeat=30
         ) as ws:
@@ -924,7 +930,7 @@ async def _execute_appsync_operation(self, vin, submit, region):
             )
             try:
                 return await _wait_for_remote_command_result(
-                    ws, vin, subscription_id, request_no
+                    ws, vin, subscription_id, request_no, fail_on_unknown=fail_on_unknown,
                 )
             except asyncio.TimeoutError as err:
                 raise RuntimeError(
@@ -942,7 +948,7 @@ async def api_request(self, method, endpoint, header_params=None, **kwargs):
 
     url = urljoin(API_GATEWAY, endpoint)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.request(
                 method, url, headers=headers, **kwargs
         ) as resp:

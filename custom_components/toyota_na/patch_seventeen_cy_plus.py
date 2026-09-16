@@ -199,21 +199,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
             if not self.uses_appsync:
                 try:
-                    previous_engine = self._features.get(VehicleFeatures.RemoteStartStatus)
-                    if self._generation == ApiVehicleGeneration.NG86:
-                        engine_status = await self._client.get_engine_status_route(
-                            self.vin, self.api_generation, self.region, self.brand,
-                        )
-                    elif self._generation == ApiVehicleGeneration.MM21:
-                        engine_status = await self._client.get_engine_status_21mm(
-                            self._vin, self._region
-                        )
-                    else:
-                        engine_status = await self._client.get_engine_status_17cyplus(
-                            self._vin, self._region
-                        )
-                    if engine_status and self._features.get(VehicleFeatures.RemoteStartStatus) is previous_engine:
-                        self._parse_engine_status(engine_status)
+                    await self.poll_engine_status()
                 except AuthError:
                     raise
                 except Exception as e:

@@ -159,11 +159,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             pass
 
         try:
-            engine_status = await self._client.get_engine_status_17cy(
-                self._vin, self._region
-            )
-            if engine_status:
-                self._parse_engine_status(engine_status)
+            await self.poll_engine_status()
         except AuthError:
             raise
         except Exception as e:

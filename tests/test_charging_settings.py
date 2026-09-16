@@ -170,7 +170,7 @@ class ChargingTransportTests(unittest.IsolatedAsyncioTestCase):
         client = types.SimpleNamespace()
         active = 0
         peak = 0
-        async def execute(*args):
+        async def execute(*args, **kwargs):
             nonlocal active, peak
             active += 1
             peak = max(active, peak)

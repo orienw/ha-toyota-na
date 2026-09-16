@@ -83,6 +83,22 @@ class _SocketContext:
         return False
 
 
+class _StatusWebSocket(_WebSocket):
+    def __init__(self, statuses):
+        super().__init__()
+        self.statuses = list(statuses)
+
+    async def receive(self):
+        if self.stage < 2:
+            return await super().receive()
+        return _Message({"type": "data", "id": self.subscription_id, "payload": {"data": {
+            "onPostRemoteCallback": {
+                "vin": "TESTVIN24", "appRequestNo": 42,
+                "status": self.statuses.pop(0), "message": "Vehicle rejected the operation",
+            },
+        }}})
+
+
 class _WebSocketSession:
     def __init__(self, websocket):
         self.websocket = websocket
@@ -154,6 +170,30 @@ class _HttpClient:
 
 
 class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_remote_failures_report_the_callback_without_waiting_for_timeout(self):
+        for status in ("terminated", "interrupted", "popup_required", "RES1", None, "unexpected"):
+            with self.subTest(status=status):
+                websocket = _StatusWebSocket([status])
+                with patch.object(patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)):
+                    with self.assertRaisesRegex(RuntimeError, "Vehicle rejected"):
+                        await patch_client.remote_request_24mm(_CommandClient(), "TESTVIN24", "engine-start")
+                self.assertEqual([], websocket.statuses)
+
+    async def test_remote_progress_and_unknown_charging_status_keep_waiting(self):
+        for command, statuses in (
+            ("engine-start", ["in_progress", "completed"]),
+            ("immediate-charge", ["interrupted", None, "in_progress", "completed"]),
+            ("resume-charge", ["interrupted", "completed"]),
+            ("charge-stop", ["interrupted", "completed"]),
+            ("power-supply-stop", ["interrupted", "completed"]),
+        ):
+            with self.subTest(command=command):
+                websocket = _StatusWebSocket(statuses)
+                with patch.object(patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)):
+                    result = await patch_client.remote_request_24mm(_CommandClient(), "TESTVIN24", command)
+                self.assertEqual("completed", result["status"])
+                self.assertEqual([], websocket.statuses)
+
     async def test_remote_command_subscribes_before_sending_and_uses_region(self):
         websocket = _WebSocket()
         session = _WebSocketSession(websocket)

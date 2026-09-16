@@ -273,6 +273,26 @@ class ToyotaVehicle(ABC):
         """Provides a programmatic representation of all the features of the vehicle and their current states."""
         return self._features
 
+    async def poll_engine_status(self):
+        """Read REST engine state without waking the vehicle or replacing a push."""
+        if self.uses_appsync:
+            return None
+        previous = self._features.get(VehicleFeatures.RemoteStartStatus)
+        if self._generation == ApiVehicleGeneration.NG86:
+            status = await self._client.get_engine_status_route(
+                self.vin, self.api_generation, self.region, self.brand,
+            )
+        elif self._generation == ApiVehicleGeneration.MM21:
+            status = await self._client.get_engine_status_21mm(self.vin, self.region)
+        elif self.endpoint_generation == "17CY":
+            status = await self._client.get_engine_status_17cy(self.vin, self.region)
+        else:
+            status = await self._client.get_engine_status_17cyplus(self.vin, self.region)
+        if status and self._features.get(VehicleFeatures.RemoteStartStatus) is previous:
+            self._parse_engine_status(status)
+        current = self._features.get(VehicleFeatures.RemoteStartStatus)
+        return current.on if current is not None and current is not previous else None
+
     # We only very sparingly expose direct properties. Most vehicle atrributes should be added to the features dictionary.
     @property
     def generation(self):

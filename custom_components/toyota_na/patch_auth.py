@@ -12,6 +12,8 @@ from urllib.parse import urlparse, parse_qs, urlencode
 from toyota_na import ToyotaOneAuth
 from toyota_na.exceptions import LoginError, NotLoggedIn, TokenExpired
 
+from .patch_client import HTTP_TIMEOUT
+
 _LOGGER = logging.getLogger(__name__)
 _get_tokens = ToyotaOneAuth.get_tokens
 _set_tokens = ToyotaOneAuth.set_tokens
@@ -117,7 +119,7 @@ async def authorize(self, username, password, otp=None):
     When otp=None and OTP is requested, saves callbacks and returns (caller
     should re-call with otp set).
     """
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         headers = {
             "Accept-API-Version": "resource=2.1, protocol=1.0",
             "Accept-Language": "en-US",
@@ -257,7 +259,7 @@ async def request_tokens(self, code):
         "code_verifier": verifier,
         "code": code,
     }
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.post(ToyotaOneAuth.ACCESS_TOKEN_URL, data=data) as resp:
             if resp.status != 200:
                 raise LoginError()
@@ -271,7 +273,7 @@ async def refresh_tokens(self):
         "grant_type": "refresh_token",
         "refresh_token": self._refresh_token,
     }
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.post(ToyotaOneAuth.ACCESS_TOKEN_URL, data=data) as resp:
             if resp.status in (400, 401):
                 raise LoginError()
