@@ -147,7 +147,7 @@ After you remove a vehicle from the Toyota account, delete its device under
 Vehicles Toyota still lists cannot be deleted this way.
 
 ## Installation
-Requires Home Assistant 2022.11 or newer.
+Requires Home Assistant 2024.11 or newer.
 
 ### HACS
 
