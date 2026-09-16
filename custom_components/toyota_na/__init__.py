@@ -249,6 +249,10 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+    if "password" in entry.data:
+        entry_data = dict(entry.data)
+        del entry_data["password"]
+        hass.config_entries.async_update_entry(entry, data=entry_data)
     hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
 
     client = ToyotaOneClient(

@@ -151,6 +151,7 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["data"]["tokens"], {"access_token": "token"})
+        self.assertNotIn("password", result["data"])
         self.auth.authorize.assert_awaited_once_with("owner", "password")
         self.auth.request_tokens.assert_awaited_once_with("authorization-code")
 
@@ -170,6 +171,7 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["type"], "create_entry")
         self.auth.authorize.assert_awaited_with("owner", "password", "correct")
+        self.assertNotIn("password", result["data"])
         self.auth.request_tokens.assert_awaited_once_with("code")
 
     async def test_identity_provider_account_reports_password_setup_error(self):
@@ -213,7 +215,7 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_reauthentication_keeps_device_id_and_updates_existing_entry(self):
         entry = platform.ConfigEntry()
-        entry.data = {"device_id": "existing-device", "tokens": {"access_token": "expired"}}
+        entry.data = {"device_id": "existing-device", "tokens": {"access_token": "expired"}, "password": "old-password"}
         self.auth.authorize.return_value = "code"
         self.flow.async_set_unique_id.return_value = entry
         entries = types.SimpleNamespace(async_update_entry=MagicMock(), async_reload=AsyncMock())
@@ -226,12 +228,13 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         saved = entries.async_update_entry.call_args.kwargs["data"]
         self.assertEqual(saved["device_id"], "existing-device")
         self.assertEqual(saved["tokens"], {"access_token": "token"})
+        self.assertNotIn("password", saved)
         entries.async_reload.assert_awaited_once_with(entry.entry_id)
 
 
     async def test_reauth_updates_original_entry_when_account_email_changes(self):
         entry = platform.ConfigEntry()
-        entry.data = {"email": "old@example.com", "device_id": "existing-device", "tokens": {"guid": "same-account"}}
+        entry.data = {"email": "old@example.com", "device_id": "existing-device", "tokens": {"guid": "same-account"}, "password": "old-password"}
         self.flow.context = {"source": "reauth", "entry_id": entry.entry_id}
         self.flow._get_reauth_entry = lambda: entry
         self.flow.async_update_reload_and_abort = MagicMock(return_value={"type": "abort", "reason": "reauth_successful"})
@@ -244,7 +247,9 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("reauth_successful", result["reason"])
         call = self.flow.async_update_reload_and_abort.call_args
         self.assertIs(entry, call.args[0])
-        self.assertEqual("owner@example.com", call.kwargs["data_updates"]["email"])
+        self.assertEqual("owner@example.com", call.kwargs["data"]["email"])
+        self.assertEqual("existing-device", call.kwargs["data"]["device_id"])
+        self.assertNotIn("password", call.kwargs["data"])
         self.flow.async_set_unique_id.assert_not_awaited()
         self.assertEqual("existing-device", entry.data["device_id"])
 
@@ -274,6 +279,20 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         result = await self.flow.async_step_user(self.credentials)
         self.assertEqual("reauth_successful", result["reason"])
         self.flow.async_update_reload_and_abort.assert_called_once()
+
+    async def test_setup_removes_saved_password_even_when_tokens_are_expired(self):
+        entry = platform.ConfigEntry()
+        entry.data = {"device_id": "existing-device", "tokens": {"access_token": "expired"}, "password": "old-password"}
+        hass = platform.FakeHass(None)
+        auth = MagicMock(check_tokens=AsyncMock(side_effect=LoginError()))
+        with (
+            patch.object(platform.integration_runtime, "ToyotaOneAuth", return_value=auth),
+            patch.object(platform.integration_runtime, "ToyotaOneClient", return_value=types.SimpleNamespace(auth=auth)),
+            self.assertLogs(platform.integration_runtime.__name__, level="ERROR"),
+            self.assertRaises(platform.exceptions.ConfigEntryAuthFailed),
+        ):
+            await platform.integration_runtime.async_setup_entry(hass, entry)
+        self.assertEqual({"device_id": "existing-device", "tokens": {"access_token": "expired"}}, entry.data)
 
 
 class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):

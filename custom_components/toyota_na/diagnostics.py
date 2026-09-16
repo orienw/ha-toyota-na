@@ -25,6 +25,9 @@ TO_REDACT = {
     "ctsLinks",  # contains a vin number
     "device_id",
     "guid",
+    "remoteUserGuid",
+    "subscriberGuid",
+    "accountInfoId",
     "id_token",
     "imei",
     "refresh_token",

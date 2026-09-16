@@ -92,7 +92,6 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "tokens": client.auth.get_tokens(),
             "email": id_info["email"],
             "username": self.user_info["username"],
-            "password": self.user_info["password"],
         }
 
     async def async_create_or_update_entry(self, data):
@@ -105,11 +104,15 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             if not same_account:
                 return self.async_abort(reason="reauth_wrong_account")
-            return self.async_update_reload_and_abort(entry, data_updates=data)
+            entry_data = {**entry.data, **data}
+            entry_data.pop("password", None)
+            return self.async_update_reload_and_abort(entry, data=entry_data)
         existing_entry = await self.async_set_unique_id(f"{DOMAIN}:{data['email']}")
         if existing_entry:
+            entry_data = {**existing_entry.data, **data}
+            entry_data.pop("password", None)
             self.hass.config_entries.async_update_entry(
-                existing_entry, data={**existing_entry.data, **data}
+                existing_entry, data=entry_data
             )
             await self.hass.config_entries.async_reload(existing_entry.entry_id)
             return self.async_abort(reason="reauth_successful")
