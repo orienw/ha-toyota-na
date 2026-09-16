@@ -100,6 +100,43 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
             await vehicle.set_charge_setting("maxACCurrent", "Max")
         client.update_charge_settings.assert_not_awaited()
 
+    async def test_charge_and_power_supply_controls_follow_their_own_feature_flags(self):
+        client = types.SimpleNamespace(
+            graphql_get_vehicle_status=AsyncMock(return_value=status()),
+            update_charge_settings=AsyncMock(),
+        )
+        vehicle = behavior.make_24mm_vehicle(client)
+        vehicle.apply_graphql_status(status())
+        coordinator = ha.DataUpdateCoordinator([vehicle])
+        for field, feature, option in (
+            ("targetLimit", "chargeSetting", "90%"),
+            ("maxACCurrent", "chargeSetting", "Max"),
+            ("maxDCPower", "chargeSetting", "Max"),
+            ("electricSupplyModeLimit", "powerSupply", "30%"),
+        ):
+            entity = select.ToyotaChargeSelect(field, ha.ConfigEntry(), coordinator, field, vehicle.vin)
+            for value in (0, 2, None, True, "1"):
+                with self.subTest(field=field, value=value):
+                    vehicle._feature_flags = {"remoteCommands": 1, "chargeSetting": 1, "powerSupply": 1, feature: value}
+                    self.assertFalse(entity.available)
+                    with self.assertRaisesRegex(ValueError, "unavailable"):
+                        await vehicle.set_charge_setting(field, option)
+            vehicle._feature_flags = {"remoteCommands": 2, feature: 1}
+            self.assertTrue(entity.available)
+            await vehicle.set_charge_setting(field, option)
+        self.assertEqual(4, client.update_charge_settings.await_count)
+        self.assertEqual(8, client.graphql_get_vehicle_status.await_count)
+
+    async def test_disabled_charging_controls_preserve_returned_readings(self):
+        vehicle = behavior.make_24mm_vehicle()
+        vehicle._feature_flags = {"remoteCommands": 1, "chargeSetting": 2, "powerSupply": 2}
+        vehicle.apply_graphql_status(status())
+        entities = []
+        await select.async_setup_entry(ha.FakeHass(ha.DataUpdateCoordinator([vehicle])), ha.ConfigEntry(), lambda added, update: entities.extend(added))
+        self.assertEqual([], entities)
+        self.assertEqual("80%", current_charge_option(vehicle.charge_settings, "targetLimit"))
+        self.assertEqual("80", vehicle.features[VehicleFeatures.ChargeTargetLimit].value)
+
     async def test_failure_does_not_optimistically_change_setting(self):
         client = types.SimpleNamespace(
             graphql_get_vehicle_status=AsyncMock(return_value=status()),

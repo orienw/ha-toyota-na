@@ -104,6 +104,22 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
                 await vehicle.update_charge_schedule(identifier, **changes)
         self.client.save_charge_schedule.assert_not_awaited()
 
+    async def test_schedule_access_uses_multiday_instead_of_remote_command_flag(self):
+        for generation in (ApiVehicleGeneration.CY17, ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24, ApiVehicleGeneration.BEV26):
+            with self.subTest(generation=generation):
+                vehicle = self.make_vehicle(generation)
+                vehicle._feature_flags = {"remoteCommands": 2, "multiDayCharging": 1}
+                self.assertTrue(vehicle.supports_charge_schedules)
+                await vehicle.update_charge_schedule(1, enabled=False)
+                self.assertFalse(vehicle.charge_settings["schedules"][0]["enabled"])
+                self.client.save_charge_schedule.reset_mock()
+                for value in (0, 2, None, True):
+                    vehicle._feature_flags = {"remoteCommands": 1, "multiDayCharging": value}
+                    self.assertFalse(vehicle.supports_charge_schedules)
+                    with self.assertRaisesRegex(ValueError, "unavailable"):
+                        await vehicle.update_charge_schedule(1, enabled=True)
+                self.client.save_charge_schedule.assert_not_awaited()
+
     async def test_deleted_schedule_becomes_unavailable(self):
         vehicle = self.make_vehicle()
         entity = switch.ToyotaChargeScheduleSwitch("1", ha.ConfigEntry(), ha.DataUpdateCoordinator([vehicle]), "Charge Schedule 1", vehicle.vin)

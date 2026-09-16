@@ -100,7 +100,7 @@ class ToyotaChargeSelect(ToyotaNABaseEntity, SelectEntity):
 
     @property
     def available(self):
-        return self.vehicle is not None and self.vehicle.supports_charge_settings and bool(self.options)
+        return self.vehicle is not None and self.vehicle.supports_charge_setting(self._field) and bool(self.options)
 
     @property
     def current_option(self):

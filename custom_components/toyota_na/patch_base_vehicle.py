@@ -435,14 +435,17 @@ class ToyotaVehicle(ABC):
     def charge_settings(self):
         return self._charge_settings
 
-    @property
-    def supports_charge_settings(self):
-        return self.uses_appsync and self.electric and self.subscribed and self.feature_enabled("remoteCommands")
+    def supports_charge_setting(self, field):
+        feature = "powerSupply" if field == "electricSupplyModeLimit" else "chargeSetting"
+        return (
+            field in CHARGE_SETTINGS and self.uses_appsync and self.electric
+            and self.subscribed and self.feature_enabled(feature)
+        )
 
     @property
     def supports_charge_schedules(self):
         return (
-            self.electric and self.subscribed and self.feature_enabled("remoteCommands")
+            self.electric and self.subscribed
             and self.feature_enabled("multiDayCharging")
             and (self.uses_appsync or (self._feature_flags or {}).get("multiDayCharging") == 1)
             and isinstance(self.charge_settings.get("schedules"), list)
@@ -513,7 +516,7 @@ class ToyotaVehicle(ABC):
             raise RuntimeError("Toyota accepted the schedule change but did not return the updated schedule.")
 
     async def set_charge_setting(self, field, option):
-        if not self.supports_charge_settings:
+        if not self.supports_charge_setting(field):
             raise ValueError("Charging preferences are unavailable for this vehicle.")
         status = await self._client.graphql_get_vehicle_status(self.vin, self.backdoor_type, self.region)
         if not status:
