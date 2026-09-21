@@ -38,6 +38,40 @@ def status(charging=CHARGING):
 
 
 class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_charge_select_reports_validation_and_operation_failures(self):
+        vehicle = behavior.make_24mm_vehicle()
+        vehicle.apply_graphql_status(status())
+        vehicle.set_charge_setting = AsyncMock()
+        coordinator = ha.DataUpdateCoordinator([vehicle])
+        entry = ha.ConfigEntry()
+        entity = select.ToyotaChargeSelect("targetLimit", entry, coordinator, "Charge Limit", vehicle.vin)
+        entity.hass = ha.FakeHass(coordinator)
+        for error, expected_type in (
+            (ValueError("This charging option is unavailable for this vehicle."), ha.exceptions.ServiceValidationError),
+            (RuntimeError("Toyota rejected the charging change."), ha.exceptions.HomeAssistantError),
+        ):
+            vehicle.set_charge_setting.side_effect = error
+            with self.subTest(error=type(error)), self.assertRaises(expected_type) as raised:
+                await entity.async_select_option("90%")
+            self.assertEqual(str(error), str(raised.exception))
+        self.assertEqual("80%", entity.current_option)
+        self.assertEqual({}, entry.data)
+        with self.assertRaisesRegex(ha.exceptions.ServiceValidationError, "unavailable"):
+            await entity.async_select_option("invalid")
+
+    async def test_missing_charging_response_is_an_operational_error(self):
+        client = types.SimpleNamespace(
+            graphql_get_vehicle_status=AsyncMock(return_value={}),
+            update_charge_settings=AsyncMock(),
+        )
+        vehicle = behavior.make_24mm_vehicle(client)
+        vehicle.apply_graphql_status(status())
+        entity = select.ToyotaChargeSelect("targetLimit", ha.ConfigEntry(), ha.DataUpdateCoordinator([vehicle]), "Charge Limit", vehicle.vin)
+        with self.assertRaisesRegex(ha.exceptions.HomeAssistantError, "Toyota did not return charging preferences") as raised:
+            await entity.async_select_option("90%")
+        self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
+        client.update_charge_settings.assert_not_awaited()
+
     async def test_choices_follow_enabled_metadata_and_special_wire_values(self):
         vehicle = behavior.make_24mm_vehicle()
         vehicle.apply_graphql_status(status())

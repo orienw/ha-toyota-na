@@ -387,7 +387,7 @@ class ClimateSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.vehicle._feature_flags = {"remoteClimate": 2}
         self.assertFalse(temperature.available)
         self.assertFalse(enabled.available)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ha.exceptions.ServiceValidationError):
             await enabled.async_turn_on()
 
     async def test_simultaneous_changes_preserve_both_settings(self):

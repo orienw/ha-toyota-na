@@ -183,6 +183,7 @@ core.ServiceCall = type("ServiceCall", (), {})
 exceptions = module("homeassistant.exceptions")
 exceptions.ConfigEntryAuthFailed = type("ConfigEntryAuthFailed", (Exception,), {})
 exceptions.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
+exceptions.ServiceValidationError = type("ServiceValidationError", (exceptions.HomeAssistantError,), {})
 ha_const = module("homeassistant.const")
 ha_const.PERCENTAGE = "%"
 ha_const.UnitOfPressure = UnitOfPressure

@@ -4,11 +4,13 @@ import math
 
 from homeassistant.components.number import NumberDeviceClass, NumberEntity
 from homeassistant.const import EntityCategory, UnitOfTemperature
+from homeassistant.exceptions import ServiceValidationError
 
 from .base_entity import ToyotaNABaseEntity
 from .climate_helpers import climate_bounds
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
+from .service_helpers import translate_service_errors
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
@@ -64,8 +66,9 @@ class ToyotaClimateNumber(ToyotaNABaseEntity, NumberEntity):
 
     async def async_set_native_value(self, value):
         if not self.available:
-            raise ValueError("This climate setting is unavailable for this vehicle.")
-        await self.vehicle.update_climate_settings(**{self._key: value})
+            raise ServiceValidationError("This climate setting is unavailable for this vehicle.")
+        with translate_service_errors():
+            await self.vehicle.update_climate_settings(**{self._key: value})
         self.coordinator.async_set_updated_data(self.coordinator.data)
 
 

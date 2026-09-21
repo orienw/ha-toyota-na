@@ -2,12 +2,14 @@
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import EntityCategory
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
 from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
 from .climate_helpers import climate_parameters
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
+from .service_helpers import translate_service_errors
 from .wake_policy import record_vehicle_wake
 
 CLIMATE_SWITCHES = (
@@ -94,8 +96,9 @@ class ToyotaClimateSettingsSwitch(ToyotaNABaseEntity, SwitchEntity):
 
     async def _set_enabled(self, enabled):
         if not self.available:
-            raise ValueError("Climate settings are unavailable for this vehicle.")
-        await self.vehicle.update_climate_settings(**self._changes(enabled))
+            raise ServiceValidationError("Climate settings are unavailable for this vehicle.")
+        with translate_service_errors():
+            await self.vehicle.update_climate_settings(**self._changes(enabled))
         self.coordinator.async_set_updated_data(self.coordinator.data)
 
     def _changes(self, enabled):
@@ -172,7 +175,8 @@ class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
 
     async def _set_enabled(self, enabled):
         if not self.available:
-            raise ValueError("This charge schedule is unavailable.")
-        await self.vehicle.update_charge_schedule(self._identifier, enabled=enabled)
+            raise ServiceValidationError("This charge schedule is unavailable.")
+        with translate_service_errors():
+            await self.vehicle.update_charge_schedule(self._identifier, enabled=enabled)
         record_vehicle_wake(self.hass, self._config_entry, self.vin)
         self.coordinator.async_set_updated_data(self.coordinator.data)

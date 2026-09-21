@@ -126,6 +126,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .websocket_handler import ToyotaWebSocketHandler
 from .command_refresh import refresh_after_command
+from .service_helpers import translate_service_errors
 from .wake_policy import automatic_wake_due, record_vehicle_wake
 
 from .const import (
@@ -206,10 +207,11 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
         if remote_action in ("set_charge_schedule", "delete_charge_schedule"):
             fields = {"enabled": "enabled", "start_time": "startTime", "end_time": "endTime", "days": "daysOfTheWeek"}
             changes = {field: service_call.data[key] for key, field in fields.items() if key in service_call.data}
-            await vehicle.update_charge_schedule(
-                service_call.data.get("schedule_id"),
-                delete=remote_action == "delete_charge_schedule", **changes,
-            )
+            with translate_service_errors():
+                await vehicle.update_charge_schedule(
+                    service_call.data.get("schedule_id"),
+                    delete=remote_action == "delete_charge_schedule", **changes,
+                )
             if config_entry is not None:
                 record_vehicle_wake(hass, config_entry, vin)
             coordinator.async_set_updated_data(coordinator.data)

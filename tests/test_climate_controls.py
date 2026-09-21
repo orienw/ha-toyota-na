@@ -4,7 +4,10 @@ import asyncio
 from copy import deepcopy
 import types
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
+
+from aiohttp import ClientConnectionError
+from toyota_na.exceptions import AuthError
 
 import test_button as ha
 import test_vehicle_behavior as behavior
@@ -132,7 +135,7 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
     async def test_fresh_capability_loss_rejects_save_without_changing_cached_preferences(self):
         before = deepcopy(self.vehicle.climate_settings)
         self.server["acOperations"][3]["available"] = False
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ha.exceptions.ServiceValidationError):
             await self.entities["Front Defroster"].async_turn_off()
         self.client.update_climate_settings.assert_not_awaited()
         self.assertEqual(self.vehicle.climate_settings, before)
@@ -141,11 +144,61 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_fan_and_unavailable_seat_modes_are_rejected_before_write(self):
         for value in (-1, 6, 2.5, float("nan")):
-            with self.subTest(value=value), self.assertRaises(ValueError):
+            with self.subTest(value=value), self.assertRaises(ha.exceptions.ServiceValidationError):
                 await self.entities["Climate Fan Speed"].async_set_native_value(value)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ha.exceptions.ServiceValidationError):
             await self.entities["Passenger Seat Climate"].async_select_option("Ventilate")
         self.client.update_climate_settings.assert_not_awaited()
+
+    async def test_expected_write_failures_preserve_messages_and_reported_state(self):
+        changed = Mock()
+        self.coordinator.async_add_listener(changed)
+        actions = (
+            (self.entities["Climate Fan Speed"].async_set_native_value, (4,)),
+            (self.entities["Climate Airflow"].async_select_option, ("Feet",)),
+            (self.entities["Driver Seat Climate"].async_select_option, ("Off",)),
+            (self.entities["Use Climate Settings"].async_turn_off, ()),
+            (self.entities["Front Defroster"].async_turn_off, ()),
+        )
+        for error in (
+            RuntimeError("Toyota rejected the change."), ClientConnectionError("Toyota connection failed."),
+            AuthError("Toyota session expired."), asyncio.TimeoutError(),
+        ):
+            self.client.update_climate_settings.side_effect = error
+            for action, args in actions:
+                with self.subTest(error=type(error), action=action), self.assertRaises(ha.exceptions.HomeAssistantError) as raised:
+                    await action(*args)
+                self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
+                self.assertEqual(str(error) or "The Toyota request timed out.", str(raised.exception))
+                self.assertIs(error, raised.exception.__cause__)
+        self.assertEqual(SETTINGS, self.vehicle.climate_settings)
+        changed.assert_not_called()
+
+    async def test_unavailable_controls_raise_validation_errors_without_writing(self):
+        self.vehicle._has_remote_subscription = False
+        for action, args in (
+            (self.entities["Climate Fan Speed"].async_set_native_value, (4,)),
+            (self.entities["Climate Airflow"].async_select_option, ("Feet",)),
+            (self.entities["Use Climate Settings"].async_turn_off, ()),
+        ):
+            with self.subTest(action=action), self.assertRaisesRegex(ha.exceptions.ServiceValidationError, "unavailable"):
+                await action(*args)
+        self.client.update_climate_settings.assert_not_awaited()
+
+    async def test_missing_climate_response_is_an_operational_error(self):
+        self.client.get_climate_settings.side_effect = None
+        self.client.get_climate_settings.return_value = {}
+        with self.assertRaisesRegex(ha.exceptions.HomeAssistantError, "Toyota did not return climate settings") as raised:
+            await self.entities["Climate Fan Speed"].async_set_native_value(4)
+        self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
+        self.client.update_climate_settings.assert_not_awaited()
+
+    async def test_cancellation_and_unexpected_errors_are_not_translated(self):
+        for error in (asyncio.CancelledError(), KeyError("broken payload")):
+            self.client.update_climate_settings.side_effect = error
+            with self.subTest(error=type(error)), self.assertRaises(type(error)) as raised:
+                await self.entities["Climate Fan Speed"].async_set_native_value(4)
+            self.assertIs(error, raised.exception)
 
     async def test_disabled_custom_settings_can_be_configured_before_enabling(self):
         self.server["settingsOn"] = False

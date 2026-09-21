@@ -2,12 +2,14 @@
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.const import EntityCategory
+from homeassistant.exceptions import ServiceValidationError
 
 from .base_entity import ToyotaNABaseEntity
 from .climate_helpers import AIRFLOWS, SEATS, climate_parameters, seat_modes
 from .charging_helpers import CHARGE_SETTINGS, charge_options, current_charge_option
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
+from .service_helpers import translate_service_errors
 from .wake_policy import record_vehicle_wake
 
 
@@ -76,12 +78,13 @@ class ToyotaClimateSelect(ToyotaNABaseEntity, SelectEntity):
 
     async def async_select_option(self, option):
         if not self.available or option not in self.options:
-            raise ValueError("This climate preference is unavailable for this vehicle.")
-        if self._setting == "airflow":
-            key = next(key for key, label in AIRFLOWS.items() if label == option)
-            await self.vehicle.update_climate_settings(airflow=key)
-        else:
-            await self.vehicle.update_climate_settings(seat=(self._setting, option))
+            raise ServiceValidationError("This climate preference is unavailable for this vehicle.")
+        with translate_service_errors():
+            if self._setting == "airflow":
+                key = next(key for key, label in AIRFLOWS.items() if label == option)
+                await self.vehicle.update_climate_settings(airflow=key)
+            else:
+                await self.vehicle.update_climate_settings(seat=(self._setting, option))
         self.coordinator.async_set_updated_data(self.coordinator.data)
 
 
@@ -108,7 +111,8 @@ class ToyotaChargeSelect(ToyotaNABaseEntity, SelectEntity):
 
     async def async_select_option(self, option):
         if not self.available or option not in self.options:
-            raise ValueError("This charging preference is unavailable for this vehicle.")
-        await self.vehicle.set_charge_setting(self._field, option)
+            raise ServiceValidationError("This charging preference is unavailable for this vehicle.")
+        with translate_service_errors():
+            await self.vehicle.set_charge_setting(self._field, option)
         record_vehicle_wake(self.hass, self._config_entry, self.vin)
         self.coordinator.async_set_updated_data(self.coordinator.data)

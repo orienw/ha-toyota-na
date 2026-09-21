@@ -127,6 +127,30 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(entity.available)
         self.assertIsNone(entity.is_on)
 
+    async def test_schedule_switch_reports_validation_and_operation_failures(self):
+        vehicle = self.make_vehicle()
+        entry = ha.ConfigEntry()
+        entity = switch.ToyotaChargeScheduleSwitch("1", entry, ha.DataUpdateCoordinator([vehicle]), "Charge Schedule 1", vehicle.vin)
+        entity.hass = ha.FakeHass(entity.coordinator)
+        self.client.save_charge_schedule.side_effect = RuntimeError("Toyota rejected the schedule change.")
+        with self.assertRaisesRegex(ha.exceptions.HomeAssistantError, "Toyota rejected the schedule change"):
+            await entity.async_turn_off()
+        self.assertTrue(entity.is_on)
+        self.assertEqual({}, entry.data)
+        self.schedules.clear()
+        with self.assertRaisesRegex(ha.exceptions.ServiceValidationError, "no longer exists"):
+            await entity.async_turn_off()
+        with self.assertRaisesRegex(ha.exceptions.ServiceValidationError, "unavailable"):
+            await entity.async_turn_off()
+
+    async def test_missing_schedule_response_is_an_operational_error(self):
+        vehicle = self.make_vehicle()
+        self.client.graphql_get_vehicle_status.side_effect = None
+        self.client.graphql_get_vehicle_status.return_value = {}
+        with self.assertRaisesRegex(RuntimeError, "Toyota did not return current charge schedules"):
+            await vehicle.update_charge_schedule(1, enabled=False)
+        self.client.save_charge_schedule.assert_not_awaited()
+
     async def test_unconfirmed_change_does_not_set_state_optimistically(self):
         vehicle = self.make_vehicle()
         self.client.save_charge_schedule.side_effect = None
@@ -357,26 +381,42 @@ class AppSyncScheduleTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScheduleServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.vehicle = behavior.make_24mm_vehicle()
+        self.vehicle.update_charge_schedule = AsyncMock()
+        self.coordinator = ha.DataUpdateCoordinator([self.vehicle])
+        self.hass = ha.FakeHass(self.coordinator)
+        self.entry = ha.ConfigEntry()
+        self.handlers = {}
+        self.hass.services = types.SimpleNamespace(async_register=lambda domain, name, handler: self.handlers.update({name: handler}))
+        self.hass.async_get_entry = lambda entry_id: self.entry
+        device = types.SimpleNamespace(config_entries={self.entry.entry_id}, identifiers={(ha.DOMAIN, self.vehicle.vin)})
+        self.hass.device_registry = types.SimpleNamespace(async_get=lambda device_id: device)
+        await ha.integration_runtime.async_setup(self.hass, {})
+
     async def test_services_resolve_device_and_map_schedule_fields(self):
-        vehicle = behavior.make_24mm_vehicle()
-        vehicle.update_charge_schedule = AsyncMock()
-        coordinator = ha.DataUpdateCoordinator([vehicle])
-        hass = ha.FakeHass(coordinator)
-        entry = ha.ConfigEntry()
-        handlers = {}
-        hass.services = types.SimpleNamespace(async_register=lambda domain, name, handler: handlers.update({name: handler}))
-        hass.async_get_entry = lambda entry_id: entry
-        device = types.SimpleNamespace(config_entries={entry.entry_id}, identifiers={(ha.DOMAIN, vehicle.vin)})
-        registry = types.SimpleNamespace(async_get=lambda device_id: device)
-        with patch.object(ha.integration_runtime.dr, "async_get", return_value=registry, create=True):
-            await ha.integration_runtime.async_setup(hass, {})
-            await handlers["set_charge_schedule"](types.SimpleNamespace(
-                service="set_charge_schedule",
-                data={"vehicle": "device", "schedule_id": 1, "enabled": False, "start_time": "23:00", "days": ["Monday"]},
-            ))
-            vehicle.update_charge_schedule.assert_awaited_once_with(1, delete=False, enabled=False, startTime="23:00", daysOfTheWeek=["Monday"])
-            await handlers["delete_charge_schedule"](types.SimpleNamespace(
-                service="delete_charge_schedule", data={"vehicle": "device", "schedule_id": 1},
-            ))
-            vehicle.update_charge_schedule.assert_awaited_with(1, delete=True)
-        self.assertFalse(hass.tasks)
+        await self.handlers["set_charge_schedule"](types.SimpleNamespace(
+            service="set_charge_schedule",
+            data={"vehicle": "device", "schedule_id": 1, "enabled": False, "start_time": "23:00", "days": ["Monday"]},
+        ))
+        self.vehicle.update_charge_schedule.assert_awaited_once_with(1, delete=False, enabled=False, startTime="23:00", daysOfTheWeek=["Monday"])
+        await self.handlers["delete_charge_schedule"](types.SimpleNamespace(
+            service="delete_charge_schedule", data={"vehicle": "device", "schedule_id": 1},
+        ))
+        self.vehicle.update_charge_schedule.assert_awaited_with(1, delete=True)
+        self.assertFalse(self.hass.tasks)
+
+    async def test_schedule_services_preserve_failure_messages_with_ha_exception_types(self):
+        for service in ("set_charge_schedule", "delete_charge_schedule"):
+            for error, expected_type in (
+                (ValueError("This charge schedule no longer exists."), ha.exceptions.ServiceValidationError),
+                (RuntimeError("Toyota accepted the schedule change but did not return the updated schedule."), ha.exceptions.HomeAssistantError),
+            ):
+                self.vehicle.update_charge_schedule.side_effect = error
+                with self.subTest(service=service, error=type(error)), self.assertRaises(expected_type) as raised:
+                    await self.handlers[service](types.SimpleNamespace(
+                        service=service, data={"vehicle": "device", "schedule_id": 1},
+                    ))
+                self.assertEqual(str(error), str(raised.exception))
+                self.assertIs(error, raised.exception.__cause__)
+        self.assertEqual({}, self.entry.data)

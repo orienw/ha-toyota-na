@@ -397,7 +397,7 @@ class ToyotaVehicle(ABC):
                 self.vin, self.api_generation, self.region, self.brand
             )
             if not isinstance(settings, dict) or not settings:
-                raise ValueError("Toyota did not return climate settings.")
+                raise RuntimeError("Toyota did not return climate settings.")
             settings = apply_climate_changes(settings, changes)
             await self._client.update_climate_settings(
                 self.vin, self.api_generation, settings, self.region, self.brand
@@ -473,7 +473,7 @@ class ToyotaVehicle(ABC):
             self._parse_electric_status(status)
             schedules = ((status or {}).get("vehicleInfo") or {}).get("timerChargeInfo")
         if not isinstance(schedules, list):
-            raise ValueError("Toyota did not return current charge schedules.")
+            raise RuntimeError("Toyota did not return current charge schedules.")
         return schedules
 
     async def update_charge_schedule(self, identifier=None, *, delete=False, **changes):
@@ -522,7 +522,7 @@ class ToyotaVehicle(ABC):
             raise ValueError("Charging preferences are unavailable for this vehicle.")
         status = await self._client.graphql_get_vehicle_status(self.vin, self.backdoor_type, self.region)
         if not status:
-            raise ValueError("Toyota did not return charging preferences.")
+            raise RuntimeError("Toyota did not return charging preferences.")
         self.apply_graphql_status(status)
         charging = ((status.get("electric") or {}).get("charging") or {})
         options = charge_options({
