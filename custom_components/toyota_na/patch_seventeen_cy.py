@@ -373,7 +373,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 VehicleFeatures.ParkingLocation,
                 vehicle_status["latitude"],
                 vehicle_status["longitude"],
-                observed_at,
+                parse_api_timestamp(vehicle_status.get("locationAcquisitionDatetime"))
+                or observed_at,
             )
 
         if "vehicleStatus" not in vehicle_status or vehicle_status["vehicleStatus"] is None:

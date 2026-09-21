@@ -664,6 +664,28 @@ class WakePolicyTests(unittest.TestCase):
 
 
 class VehicleStateTests(unittest.TestCase):
+    def test_17cy_location_uses_acquisition_time_without_overwriting_newer_readings(self):
+        vehicle = make_17cy_vehicle()
+        vehicle._parse_telemetry({
+            "lastTimestamp": "2026-09-21T07:01:00Z",
+            "vehicleLocation": {"latitude": 34.05, "longitude": -118.25},
+        })
+        for occurrence, acquisition, coordinates, expected in (
+            ("2026-09-21T07:02:00Z", "2026-09-21T07:00:00Z", (33, -117), (34.05, -118.25)),
+            ("2026-09-21T07:00:00Z", "2026-09-21T07:03:00Z", (35, -119), (35, -119)),
+            ("2026-09-21T07:04:00Z", None, (36, -120), (36, -120)),
+            ("2026-09-21T07:05:00Z", "invalid", (37, -121), (37, -121)),
+            ("2026-09-21T07:04:00Z", None, (36, -120), (37, -121)),
+        ):
+            with self.subTest(occurrence=occurrence, acquisition=acquisition):
+                vehicle._parse_vehicle_status({
+                    "occurrenceDate": occurrence,
+                    "locationAcquisitionDatetime": acquisition,
+                    "latitude": coordinates[0], "longitude": coordinates[1],
+                })
+                location = vehicle.features[VehicleFeatures.ParkingLocation]
+                self.assertEqual(expected, (location.lat, location.value))
+
     def test_rest_location_uses_its_own_acquisition_timestamp(self):
         vehicle = make_vehicle()
         vehicle.apply_graphql_status({
