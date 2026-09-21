@@ -1162,6 +1162,51 @@ class VehicleStateTests(unittest.TestCase):
         self.assertIsNone(door.closed)
         self.assertTrue(door.locked)
 
+    def test_17cy_telemetry_reports_windows_and_sunroof(self):
+        vehicle = make_17cy_vehicle()
+        openings = {
+            "driverWindow": VehicleFeatures.FrontDriverWindow,
+            "passengerWindow": VehicleFeatures.FrontPassengerWindow,
+            "rlWindow": VehicleFeatures.RearDriverWindow,
+            "rrWindow": VehicleFeatures.RearPassengerWindow,
+            "sunRoof": VehicleFeatures.Moonroof,
+        }
+        vehicle._parse_telemetry({key: 0 for key in openings})
+        for feature in openings.values():
+            self.assertNotIn(feature, vehicle.features)
+        for value, closed in ((1, False), (2, True)):
+            vehicle._parse_telemetry({
+                "lastTimestamp": f"2026-09-21T07:0{value}:00Z",
+                **{key: value for key in openings},
+            })
+            for feature in openings.values():
+                with self.subTest(value=value, feature=feature):
+                    self.assertEqual(closed, vehicle.features[feature].closed)
+
+    def test_17cy_window_telemetry_preserves_observation_order(self):
+        vehicle = make_17cy_vehicle()
+        vehicle._parse_vehicle_status({
+            "occurrenceDate": "2026-09-21T07:02:00Z",
+            "vehicleStatus": [{
+                "category": "Driver Side",
+                "sections": [{"section": "Window", "values": [{"value": "open"}]}],
+            }],
+        })
+        for timestamp, value, closed in (
+            ("2026-09-21T07:01:00Z", 2, False),
+            (None, 2, False),
+            ("2026-09-21T07:03:00Z", 2, True),
+            ("2026-09-21T07:04:00Z", 0, True),
+            ("2026-09-21T07:04:00Z", 3, True),
+            ("2026-09-21T07:04:00Z", "open", True),
+            ("2026-09-21T07:04:00Z", {}, True),
+            ("2026-09-21T07:04:00Z", None, True),
+            ("2026-09-21T07:03:30Z", 1, False),
+        ):
+            with self.subTest(timestamp=timestamp, value=value):
+                vehicle._parse_telemetry({"lastTimestamp": timestamp, "driverWindow": value})
+                self.assertEqual(closed, vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
+
     def test_older_telemetry_cannot_overwrite_newer_window_state(self):
         vehicle = make_vehicle()
         vehicle.apply_graphql_status(

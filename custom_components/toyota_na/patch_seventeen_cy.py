@@ -79,6 +79,11 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         "tripB": VehicleFeatures.TripDetailsB,
         "nextService": VehicleFeatures.NextService,
         "speed": VehicleFeatures.Speed,
+        "driverWindow": VehicleFeatures.FrontDriverWindow,
+        "passengerWindow": VehicleFeatures.FrontPassengerWindow,
+        "rlWindow": VehicleFeatures.RearDriverWindow,
+        "rrWindow": VehicleFeatures.RearPassengerWindow,
+        "sunRoof": VehicleFeatures.Moonroof,
     }
 
     def __init__(
@@ -462,6 +467,16 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                     longitude,
                     observed_at,
                 )
+                continue
+
+            if "Window" in key or "Roof" in key:
+                if value not in (1, 2):
+                    continue
+                feature = self._vehicle_telemetry_map.get(key)
+                if feature is not None:
+                    self._store_opening(
+                        feature, closed=(value == 2), locked=None, observed_at=observed_at
+                    )
                 continue
 
             if self._vehicle_telemetry_map.get(key) is not None:
