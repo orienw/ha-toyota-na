@@ -22,6 +22,9 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
         if not vin:
             continue
         generation_name = api_vehicle.get("generation")
+        if not isinstance(generation_name, str):
+            continue
+        generation_name = generation_name.strip().upper()
         if generation_name not in supported_generations:
             continue
         generation = ApiVehicleGeneration(generation_name)
