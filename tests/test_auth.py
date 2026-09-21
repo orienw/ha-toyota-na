@@ -354,6 +354,49 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
             "input": [{"name": "IDToken1", "value": value}],
         }
 
+    async def test_authorization_accepts_valid_redirects(self):
+        self.response.json.return_value = {"tokenId": "session"}
+        redirect = self.session.get.return_value
+        redirect.headers = {
+            "Location": "com.toyota.oneapp:/oauth2Callback?code=encoded%2Bcode%3D",
+        }
+        for status in (301, 302, 303, 307, 308):
+            with self.subTest(status=status):
+                redirect.status = status
+                self.assertEqual(
+                    "encoded+code=", await patch_auth.authorize(self.auth, "owner", "secret"),
+                )
+                self.assertFalse(self.session.get.call_args.kwargs["allow_redirects"])
+
+    async def test_authorization_rejects_invalid_redirects(self):
+        self.response.json.return_value = {"tokenId": "session"}
+        redirect = self.session.get.return_value
+        callback = "com.toyota.oneapp:/oauth2Callback"
+        for status, location in (
+            (200, f"{callback}?code=code"),
+            (304, f"{callback}?code=code"),
+            (400, f"{callback}?code=code"),
+            (302, None),
+            (302, ""),
+            (302, "https://example.com/oauth2Callback?code=code"),
+            (302, "com.toyota.oneapp://example.com/oauth2Callback?code=code"),
+            (302, "com.toyota.oneapp:/other?code=code"),
+            (302, "https://[invalid?code=code"),
+            (302, callback),
+            (302, f"{callback}?code="),
+            (302, f"{callback}?code=%20"),
+            (302, f"{callback}?code=first&code=second"),
+            (302, f"{callback}?code=first&code="),
+            (302, f"{callback}?error=access_denied"),
+            (302, f"{callback}?code=code&error=access_denied"),
+            (302, f"{callback}#code=code"),
+            (302, f"{callback}?code=code#unexpected"),
+        ):
+            with self.subTest(status=status, location=location), self.assertRaises(LoginError):
+                redirect.status = status
+                redirect.headers = {} if location is None else {"Location": location}
+                await patch_auth.authorize(self.auth, "owner", "secret")
+
     async def test_renamed_prompts_fill_credentials_and_preserve_metadata(self):
         for name, password, locale in (
             ("User Name", "Password", "ui_locales"),

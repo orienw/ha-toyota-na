@@ -251,15 +251,23 @@ async def authorize(self, username, password, otp=None):
         }
         AUTHORIZE_URL_QS = f"{ToyotaOneAuth.AUTHORIZE_URL}?{urlencode(auth_params)}"
         async with session.get(AUTHORIZE_URL_QS, headers=headers, allow_redirects=False) as resp:
-            if resp.status != 302:
+            if resp.status not in (301, 302, 303, 307, 308):
                 _LOGGER.error("Toyota authentication request failed with HTTP %s", resp.status)
                 raise LoginError()
-            redir = resp.headers["Location"]
-            query = parse_qs(urlparse(redir).query)
-            if "code" not in query:
-                _LOGGER.error("Toyota authentication redirect did not contain a code")
-                raise LoginError()
-            return query["code"][0]
+            try:
+                redirect = urlparse(resp.headers.get("Location", ""))
+            except ValueError as err:
+                raise LoginError("Toyota returned an invalid authentication redirect.") from err
+            if (
+                redirect._replace(query="", fragment="").geturl() != auth_params["redirect_uri"]
+                or redirect.fragment
+            ):
+                raise LoginError("Toyota returned an unexpected authentication redirect.")
+            query = parse_qs(redirect.query, keep_blank_values=True)
+            codes = query.get("code", [])
+            if "error" in query or len(codes) != 1 or not codes[0].strip():
+                raise LoginError("Toyota authentication redirect did not contain a valid code.")
+            return codes[0]
             
 async def request_tokens(self, code):
     verifier = getattr(self, "_code_verifier", None)
