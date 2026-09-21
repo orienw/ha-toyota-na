@@ -170,6 +170,17 @@ class _HttpClient:
 
 
 class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_callbacks_without_an_id_work_when_no_request_number_was_returned(self):
+        callback = {"vin": "TESTVIN24", "status": "COMPLETED"}
+        with patch.object(patch_client, "_receive_remote_socket_message", AsyncMock(return_value={
+            "type": "data", "id": "subscription",
+            "payload": {"data": {"onPostRemoteCallback": callback}},
+        })):
+            result = await patch_client._wait_for_remote_command_result(
+                object(), "TESTVIN24", "subscription",
+            )
+        self.assertEqual(callback, result)
+
     async def test_remote_failures_report_the_callback_without_waiting_for_timeout(self):
         for status in ("terminated", "interrupted", "popup_required", "RES1", None, "unexpected"):
             with self.subTest(status=status):

@@ -781,7 +781,6 @@ async def _wait_for_remote_command_result(
         callback_request_no = callback.get("appRequestNo")
         if (
             request_no is not None
-            and callback_request_no is not None
             and str(callback_request_no) != str(request_no)
         ):
             continue
@@ -858,9 +857,10 @@ async def save_charge_schedule(self, vin, generation, schedule, region="US", bra
             **({} if delete else {"json": body}),
         )
         result = result or {}
-        if result.get("returnCode") != "ONE-RES-10000" or not (result.get("appRequestNo") or result.get("correlationId")):
+        request_no = result.get("appRequestNo") or result.get("correlationId")
+        if result.get("returnCode") != "ONE-RES-10000" or not request_no:
             raise RuntimeError(result.get("message") or "Toyota did not accept the charge schedule change.")
-        return {"payload": {"requestNo": result.get("appRequestNo")}}
+        return {"payload": {"requestNo": request_no}}
 
     if appsync:
         return await _run_appsync_operation(self, vin, submit, region)
@@ -868,8 +868,8 @@ async def save_charge_schedule(self, vin, generation, schedule, region="US", bra
 
 
 async def _run_appsync_operation(self, vin, submit, region, *, fail_on_unknown=False):
-    # Some callbacks omit request numbers. Keep this account's operations for a
-    # vehicle sequential so they cannot complete one another.
+    # Commands without a request number use VIN-only callbacks. Keep this
+    # account's operations for a vehicle sequential.
     if not hasattr(self, "_remote_locks"):
         self._remote_locks = {}
     lock = self._remote_locks.setdefault(vin, asyncio.Lock())
