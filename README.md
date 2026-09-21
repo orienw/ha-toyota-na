@@ -101,45 +101,6 @@ times. Choose km/h or mph in the Speed sensor's settings.
 Remaining Charge Time shows Unknown when Toyota has no estimate. Unplugging
 the vehicle clears Charging Status.
 
-#### Updating automations for 2.9
-
-These four sensors keep their entity IDs; the state values change. If an
-automation compares Plug Status or Connector Status to Toyota's numeric codes,
-switch it to the strings below. The UI still shows translated labels.
-
-| Sensor | Previous value | State in 2.9 |
-| --- | --- | --- |
-| Plug Status | `12`, `no_controls`, `unavailable`, `unplugged` | `unplugged` |
-| Plug Status | `36`, `charge_now` | `waiting` |
-| Plug Status | `40`, `charging` | `charging` |
-| Plug Status | `45` | `charge_complete` |
-| Plug Status | `56` | `fast_charging` |
-| Plug Status | `60` | `fast_charge_complete` |
-| Plug Status | `resume_charging` | `paused` |
-| Plug Status | `external_power_active`, `external_power_active_hybrid` | `power_supply` |
-| Plug Status | `plugged_in` | `plugged_in` |
-| Connector Status | `2`, `disconnected` | `disconnected` |
-| Connector Status | `4`, `unlocked` | `unlocked` |
-| Connector Status | `5`, `locked` | `locked` |
-| Connector Status | `connected` | `connected` |
-
-Example, replacing a Plug Status comparison to `40`:
-
-```jinja
-{{ is_state('sensor.my_car_plug_status', 'charging') }}
-```
-
-Both timestamp sensors now return ISO 8601 dates, such as
-`2026-09-15T12:00:00+00:00`, instead of Unix seconds. If a template needs
-seconds, use `as_timestamp` instead of `| int`:
-
-```jinja
-{{ as_timestamp(states('sensor.my_car_last_update_timestamp'), default=none) }}
-```
-
-Use your entity IDs. `as_timestamp` returns `none` when the sensor is Unknown
-or Unavailable.
-
 ### Removing a vehicle
 
 After you remove a vehicle from the Toyota account, delete its device under
