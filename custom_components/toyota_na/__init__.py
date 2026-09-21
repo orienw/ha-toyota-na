@@ -120,7 +120,7 @@ from .patch_vehicle import get_vehicles
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
 from homeassistant.helpers import device_registry as dr, service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -218,17 +218,19 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             return
         command = COMMAND_MAP[remote_action]
         if not vehicle.supports_command(command):
-            raise HomeAssistantError(
+            raise ServiceValidationError(
                 f"{remote_action.replace('_', ' ').capitalize()} is unavailable for this vehicle."
             )
 
         if remote_action.upper() == "REFRESH":
-            await vehicle.poll_vehicle_refresh()
+            with translate_service_errors():
+                await vehicle.poll_vehicle_refresh()
             if config_entry is not None:
                 record_vehicle_wake(hass, config_entry, vin)
             coordinator.async_set_updated_data(coordinator.data)
         else:
-            await vehicle.send_command(command)
+            with translate_service_errors():
+                await vehicle.send_command(command)
             if config_entry is not None:
                 record_vehicle_wake(hass, config_entry, vin)
 

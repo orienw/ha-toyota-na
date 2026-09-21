@@ -22,6 +22,7 @@ from .const import (
     DOOR_UNLOCK,
 )
 from .entity_discovery import setup_entity_discovery
+from .service_helpers import translate_service_errors
 from .wake_policy import record_vehicle_wake
 
 _LOGGER = logging.getLogger(__name__)
@@ -120,8 +121,9 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
             self._state_changing = True
             self.async_write_ha_state()
             try:
-                await self.vehicle.send_command(COMMAND_MAP[command])
-            except Exception:
+                with translate_service_errors():
+                    await self.vehicle.send_command(COMMAND_MAP[command])
+            except (Exception, asyncio.CancelledError):
                 self._state_changing = False
                 self.async_write_ha_state()
                 raise

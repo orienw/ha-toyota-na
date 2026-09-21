@@ -243,7 +243,7 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         ))
         await ha.integration_runtime.async_setup(hass, {})
         for service in ("charge_start", "refresh"):
-            with self.subTest(service=service), self.assertRaises(ha.exceptions.HomeAssistantError):
+            with self.subTest(service=service), self.assertRaises(ha.exceptions.ServiceValidationError):
                 await handlers[service](types.SimpleNamespace(service=service, data={"vehicle": "device"}))
         client.remote_request_24mm.assert_not_awaited()
         self.assertEqual(hass.tasks, [])
@@ -255,7 +255,7 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         client.remote_request_24mm.assert_awaited_once_with(vehicle.vin, "charge-stop", "CA")
         self.assertEqual(coordinator.refreshes, 1)
         vehicle._feature_flags["remoteCommands"] = 2
-        with self.assertRaises(ha.exceptions.HomeAssistantError):
+        with self.assertRaises(ha.exceptions.ServiceValidationError):
             await handlers[call.service](call)
         self.assertEqual(client.remote_request_24mm.await_count, 1)
 

@@ -457,7 +457,7 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         lock = entities[0]
         lock.hass = self.hass
 
-        with self.assertRaisesRegex(RuntimeError, "command rejected"):
+        with self.assertRaisesRegex(exceptions.HomeAssistantError, "command rejected"):
             await lock.async_lock()
 
         self.assertFalse(lock._state_changing)
