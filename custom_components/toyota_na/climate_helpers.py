@@ -67,9 +67,11 @@ def apply_climate_changes(settings: dict, changes: dict) -> dict:
             bounds = climate_bounds(settings, key)
             if (
                 bounds is None or type(settings.get(key)) not in (int, float)
-                or type(value) not in (int, float) or not math.isfinite(value)
+                or not math.isfinite(settings[key])
             ):
-                raise ValueError("Toyota did not provide a valid climate range.")
+                raise RuntimeError("Toyota did not provide a valid climate range.")
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise ValueError("Climate value must be a finite number.")
             minimum, maximum, step = bounds
             if not minimum <= value <= maximum or not math.isclose(
                 (value - minimum) / step, round((value - minimum) / step), abs_tol=1e-6,

@@ -2,9 +2,10 @@
 
 import asyncio
 from copy import deepcopy
+import json
 import types
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from aiohttp import ClientConnectionError
 from toyota_na.exceptions import AuthError, LoginError, NotLoggedIn, TokenExpired
@@ -12,7 +13,7 @@ from toyota_na.exceptions import AuthError, LoginError, NotLoggedIn, TokenExpire
 import test_button as ha
 import test_vehicle_behavior as behavior
 
-from custom_components.toyota_na import number, select, switch
+from custom_components.toyota_na import number, patch_client, select, switch
 from custom_components.toyota_na.climate_helpers import climate_parameters
 
 
@@ -143,12 +144,58 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.entities["Front Defroster"].available)
 
     async def test_fan_and_unavailable_seat_modes_are_rejected_before_write(self):
-        for value in (-1, 6, 2.5, float("nan")):
+        for value in (-1, 6, 2.5, float("nan"), float("inf"), None, True, "4"):
             with self.subTest(value=value), self.assertRaises(ha.exceptions.ServiceValidationError):
                 await self.entities["Climate Fan Speed"].async_set_native_value(value)
         with self.assertRaises(ha.exceptions.ServiceValidationError):
             await self.entities["Passenger Seat Climate"].async_select_option("Ventilate")
         self.client.update_climate_settings.assert_not_awaited()
+
+    async def test_invalid_climate_metadata_is_an_operational_error(self):
+        for name, changes in (
+            ("Climate Temperature", {"minTemp": 31}),
+            ("Climate Temperature", {"tempInterval": 0}),
+            ("Climate Temperature", {"temperature": None}),
+            ("Climate Temperature", {"temperature": float("nan")}),
+            ("Climate Fan Speed", {"minAirFlow": 6}),
+            ("Climate Fan Speed", {"maxAirFlow": 2.5}),
+        ):
+            self.server = {**deepcopy(SETTINGS), **changes}
+            value = 23 if name == "Climate Temperature" else 4
+            with self.subTest(changes=changes), self.assertRaises(ha.exceptions.HomeAssistantError) as raised:
+                await self.entities[name].async_set_native_value(value)
+            self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
+            self.assertEqual("Toyota did not provide a valid climate range.", str(raised.exception))
+        self.client.update_climate_settings.assert_not_awaited()
+        self.assertEqual(SETTINGS, self.vehicle.climate_settings)
+
+    async def test_invalid_rest_json_is_an_operational_error(self):
+        for operation, method in (("get_climate_settings", "GET"), ("update_climate_settings", "PUT")):
+            error = json.JSONDecodeError("Expecting value", "invalid", 0)
+            response = AsyncMock()
+            response.status = 200
+            response.json.side_effect = error
+            response.__aenter__.return_value = response
+            session = MagicMock()
+            session.__aenter__.return_value = session
+            session.request.return_value = response
+            client = types.SimpleNamespace(_auth_headers=AsyncMock(return_value={}))
+
+            async def request(*args):
+                return await patch_client.api_request(client, method, "climate-settings")
+
+            with (
+                self.subTest(operation=operation),
+                patch.object(patch_client.aiohttp, "ClientSession", return_value=session),
+                patch.object(self.client, operation, request),
+                self.assertRaises(ha.exceptions.HomeAssistantError) as raised,
+            ):
+                await self.entities["Climate Fan Speed"].async_set_native_value(4)
+            self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
+            self.assertEqual("Toyota returned an invalid response.", str(raised.exception))
+            self.assertIs(error, raised.exception.__cause__)
+            session.request.assert_called_once()
+        self.assertEqual(SETTINGS, self.vehicle.climate_settings)
 
     async def test_expected_write_failures_preserve_messages_and_reported_state(self):
         changed = Mock()

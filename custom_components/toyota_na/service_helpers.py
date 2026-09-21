@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import contextmanager
+import json
 
 from aiohttp import ClientError
 from toyota_na.exceptions import AuthError
@@ -13,6 +14,8 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 def translate_service_errors():
     try:
         yield
+    except json.JSONDecodeError as err:
+        raise HomeAssistantError("Toyota returned an invalid response.") from err
     except ValueError as err:
         raise ServiceValidationError(str(err)) from err
     except asyncio.TimeoutError as err:
