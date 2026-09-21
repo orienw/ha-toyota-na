@@ -559,26 +559,48 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results, ["new-token", "new-token", "guid"])
         auth.refresh_tokens.assert_awaited_once()
 
-    async def test_temporary_refresh_failure_does_not_expire_login(self):
+    async def test_refresh_requires_invalid_grant_before_expiring_login(self):
         auth = patch_auth.ToyotaOneAuth()
         auth._expires_at = 0
         auth._refresh_token = "saved-refresh"
+        tokens = auth.get_tokens()
         response = AsyncMock()
         response.__aenter__.return_value = response
         session = MagicMock()
         session.__aenter__.return_value = session
         session.post.return_value = response
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
-            for status in (429, 503):
-                response.status = status
-                error = aiohttp.ClientResponseError(MagicMock(), (), status=status)
-                response.raise_for_status = MagicMock(side_effect=error)
-                with self.subTest(status=status), self.assertRaises(aiohttp.ClientResponseError):
-                    await auth.check_tokens()
-                self.assertEqual(auth._refresh_token, "saved-refresh")
-            response.status = 400
-            with self.assertRaises(TokenExpired):
-                await auth.check_tokens()
+            for status, body, expired in (
+                (400, {"error": "invalid_grant"}, True),
+                (401, {"error": "invalid_grant"}, True),
+                (400, {"error": "invalid_request"}, False),
+                (400, {"error": "invalid_client"}, False),
+                (401, {"error": "invalid_client"}, False),
+                (400, {}, False),
+                (401, {}, False),
+                (400, None, False),
+                (400, ["invalid_grant"], False),
+                (400, "invalid_grant", False),
+                (400, ValueError("Non-JSON error body"), False),
+                (401, ValueError("Non-JSON error body"), False),
+                (429, {"error": "invalid_grant"}, False),
+                (500, {"error": "invalid_grant"}, False),
+                (503, {}, False),
+            ):
+                with self.subTest(status=status, body=body):
+                    session.post.reset_mock()
+                    response.status = status
+                    response.json.side_effect = body if isinstance(body, ValueError) else None
+                    response.json.return_value = body
+                    error = aiohttp.ClientResponseError(MagicMock(), (), status=status)
+                    response.raise_for_status = MagicMock(side_effect=error)
+                    expected = TokenExpired if expired else aiohttp.ClientResponseError
+                    with self.assertRaises(expected) as caught:
+                        await auth.check_tokens()
+                    if not expired:
+                        self.assertIs(error, caught.exception)
+                    self.assertEqual(tokens, auth.get_tokens())
+                    session.post.assert_called_once()
 
     async def test_login_pauses_for_otp_before_exchanging_tokens(self):
         challenge = {"callbacks": []}

@@ -297,7 +297,12 @@ async def refresh_tokens(self):
     async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.post(ToyotaOneAuth.ACCESS_TOKEN_URL, data=data) as resp:
             if resp.status in (400, 401):
-                raise LoginError()
+                try:
+                    error = await resp.json(content_type=None)
+                except ValueError:
+                    error = None
+                if isinstance(error, dict) and error.get("error") == "invalid_grant":
+                    raise LoginError()
             resp.raise_for_status()
             self._extract_tokens(await resp.json())
 
