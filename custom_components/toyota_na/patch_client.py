@@ -779,8 +779,10 @@ async def _wait_for_remote_command_result(
         if callback.get("vin") != vin:
             continue
         callback_request_no = callback.get("appRequestNo")
+        # Request numbers are optional; Toyota's app matches callbacks by VIN.
         if (
             request_no is not None
+            and callback_request_no is not None
             and str(callback_request_no) != str(request_no)
         ):
             continue
@@ -868,8 +870,8 @@ async def save_charge_schedule(self, vin, generation, schedule, region="US", bra
 
 
 async def _run_appsync_operation(self, vin, submit, region, *, fail_on_unknown=False):
-    # Commands without a request number use VIN-only callbacks. Keep this
-    # account's operations for a vehicle sequential.
+    # Callbacks can omit request numbers, so serialize this account's
+    # operations for each vehicle.
     if not hasattr(self, "_remote_locks"):
         self._remote_locks = {}
     lock = self._remote_locks.setdefault(vin, asyncio.Lock())

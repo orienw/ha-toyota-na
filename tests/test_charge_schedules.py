@@ -317,49 +317,36 @@ class ScheduleDiscoveryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AppSyncScheduleTests(unittest.IsolatedAsyncioTestCase):
-    async def test_schedule_writes_match_both_response_id_fields(self):
-        class CallbackSocket(transport._WebSocket):
-            def __init__(self):
-                super().__init__()
-                self.callbacks = [
-                    {"vin": "OTHER", "appRequestNo": 42, "status": "COMPLETED"},
-                    {"vin": "TESTVIN24", "appRequestNo": 41, "status": "COMPLETED"},
-                    {"vin": "TESTVIN24", "appRequestNo": 41, "status": "ERROR"},
-                    {"vin": "TESTVIN24", "status": "COMPLETED"},
-                    {"vin": "TESTVIN24", "status": "ERROR"},
-                    {"vin": "TESTVIN24", "appRequestNo": "42", "status": "COMPLETED"},
-                ]
-
-            async def receive(self):
-                if self.stage < 2:
-                    return await super().receive()
-                return transport._Message({
-                    "type": "data", "id": self.subscription_id,
-                    "payload": {"data": {"onPostRemoteCallback": self.callbacks.pop(0)}},
-                })
-
+    async def test_schedule_writes_match_response_ids_when_callbacks_include_them(self):
         for generation in ("24MM", "26BEV"):
             for method in ("POST", "PUT", "DELETE"):
                 for identifiers in (
                     {"appRequestNo": 42}, {"correlationId": "42"},
                     {"appRequestNo": 42, "correlationId": "other"},
                 ):
-                    with self.subTest(generation=generation, method=method, identifiers=identifiers):
-                        websocket = CallbackSocket()
-                        client = types.SimpleNamespace(
-                            auth=transport._Auth(), api_request=AsyncMock(return_value={
-                                "returnCode": "ONE-RES-10000", **identifiers,
-                            }),
-                        )
-                        body = {key: value for key, value in SCHEDULE.items() if method != "POST" or key != "settingId"}
-                        with patch.object(transport.patch_client.aiohttp, "ClientSession", return_value=transport._WebSocketSession(websocket)):
-                            result = await transport.patch_client.save_charge_schedule(
-                                client, "TESTVIN24", generation, body, delete=method == "DELETE",
+                    for fields in ({}, {"appRequestNo": None}, {"appRequestNo": "42"}):
+                        with self.subTest(generation=generation, method=method, identifiers=identifiers, fields=fields):
+                            callback = {"vin": "TESTVIN24", "status": "COMPLETED", **fields}
+                            websocket = transport._CallbackWebSocket([
+                                {"vin": "OTHER", "status": "COMPLETED", **fields},
+                                {"vin": "TESTVIN24", "appRequestNo": 41, "status": "COMPLETED"},
+                                {"vin": "TESTVIN24", "appRequestNo": 41, "status": "ERROR"},
+                                callback,
+                            ])
+                            client = types.SimpleNamespace(
+                                auth=transport._Auth(), api_request=AsyncMock(return_value={
+                                    "returnCode": "ONE-RES-10000", **identifiers,
+                                }),
                             )
-                        self.assertEqual("42", result["appRequestNo"])
-                        self.assertEqual([], websocket.callbacks)
-                        client.api_request.assert_awaited_once()
-                        self.assertEqual(method, client.api_request.call_args.args[0])
+                            body = {key: value for key, value in SCHEDULE.items() if method != "POST" or key != "settingId"}
+                            with patch.object(transport.patch_client.aiohttp, "ClientSession", return_value=transport._WebSocketSession(websocket)):
+                                result = await transport.patch_client.save_charge_schedule(
+                                    client, "TESTVIN24", generation, body, delete=method == "DELETE",
+                                )
+                            self.assertEqual(callback, result)
+                            self.assertEqual([], websocket.callbacks)
+                            client.api_request.assert_awaited_once()
+                            self.assertEqual(method, client.api_request.call_args.args[0])
 
     async def test_routed_schedule_subscribes_before_write_and_waits_for_callback(self):
         websocket = transport._WebSocket()

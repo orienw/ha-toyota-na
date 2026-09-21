@@ -83,6 +83,20 @@ class _SocketContext:
         return False
 
 
+class _CallbackWebSocket(_WebSocket):
+    def __init__(self, callbacks):
+        super().__init__()
+        self.callbacks = list(callbacks)
+
+    async def receive(self):
+        if self.stage < 2:
+            return await super().receive()
+        return _Message({
+            "type": "data", "id": self.subscription_id,
+            "payload": {"data": {"onPostRemoteCallback": self.callbacks.pop(0)}},
+        })
+
+
 class _StatusWebSocket(_WebSocket):
     def __init__(self, statuses):
         super().__init__()
@@ -170,6 +184,36 @@ class _HttpClient:
 
 
 class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_remote_commands_accept_callbacks_without_a_request_number(self):
+        for command in ("door-lock", "engine-start", "immediate-charge", "resume-charge", "charge-stop", "power-supply-stop"):
+            for fields in ({}, {"appRequestNo": None}):
+                with self.subTest(command=command, fields=fields):
+                    callback = {"vin": "TESTVIN24", "status": "COMPLETED", **fields}
+                    websocket = _CallbackWebSocket([
+                        {"vin": "OTHER", "status": "COMPLETED", **fields},
+                        {"vin": "TESTVIN24", "appRequestNo": 41, "status": "ERROR"},
+                        {"vin": "TESTVIN24", "status": "IN_PROGRESS", **fields},
+                        callback,
+                    ])
+                    client = _CommandClient()
+                    with patch.object(patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)):
+                        result = await patch_client.remote_request_24mm(client, "TESTVIN24", command)
+                    self.assertEqual(callback, result)
+                    self.assertEqual([], websocket.callbacks)
+                    self.assertEqual([("TESTVIN24", command, "US")], client.command_calls)
+
+    async def test_remote_failures_without_a_request_number_report_the_callback(self):
+        for command in ("door-lock", "immediate-charge"):
+            for fields in ({}, {"appRequestNo": None}):
+                with self.subTest(command=command, fields=fields):
+                    websocket = _CallbackWebSocket([{
+                        "vin": "TESTVIN24", "status": "ERROR", "message": "Vehicle rejected the operation", **fields,
+                    }])
+                    with patch.object(patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)):
+                        with self.assertRaisesRegex(RuntimeError, "Vehicle rejected the operation"):
+                            await patch_client.remote_request_24mm(_CommandClient(), "TESTVIN24", command)
+                    self.assertEqual([], websocket.callbacks)
+
     async def test_callbacks_without_an_id_work_when_no_request_number_was_returned(self):
         callback = {"vin": "TESTVIN24", "status": "COMPLETED"}
         with patch.object(patch_client, "_receive_remote_socket_message", AsyncMock(return_value={
