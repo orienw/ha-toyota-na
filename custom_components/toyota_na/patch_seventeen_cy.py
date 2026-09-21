@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 
 from toyota_na.client import ToyotaOneClient
+from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
@@ -61,6 +62,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         "Other Trunk": VehicleFeatures.Trunk,
         "Other Moonroof": VehicleFeatures.Moonroof,
         "Other Hood": VehicleFeatures.Hood,
+        "Other Back window": VehicleFeatures.GlassHatch,
+        "Other Glass Hatch": VehicleFeatures.GlassHatch,
     }
 
     _vehicle_telemetry_map = {
@@ -91,6 +94,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         backdoor_type: Optional[str] = None,
         remote_capabilities: Optional[dict] = None,
         extended_capabilities: Optional[dict] = None,
+        feature_flags: Optional[dict] = None,
+        legacy_capabilities: Optional[list] = None,
     ):
         self._has_remote_subscription = has_remote_subscription
         self._has_electric = has_electric
@@ -109,6 +114,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             backdoor_type,
             remote_capabilities,
             extended_capabilities,
+            feature_flags,
+            legacy_capabilities,
         )
         self._feature_timestamps = {}
 
@@ -125,13 +132,15 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
     async def update(self):
         
         try:
-            if self._has_remote_subscription:
+            if self.can_receive_status:
                 # vehicle_health_status
                 vehicle_status = await self._client.get_vehicle_status_17cy(
                     self._vin, self._region
                 )
                 if vehicle_status:
                     self._parse_vehicle_status(vehicle_status)
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error parsing vehicle status: %s", e)
             pass
@@ -145,42 +154,52 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             )
             if telemetry:
                 self._parse_telemetry(telemetry)
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error parsing telemetry: %s", e)
             pass
 
         try:
-            # engine_status
-            engine_status = await self._client.get_engine_status_17cy(
-                self._vin, self._region
-            )
-            if engine_status:
-                self._parse_engine_status(engine_status)
+            await self.poll_engine_status()
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error parsing engine status: %s", e)
             pass
 
         try:
-            if self._has_electric:
+            if self.electric:
                 # electric_status
                 electric_status = await self._client.get_electric_status(
                     self.vin, region=self._region, generation=self.api_generation
                 )
                 if electric_status:
                     self._parse_electric_status(electric_status)
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error parsing electric status: %s", e)
             pass
 
+        try:
+            await self.update_climate()
+        except AuthError:
+            raise
+        except Exception as e:
+            _LOGGER.debug("Error fetching climate settings: %s", e)
+
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
+        if not self.supports_command(RemoteRequestCommand.Refresh):
+            raise ValueError("Vehicle refresh is unavailable for this vehicle.")
         await self._client.send_refresh_request_17cy(
             self._vin, self._region
         )
 
         """Tell Toyota to refresh electric status if applicable"""
         try:
-            if self._has_electric:
+            if self.electric:
                 # electric_status
                 electric_status = await self._client.get_electric_realtime_status(
                     self.vin,
@@ -189,12 +208,22 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 )
                 if electric_status:
                     self._parse_electric_status(electric_status)
+        except AuthError:
+            raise
         except Exception as e:
             _LOGGER.debug("Error refreshing electric status: %s", e)
             pass
 
     async def send_command(self, command: RemoteRequestCommand) -> None:
         """Start the engine. Periodically refreshes the vehicle status to determine if the engine is running."""
+        if not self.supports_command(command):
+            raise ValueError("This command is unavailable for this vehicle.")
+        if command in self._EXTENDED_COMMANDS:
+            await self.send_extended_command(command)
+            return
+        if command == RemoteRequestCommand.ChargeStart:
+            await self.send_charging_command(command)
+            return
         await self._client.remote_request_17cy(
             self._vin,
             self._command_map[command],
@@ -230,19 +259,26 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         if not electric_status:
             return
         vehicle_info = electric_status.get("vehicleInfo") or {}
+        observed_at = parse_api_timestamp(vehicle_info.get("acquisitionDatetime"))
+        self._store_charge_schedules(vehicle_info.get("timerChargeInfo"), observed_at)
+        if isinstance(vehicle_info.get("maxNoOfChargeSchedules"), int):
+            self._charge_settings["maxNoOfChargeSchedules"] = vehicle_info["maxNoOfChargeSchedules"]
         charge_info = vehicle_info.get("chargeInfo") or {}
         if not charge_info:
             return
 
-        observed_at = parse_api_timestamp(vehicle_info.get("acquisitionDatetime"))
-        distance_unit = charge_info.get("evDistanceUnit", "")
+        self._store_numeric(
+            VehicleFeatures.ChargingState, charge_info.get("plugStatus"), "", observed_at
+        )
+        distance_unit = charge_info.get("evDistanceUnit") or "mi"
         for key, feature, unit in (
             ("evDistance", VehicleFeatures.ChargeDistance, distance_unit),
             ("evDistanceAC", VehicleFeatures.ChargeDistanceAC, distance_unit),
             ("chargeRemainingAmount", VehicleFeatures.ChargeLevel, "%"),
             ("plugStatus", VehicleFeatures.PlugStatus, ""),
-            ("remainingChargeTime", VehicleFeatures.RemainingChargeTime, ""),
-            ("evTravelableDistance", VehicleFeatures.EvTravelableDistance, ""),
+            ("remainingChargeTime", VehicleFeatures.RemainingChargeTime, "min"),
+            ("evTravelableDistance", VehicleFeatures.EvTravelableDistance, distance_unit),
+            ("gasolineTravelableDistance", VehicleFeatures.GasolineRange, distance_unit),
             ("chargeType", VehicleFeatures.ChargeType, ""),
             ("connectorStatus", VehicleFeatures.ConnectorStatus, ""),
         ):
@@ -300,6 +336,10 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             return False
         if observed_at is not None:
             self._feature_timestamps[(feature, "value")] = observed_at
+        if value == 65535 and feature in (
+            VehicleFeatures.RemainingChargeTime, VehicleFeatures.RemainingChargeTimeTo80,
+        ):
+            value = None
         self._features[feature] = ToyotaNumeric(value, unit)
         return True
 
@@ -357,6 +397,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 closed, locked = opening_state_from_values(
                     section.get("values", [])
                 )
+                if feature == VehicleFeatures.GlassHatch:
+                    locked = None
                 self._store_opening(feature, closed, locked, observed_at)
 
     #
@@ -370,8 +412,8 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         observed_at = parse_api_timestamp(telemetry.get("lastTimestamp"))
         tire_observed_at = parse_api_timestamp(telemetry.get("tirePressureTimestamp"))
         if observed_at is not None:
-            self._features[VehicleFeatures.LastTimeStamp] = ToyotaNumeric(
-                observed_at.timestamp(), ""
+            self._store_numeric(
+                VehicleFeatures.LastTimeStamp, observed_at.timestamp(), observed_at=observed_at,
             )
 
         for key, value in telemetry.items():

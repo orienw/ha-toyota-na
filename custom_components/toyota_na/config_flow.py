@@ -4,16 +4,11 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 
-from toyota_na import ToyotaOneAuth, ToyotaOneClient
+from toyota_na import ToyotaOneClient
 from toyota_na.exceptions import AuthError
 
-# Patch auth code
-from .patch_auth import authorize, login
-
-ToyotaOneAuth.authorize = authorize
-ToyotaOneAuth.login = login
-
 from .const import DOMAIN, REFRESH_STATUS_INTERVAL
+from .patch_auth import SsoAccountError
 from .wake_policy import (
     CONF_WAKE_INTERVAL,
     WAKE_INTERVAL_OPTIONS,
@@ -33,7 +28,9 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return ToyotaNAOptionsFlow(config_entry)
 
     async def async_step_user(self, user_input=None):
-        errors = {}
+        return await self._async_user_step(user_input, {})
+
+    async def _async_user_step(self, user_input, errors):
         if user_input is not None:
             try:
                 self.client = ToyotaOneClient()
@@ -45,6 +42,9 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return await self.async_step_otp()
                 data = await self.async_get_entry_data(self.client, authorization)
                 return await self.async_create_or_update_entry(data)
+            except SsoAccountError:
+                errors["base"] = "sso_account"
+                _LOGGER.error("Toyota account requires identity provider sign-in")
             except AuthError:
                 errors["base"] = "not_logged_in"
                 _LOGGER.error("Not logged in with username and password")
@@ -70,6 +70,9 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 data = await self.async_get_entry_data(self.client, authorization)
                 return await self.async_create_or_update_entry(data)
+            except SsoAccountError:
+                _LOGGER.error("Toyota account requires identity provider sign-in")
+                return await self._async_user_step(None, {"base": "sso_account"})
             except AuthError:
                 errors["base"] = "otp_not_logged_in"
                 _LOGGER.error("Not logged in with one time password")
@@ -89,14 +92,27 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "tokens": client.auth.get_tokens(),
             "email": id_info["email"],
             "username": self.user_info["username"],
-            "password": self.user_info["password"],
         }
 
     async def async_create_or_update_entry(self, data):
+        if self.source == config_entries.SOURCE_REAUTH:
+            entry = self._get_reauth_entry()
+            guid = entry.data.get("tokens", {}).get("guid")
+            same_account = (
+                guid == data["tokens"].get("guid") if guid
+                else entry.data["email"].casefold() == data["email"].casefold()
+            )
+            if not same_account:
+                return self.async_abort(reason="reauth_wrong_account")
+            entry_data = {**entry.data, **data}
+            entry_data.pop("password", None)
+            return self.async_update_reload_and_abort(entry, data=entry_data)
         existing_entry = await self.async_set_unique_id(f"{DOMAIN}:{data['email']}")
         if existing_entry:
+            entry_data = {**existing_entry.data, **data}
+            entry_data.pop("password", None)
             self.hass.config_entries.async_update_entry(
-                existing_entry, data={**existing_entry.data, **data}
+                existing_entry, data=entry_data
             )
             await self.hass.config_entries.async_reload(existing_entry.entry_id)
             return self.async_abort(reason="reauth_successful")

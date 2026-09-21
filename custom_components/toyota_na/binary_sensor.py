@@ -45,10 +45,6 @@ async def async_setup_entry(
                     bool, entity_config["electric"]
                 ):
                     continue
-                if vehicle.subscribed is False and cast(
-                    bool, entity_config["subscription"]
-                ):
-                    continue
                 feature = cast(VehicleFeatures, entity_config["feature"])
                 unsupported_backdoor_types = (
                     _STRUCTURALLY_UNSUPPORTED_BACKDOOR_TYPES.get(feature)

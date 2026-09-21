@@ -21,9 +21,14 @@ _LOCK_STATES = {
 _BACKDOOR_TYPES = ("hatch", "trunk", "tailgate")
 
 
+def is_appsync_generation(api_generation: str) -> bool:
+    """Return whether vehicle status and commands use AppSync."""
+    return api_generation in ("24MM", "26BEV")
+
+
 def endpoint_generation(api_generation: str) -> str:
     """Return the generation name expected by the legacy REST endpoints."""
-    if api_generation in ("21MM", "24MM"):
+    if api_generation == "21MM" or is_appsync_generation(api_generation):
         return "17CYPLUS"
     return api_generation
 
@@ -89,13 +94,24 @@ def normalize_engine_state(value: Any) -> bool | None:
     return None
 
 
+def can_extend_remote_runtime(engine: Mapping[str, Any]) -> bool:
+    stop_time = parse_api_timestamp(engine.get("stopTime"))
+    return (
+        engine.get("running") is True
+        and str(engine.get("lastUpdateBy", "")).lower() == "remote"
+        and bool(engine.get("status"))
+        and str(engine["status"]).lower() not in ("pending", "extendedrunning")
+        and stop_time is not None and stop_time > datetime.now(timezone.utc)
+    )
+
+
 def normalize_charging_state(value: Any) -> bool | None:
     """Distinguish active charging from waiting, completion, and power supply."""
     normalized = str(value).lower()
     if normalized in ("charging", "40", "56", "active", "in_progress", "in-progress"):
         return True
     if normalized in (
-        "36", "45", "60", "charge_now", "resume_charging", "no_controls",
+        "12", "36", "45", "60", "unplugged", "charge_now", "resume_charging", "no_controls",
         "unavailable", "external_power_active", "external_power_active_hybrid",
     ):
         return False
@@ -107,14 +123,21 @@ def opening_state_from_values(
 ) -> tuple[bool | None, bool | None]:
     """Extract position and lock state without relying on response order."""
     closed = None
-    locked = None
+    active_locks = set()
+    fallback_locks = set()
     for item in values:
         value = item.get("value")
         if closed is None:
             closed = normalize_position(value)
-        if locked is None:
-            locked = normalize_lock(value)
-    return closed, locked
+        locked = normalize_lock(value)
+        if locked is not None:
+            # A reported locked value can carry status=0.
+            if locked or "status" not in item:
+                fallback_locks.add(locked)
+            if item.get("status") == 1:
+                active_locks.add(locked)
+    locks = active_locks or fallback_locks
+    return closed, next(iter(locks)) if len(locks) == 1 else None
 
 
 def opening_state_from_graphql(

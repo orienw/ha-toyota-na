@@ -40,11 +40,27 @@ class BinarySensorDeviceClass(Enum):
     LOCK = "lock"
     RUNNING = "running"
     WINDOW = "window"
+    PROBLEM = "problem"
 
 
 class SensorStateClass(Enum):
     MEASUREMENT = "measurement"
     TOTAL_INCREASING = "total_increasing"
+
+
+class SensorDeviceClass(Enum):
+    ENUM = "enum"
+    SPEED = "speed"
+    TIMESTAMP = "timestamp"
+
+
+class SensorEntity:
+    state = property(lambda self: self.native_value)
+    unit_of_measurement = property(lambda self: self.native_unit_of_measurement)
+    state_class = property(lambda self: self._attr_state_class)
+    device_class = property(lambda self: self._attr_device_class)
+    options = property(lambda self: self._attr_options)
+    entity_registry_enabled_default = True
 
 
 class SourceType(Enum):
@@ -74,6 +90,10 @@ class DataUpdateCoordinator(Subscriptable):
 
     async def async_request_refresh(self):
         self.refreshes += 1
+
+    def async_set_updated_data(self, data):
+        self.data = data
+        self.notify_listeners()
 
     def async_add_listener(self, listener):
         self.listeners.append(listener)
@@ -106,6 +126,13 @@ class LockEntity:
 
 
 class ConfigFlow:
+    def __init__(self):
+        self.context = {"source": "user"}
+
+    @property
+    def source(self):
+        return self.context["source"]
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__()
 
@@ -126,6 +153,13 @@ binary_sensor.BinarySensorDeviceClass = BinarySensorDeviceClass
 binary_sensor.BinarySensorEntity = type("BinarySensorEntity", (), {})
 button_component = module("homeassistant.components.button")
 button_component.ButtonEntity = type("ButtonEntity", (), {})
+number_component = module("homeassistant.components.number")
+number_component.NumberEntity = type("NumberEntity", (), {})
+number_component.NumberDeviceClass = types.SimpleNamespace(TEMPERATURE="temperature")
+switch_component = module("homeassistant.components.switch")
+switch_component.SwitchEntity = type("SwitchEntity", (), {})
+select_component = module("homeassistant.components.select")
+select_component.SelectEntity = type("SelectEntity", (), {})
 lock_component = module("homeassistant.components.lock")
 lock_component.LockEntity = LockEntity
 device_tracker_component = module("homeassistant.components.device_tracker")
@@ -133,10 +167,13 @@ device_tracker_component.SourceType = SourceType
 device_tracker_component.TrackerEntity = type("TrackerEntity", (), {})
 sensor = module("homeassistant.components.sensor")
 sensor.SensorStateClass = SensorStateClass
+sensor.SensorDeviceClass = SensorDeviceClass
+sensor.SensorEntity = SensorEntity
 
 config_entries = module("homeassistant.config_entries")
 config_entries.ConfigEntry = ConfigEntry
 config_entries.ConfigFlow = ConfigFlow
+config_entries.SOURCE_REAUTH = "reauth"
 config_entries.OptionsFlow = OptionsFlow
 core = module("homeassistant.core")
 core.callback = lambda function: function
@@ -144,9 +181,12 @@ core.HomeAssistant = type("HomeAssistant", (), {})
 core.ServiceCall = type("ServiceCall", (), {})
 exceptions = module("homeassistant.exceptions")
 exceptions.ConfigEntryAuthFailed = type("ConfigEntryAuthFailed", (Exception,), {})
+exceptions.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
 ha_const = module("homeassistant.const")
 ha_const.PERCENTAGE = "%"
 ha_const.UnitOfPressure = UnitOfPressure
+ha_const.UnitOfTemperature = types.SimpleNamespace(CELSIUS="°C", FAHRENHEIT="°F")
+ha_const.EntityCategory = types.SimpleNamespace(CONFIG="config", DIAGNOSTIC="diagnostic")
 ha_const.UnitOfLength = types.SimpleNamespace(MILES="mi", KILOMETERS="km")
 module("homeassistant.util")
 unit_conversion = module("homeassistant.util.unit_conversion")
@@ -154,6 +194,7 @@ unit_conversion.PressureConverter = types.SimpleNamespace(convert=mock.Mock())
 entity = module("homeassistant.helpers.entity")
 entity.DeviceInfo = dict
 device_registry = module("homeassistant.helpers.device_registry")
+device_registry.DeviceEntry = types.SimpleNamespace
 device_registry.async_get = lambda hass: hass.device_registry
 entity_registry = module("homeassistant.helpers.entity_registry")
 entity_registry.async_get = lambda hass: hass.entity_registry
@@ -208,6 +249,10 @@ runtime_spec.loader.exec_module(integration_runtime)
 
 
 class FakeVehicle:
+    _feature_flags = None
+    uses_appsync = True
+    feature_enabled = ToyotaVehicle.feature_enabled
+
     def __init__(self, supported, vin="TESTVIN"):
         self.vin = vin
         self.subscribed = True
@@ -222,7 +267,13 @@ class FakeVehicle:
         self.brand = "L"
 
     def supports_command(self, command):
+        if command == RemoteRequestCommand.Refresh:
+            return self.subscribed
         return command in self.supported
+
+    @property
+    def can_receive_status(self):
+        return True
 
     async def send_command(self, command):
         self.sent.append(command)
@@ -545,7 +596,7 @@ class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
     async def test_native_and_missing_pressure_values_do_not_need_conversion(self):
         vehicle = FakeVehicle(set())
         coordinator = DataUpdateCoordinator([vehicle])
-        pressure = sensor_platform.ToyotaNumericSensor(
+        pressure = sensor_platform.ToyotaSensor(
             VehicleFeatures.SpareTirePressure,
             "mdi:car-tire-alert",
             "psi",
@@ -607,7 +658,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         with (
             mock.patch.object(integration_runtime, "get_vehicles", mock.AsyncMock(return_value=vehicles)),
             mock.patch.object(integration_runtime, "automatic_wake_due", return_value=False),
-            self.assertLogs(integration_runtime.__name__, level="WARNING"),
+            self.assertNoLogs(integration_runtime.__name__, level="WARNING"),
         ):
             result = await integration_runtime.update_vehicles_status(
                 FakeHass(coordinator), client, ConfigEntry(), coordinator,
@@ -616,6 +667,7 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
         handler.update_vehicle_contexts.assert_awaited_once_with({
             "NEWVIN": {"region": "CA", "backdoor_type": "trunk"},
             "OTHERNEWVIN": {"region": "CA", "backdoor_type": "trunk"},
+            "EXPIREDVIN": {"region": "CA", "backdoor_type": "trunk"},
         })
 
     async def test_automatic_wakes_schedule_one_followup_poll(self):

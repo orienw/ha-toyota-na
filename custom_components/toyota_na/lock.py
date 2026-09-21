@@ -126,7 +126,8 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
                 self.async_write_ha_state()
                 raise
             record_vehicle_wake(self.hass, self._config_entry, self.vin)
-            self.hass.async_create_task(self._background_refresh())
+            task = self.hass.async_create_task(self._background_refresh())
+            self._config_entry.async_on_unload(task.cancel)
 
     async def _background_refresh(self):
         """Refresh coordinator state after a remote command."""

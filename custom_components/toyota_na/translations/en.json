@@ -17,9 +17,14 @@
         }
       }
     },
+    "abort": {
+      "reauth_successful": "Authentication updated.",
+      "reauth_wrong_account": "Sign in with the Toyota or Lexus account already configured for this integration."
+    },
     "error": {
       "not_logged_in": "Not logged in",
       "otp_not_logged_in": "Invalid verification code",
+      "sso_account": "Apple, Google, and Facebook sign-in are not supported. Sign out of the Toyota app and sign in with the same email address that Apple, Google, or Facebook uses, then tap Forgot password to set a password. Sign in here with that email and password.",
       "unknown": "Unexpected error"
     }
   },
@@ -27,9 +32,34 @@
     "step": {
       "init": {
         "title": "Vehicle status updates",
-        "description": "Home Assistant keeps checking Toyota's cloud for available status without waking the vehicle. Cloud data may remain unchanged until the vehicle contacts Toyota. Choose how often Home Assistant should also wake the vehicle to request fresh status. Select Cloud updates only to disable automatic wakes. Refresh Status and remote commands remain available.",
+        "description": "Home Assistant always reads Toyota's cloud data. That data stays unchanged until the vehicle contacts Toyota. Choose Cloud updates only to skip scheduled wakes. Refresh Status and remote commands stay available.",
         "data": {
           "automatic_wake_interval": "Wake vehicle for fresh status"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "plug_state": {
+        "state": {
+          "unplugged": "Unplugged",
+          "waiting": "Waiting to charge",
+          "charging": "Charging",
+          "charge_complete": "Charging complete",
+          "fast_charging": "Fast charging",
+          "fast_charge_complete": "Fast charging complete",
+          "paused": "Charging paused",
+          "power_supply": "Supplying power",
+          "plugged_in": "Plugged in"
+        }
+      },
+      "connector_state": {
+        "state": {
+          "disconnected": "Disconnected",
+          "unlocked": "Unlocked",
+          "locked": "Locked",
+          "connected": "Connected"
         }
       }
     }

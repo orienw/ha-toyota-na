@@ -223,6 +223,31 @@ class VehicleMetadataTests(unittest.TestCase):
 
 
 class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_vehicle_names_do_not_block_other_vehicles(self):
+        client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
+            {"vin": "MISSING", "generation": "21MM"},
+            {"vin": "NULL", "generation": "17CY", "modelName": None, "modelYear": None},
+            {**LEXUS_21MM_COUPE, "vin": "COMPLETE"},
+        ]))
+        with (
+            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
+            patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
+        ):
+            vehicles = await get_vehicles(client)
+        self.assertEqual(["MISSING", "NULL", "COMPLETE"], [vehicle.vin for vehicle in vehicles])
+        self.assertEqual(["Vehicle", "Vehicle", "LC 500 2-DOOR COUPE"], [vehicle.model_name for vehicle in vehicles])
+        self.assertEqual(["", "", "2024"], [vehicle.model_year for vehicle in vehicles])
+
+    async def test_missing_vehicle_names_preserve_previous_identity(self):
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(return_value=[{"vin": "TESTVIN", "generation": "21MM"}]),
+            _vehicle_state_cache={"TESTVIN": make_vehicle()},
+        )
+        with patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()):
+            vehicle = (await get_vehicles(client))[0]
+        self.assertEqual("LC 500 2-DOOR COUPE", vehicle.model_name)
+        self.assertEqual("2024", vehicle.model_year)
+
     async def test_vehicle_finder_uses_newer_remote_command(self):
         calls = []
 
@@ -631,6 +656,77 @@ class VehicleStateTests(unittest.TestCase):
                     })
                     self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
 
+    def test_unplugging_clears_charging_without_accepting_older_status(self):
+        for make in (make_vehicle, make_17cy_vehicle):
+            vehicle = make()
+            for timestamp, code, charging in (
+                ("07:00:00", 40, True),
+                ("07:02:00", 12, False),
+                ("07:01:00", 40, False),
+            ):
+                vehicle._parse_electric_status({
+                    "vehicleInfo": {
+                        "acquisitionDatetime": f"2026-09-15T{timestamp}Z",
+                        "chargeInfo": {"plugStatus": code},
+                    },
+                })
+                self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
+
+    def test_rest_unavailable_charge_time_clears_estimate_and_preserves_order(self):
+        for make in (make_vehicle, make_17cy_vehicle):
+            vehicle = make()
+            for timestamp, value, expected in (
+                ("07:00:00", 30, 30),
+                ("07:02:00", 65535, None),
+                ("07:01:00", 20, None),
+                ("07:03:00", None, None),
+                ("07:04:00", 0, 0),
+            ):
+                vehicle._parse_electric_status({
+                    "vehicleInfo": {
+                        "acquisitionDatetime": f"2026-09-15T{timestamp}Z",
+                        "chargeInfo": {"remainingChargeTime": value},
+                    },
+                })
+                feature = vehicle.features[VehicleFeatures.RemainingChargeTime]
+                self.assertEqual(feature.value, expected)
+                self.assertEqual(feature.unit, "min")
+
+    def test_appsync_unplugged_connector_clears_charging(self):
+        for code in ("12", "unplugged"):
+            vehicle = make_24mm_vehicle()
+            for timestamp, fields, charging in (
+                ("07:00:00", {"chargingState": "charging"}, True),
+                ("07:02:00", {"connector": {"plugStatus": code}}, False),
+                ("07:01:00", {"chargingState": "charging"}, False),
+            ):
+                vehicle.apply_graphql_status({"electric": {"charging": {
+                    "lastUpdateDateTime": f"2026-09-15T{timestamp}Z", **fields,
+                }}})
+                self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
+
+    def test_appsync_unavailable_charge_times_clear_only_newer_estimates(self):
+        vehicle = make_24mm_vehicle()
+        for timestamp, value, expected in (
+            ("07:00:00", 30, 30),
+            ("07:02:00", 65535, None),
+            ("07:01:00", 20, None),
+            ("07:03:00", None, None),
+            ("07:04:00", 0, 0),
+        ):
+            vehicle.apply_graphql_status({
+                "electric": {"charging": {
+                    "lastUpdateDateTime": f"2026-09-15T{timestamp}Z",
+                    "remainingChargeTime": {"value": value, "unit": "min"},
+                    "remainingChargeTimeTo80Percent": {"value": value, "unit": "min"},
+                }},
+            })
+            for key in (VehicleFeatures.RemainingChargeTime, VehicleFeatures.RemainingChargeTimeTo80):
+                self.assertEqual(vehicle.features[key].value, expected)
+
+        vehicle.apply_graphql_status({"telemetry": {"odo": {"value": 65535, "unit": "mi"}}})
+        self.assertEqual(vehicle.features[VehicleFeatures.Odometer].value, 65535)
+
     def test_partial_electric_status_preserves_existing_values(self):
         for make in (make_vehicle, make_17cy_vehicle):
             vehicle = make()
@@ -767,7 +863,6 @@ class VehicleStateTests(unittest.TestCase):
             ("_vin", "OTHERVIN"),
             ("_region", "CA"),
             ("_generation", ApiVehicleGeneration.MM24),
-            ("_has_remote_subscription", False),
             ("_has_electric", True),
         ):
             with self.subTest(attribute=attribute):
@@ -816,6 +911,30 @@ class VehicleStateTests(unittest.TestCase):
         door = vehicle.features[VehicleFeatures.FrontDriverDoor]
         self.assertTrue(door.closed)
         self.assertFalse(door.locked)
+
+    def test_legacy_lock_flags_override_inactive_and_unflagged_values(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            for values, expected in (
+                ([{"value": "locked", "status": 0}], True),
+                ([{"value": "locked", "status": None}], True),
+                ([{"value": "locked", "status": "0"}], True),
+                ([{"value": "locked", "status": 0}, {"value": "unlocked", "status": 0}], True),
+                ([{"value": "unlocked", "status": 0}, {"value": "locked", "status": 1}], True),
+                ([{"value": "locked", "status": 0}, {"value": "unlocked", "status": 1}], False),
+                ([{"value": "locked"}, {"value": "unlocked", "status": 1}], False),
+                ([{"value": "unlocked", "status": 0}], None),
+                ([{"value": "locked", "status": 1}, {"value": "unlocked", "status": 1}], None),
+                ([{"value": "unknown", "status": 0}], None),
+            ):
+                for ordered in (values, list(reversed(values))):
+                    with self.subTest(make=make.__name__, values=ordered):
+                        vehicle = make()
+                        vehicle._parse_vehicle_status({"vehicleStatus": [{
+                            "category": "Driver Side",
+                            "sections": [{"section": "Door", "values": ordered}],
+                        }]})
+                        door = vehicle.features.get(VehicleFeatures.FrontDriverDoor)
+                        self.assertIs(door.locked if door else None, expected)
 
     def test_legacy_unknown_status_does_not_become_open(self):
         vehicle = SeventeenCYToyotaVehicle(
@@ -1242,7 +1361,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                     "sections": [
                         {
                             "section": "Door",
-                            "values": [{"value": "closed"}, {"value": "locked"}],
+                            "values": [{"value": "closed", "status": 0}, {"value": "locked", "status": 0}],
                         },
                     ],
                 },

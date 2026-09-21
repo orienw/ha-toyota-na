@@ -1,11 +1,12 @@
-from typing import Any, Union, cast
+from datetime import datetime, timezone
+from typing import Any
 
 from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
 from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 
-from homeassistant.components.sensor import SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfLength, UnitOfPressure
+from homeassistant.const import UnitOfPressure
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -21,101 +22,90 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_devices: AddEntitiesCallback,
 ):
-    """Set up the sensor platform."""
+    """Set up vehicle sensors."""
     coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
         config_entry.entry_id
     ]["coordinator"]
 
     def discover_sensors():
         for vehicle in coordinator.data or []:
-            for entity_config in SENSORS:
-                vehicle_feature = cast(
-                    VehicleFeatures, entity_config["feature"]
+            for config in SENSORS:
+                feature = vehicle.features.get(config["feature"])
+                if not isinstance(feature, ToyotaNumeric):
+                    continue
+                if vehicle.electric is False and config["electric"]:
+                    continue
+                yield ToyotaSensor(
+                    config["feature"], config["icon"], config["unit"], config["state_class"],
+                    coordinator, config["name"], vehicle.vin,
+                    device_class=config.get("device_class"),
+                    states=config.get("states"),
+                    translation_key=config.get("translation_key"),
                 )
-                feature = vehicle.features.get(vehicle_feature)
-                if isinstance(feature, ToyotaNumeric):
-                    if vehicle.electric is False and cast(
-                        bool, entity_config["electric"]
-                    ):
-                        continue
-                    if vehicle.subscribed is False and cast(
-                        bool, entity_config["subscription"]
-                    ):
-                        continue
-                    yield ToyotaNumericSensor(
-                        vehicle_feature,
-                        cast(str, entity_config["icon"]),
-                        cast(str, entity_config["unit"]),
-                        cast(SensorStateClass, entity_config["state_class"]),
-                        coordinator,
-                        entity_config["name"],
-                        vehicle.vin,
-                    )
 
-    setup_entity_discovery(
-        config_entry,
-        coordinator,
-        async_add_devices,
-        discover_sensors,
-    )
+    setup_entity_discovery(config_entry, coordinator, async_add_devices, discover_sensors)
 
 
-class ToyotaNumericSensor(ToyotaNABaseEntity):
-    _icon: str
-    _vehicle_feature: VehicleFeatures
-
+class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
     def __init__(
         self,
         vehicle_feature: VehicleFeatures,
         icon: str,
-        unit_of_measurement: str,
-        state_class: Union[SensorStateClass, str],
+        unit_of_measurement: str | None,
+        state_class: SensorStateClass | None,
         *args: Any,
+        device_class: SensorDeviceClass | None = None,
+        states: dict[str, str] | None = None,
+        translation_key: str | None = None,
     ):
         super().__init__(*args)
-        self._icon = icon
-        self._state_class = state_class
+        self._attr_icon = icon
+        self._attr_state_class = state_class
+        self._attr_device_class = device_class
+        self._attr_translation_key = translation_key
+        self._attr_options = list(dict.fromkeys(states.values())) if states else None
+        self._states = states
         self._unit_of_measurement = unit_of_measurement
         self._vehicle_feature = vehicle_feature
 
     @property
-    def icon(self) -> str:
-        return self._icon
+    def native_value(self):
+        feature = self.feature(self._vehicle_feature)
+        if not isinstance(feature, ToyotaNumeric) or feature.value is None:
+            return None
+        if self._states:
+            return self._states.get(str(feature.value).lower())
+        if self.device_class == SensorDeviceClass.TIMESTAMP:
+            return datetime.fromtimestamp(feature.value, timezone.utc)
+        if (
+            self._unit_of_measurement == UnitOfPressure.PSI
+            and feature.unit
+            and feature.unit != UnitOfPressure.PSI
+        ):
+            return PressureConverter.convert(feature.value, feature.unit, UnitOfPressure.PSI)
+        return feature.value
 
     @property
-    def state(self):
-        feat = cast(ToyotaNumeric, self.feature(self._vehicle_feature))
-        if feat:
-            if (
-                self._unit_of_measurement == UnitOfPressure.PSI
-                and feat.value is not None
-                and feat.unit
-                and feat.unit != UnitOfPressure.PSI
-            ):
-                return PressureConverter.convert(feat.value, feat.unit, UnitOfPressure.PSI)
-            return feat.value
+    def native_unit_of_measurement(self):
+        if self.device_class in (SensorDeviceClass.ENUM, SensorDeviceClass.TIMESTAMP):
+            return None
+        feature = self.feature(self._vehicle_feature)
+        unit = feature.unit if isinstance(feature, ToyotaNumeric) else None
+        if self._vehicle_feature == VehicleFeatures.Speed:
+            return unit or self._unit_of_measurement
+        if self._unit_of_measurement in (None, "MI_OR_KM"):
+            return unit or None
+        return self._unit_of_measurement or None
 
     @property
     def available(self):
         return isinstance(self.feature(self._vehicle_feature), ToyotaNumeric)
 
-
     @property
-    def state_class(self):
-        return self._state_class
-
-    @property
-    def unit_of_measurement(self):
-
-        # We need to poll the unit of measure from the service itself to ensure we're passing
-        # the correct unit of measure to the sensor.
-        if self._unit_of_measurement == "MI_OR_KM":
-            feature = cast(ToyotaNumeric, self.feature(self._vehicle_feature))
-            if hasattr(feature,'unit'):
-                _unit = feature.unit
-                if _unit == "mi":
-                    return UnitOfLength.MILES
-                elif _unit == "km":
-                    return UnitOfLength.KILOMETERS
-
-        return self._unit_of_measurement
+    def extra_state_attributes(self):
+        if self._states:
+            feature = self.feature(self._vehicle_feature)
+            return {"raw_value": feature.value if isinstance(feature, ToyotaNumeric) else None}
+        if self._vehicle_feature == VehicleFeatures.ChargeScheduleCount and self.vehicle:
+            return {"schedules": self.vehicle.charge_settings.get("schedules", [])}
+        return None

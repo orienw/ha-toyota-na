@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from toyota_na.client import ToyotaOneClient
 
 from .const import DOMAIN
-from .vehicle_helpers import endpoint_generation
+from .vehicle_helpers import endpoint_generation, is_appsync_generation
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +24,10 @@ TO_REDACT = {
     CONF_PASSWORD,
     "ctsLinks",  # contains a vin number
     "device_id",
+    "guid",
+    "remoteUserGuid",
+    "subscriberGuid",
+    "accountInfoId",
     "id_token",
     "imei",
     "refresh_token",
@@ -62,7 +66,7 @@ async def async_get_config_entry_diagnostics(
         region = vehicle.get("region") or "US"
         
         try:
-            if api_generation == "24MM":
+            if is_appsync_generation(api_generation):
                 user_vehicle_status = await client.graphql_get_vehicle_status(
                     vin,
                     vehicle.get("backdoorType"),
@@ -75,6 +79,10 @@ async def async_get_config_entry_diagnostics(
             elif api_generation == "21MM":
                 user_vehicle_status = await client.get_vehicle_status_21mm(
                     vin, region
+                )
+            elif api_generation == "NG86":
+                user_vehicle_status = await client.get_vehicle_status_route(
+                    vin, api_generation, region, vehicle.get("brand") or "T",
                 )
             elif generation == "17CYPLUS":
                 user_vehicle_status = await client.get_vehicle_status_17cyplus(
@@ -109,6 +117,10 @@ async def async_get_config_entry_diagnostics(
                 user_engine_status = await client.get_engine_status_17cyplus(
                     vin, region
                 )
+            elif api_generation == "NG86":
+                user_engine_status = await client.get_engine_status_route(
+                    vin, api_generation, region, vehicle.get("brand") or "T",
+                )
         except Exception as err:
             _LOGGER.debug(
                 "Engine status diagnostics failed for VIN ...%s: %s",
@@ -117,7 +129,7 @@ async def async_get_config_entry_diagnostics(
             )
             
         try:
-            if api_generation != "24MM":
+            if not is_appsync_generation(api_generation):
                 user_electric_status = await client.get_electric_status(
                     vin, region=region, generation=api_generation
                 )

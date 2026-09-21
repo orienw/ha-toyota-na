@@ -1,4 +1,4 @@
-"""AppSync subscriptions for 21MM and 24MM vehicle status updates."""
+"""AppSync subscriptions for 21MM, 24MM, and 26BEV vehicle status updates."""
 import asyncio
 import base64
 import json
@@ -13,6 +13,7 @@ import aiohttp
 from .patch_client import (
     GRAPHQL_VEHICLE_STATUS_FIELDS,
     GRAPHQL_WS_ENDPOINT,
+    HTTP_TIMEOUT,
     appsync_authorization,
 )
 
@@ -166,7 +167,7 @@ class ToyotaWebSocketHandler:
             f"{GRAPHQL_WS_ENDPOINT}?header={header_b64}&payload={payload_b64}"
         )
 
-        self._session = aiohttp.ClientSession()
+        self._session = aiohttp.ClientSession(timeout=HTTP_TIMEOUT)
         try:
             self._ws = await self._session.ws_connect(
                 ws_url, protocols=["graphql-ws"], heartbeat=30
@@ -285,6 +286,11 @@ class ToyotaWebSocketHandler:
                             e,
                         )
 
+        elif msg_type == "connection_error" or (msg_type == "error" and not msg.get("id")):
+            self._ready = False
+            _LOGGER.warning("WebSocket connection error: %s", msg.get("payload", msg))
+            raise ConnectionError("AppSync rejected the connection")
+
         elif msg_type in ("error", "complete"):
             vin = next(
                 (vin for vin, sub_id in self._subscriptions.items() if sub_id == msg.get("id")),
@@ -301,13 +307,6 @@ class ToyotaWebSocketHandler:
 
         elif msg_type == "ka":
             self._keepalive_deadline = monotonic() + self._keepalive_timeout
-
-        elif msg_type == "connection_error":
-            _LOGGER.warning(
-                "WebSocket connection error: %s",
-                msg.get("payload", msg),
-            )
-            raise ConnectionError("AppSync rejected the connection")
 
     async def _subscribe_vin(self, vin, token, guid):
         """Subscribe to vehicle status updates for a specific VIN."""
