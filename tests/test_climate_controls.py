@@ -4,10 +4,10 @@ import asyncio
 from copy import deepcopy
 import types
 import unittest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from aiohttp import ClientConnectionError
-from toyota_na.exceptions import AuthError
+from toyota_na.exceptions import AuthError, LoginError, NotLoggedIn, TokenExpired
 
 import test_button as ha
 import test_vehicle_behavior as behavior
@@ -160,19 +160,34 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
             (self.entities["Use Climate Settings"].async_turn_off, ()),
             (self.entities["Front Defroster"].async_turn_off, ()),
         )
-        for error in (
-            RuntimeError("Toyota rejected the change."), ClientConnectionError("Toyota connection failed."),
-            AuthError("Toyota session expired."), asyncio.TimeoutError(),
+        for error, message in (
+            (RuntimeError("Toyota rejected the change."), "Toyota rejected the change."),
+            (ClientConnectionError("Toyota connection failed."), "Toyota connection failed."),
+            (AuthError("Toyota session expired."), "Toyota session expired."),
+            (asyncio.TimeoutError(), "The Toyota request timed out."),
+            (ClientConnectionError(), "The Toyota request failed. Try again."),
+            (RuntimeError(), "The Toyota request failed. Try again."),
         ):
             self.client.update_climate_settings.side_effect = error
             for action, args in actions:
                 with self.subTest(error=type(error), action=action), self.assertRaises(ha.exceptions.HomeAssistantError) as raised:
                     await action(*args)
                 self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
-                self.assertEqual(str(error) or "The Toyota request timed out.", str(raised.exception))
+                self.assertEqual(message, str(raised.exception))
                 self.assertIs(error, raised.exception.__cause__)
         self.assertEqual(SETTINGS, self.vehicle.climate_settings)
         changed.assert_not_called()
+
+    async def test_empty_authentication_errors_have_a_message(self):
+        for operation in ("get_climate_settings", "update_climate_settings"):
+            for error in (LoginError(), NotLoggedIn(), TokenExpired()):
+                with self.subTest(operation=operation, error=type(error)):
+                    with patch.object(self.client, operation, AsyncMock(side_effect=error)):
+                        with self.assertRaises(ha.exceptions.HomeAssistantError) as raised:
+                            await self.entities["Climate Fan Speed"].async_set_native_value(4)
+                    self.assertEqual("Toyota authentication failed. Sign in again.", str(raised.exception))
+                    self.assertIs(error, raised.exception.__cause__)
+        self.assertEqual(SETTINGS, self.vehicle.climate_settings)
 
     async def test_unavailable_controls_raise_validation_errors_without_writing(self):
         self.vehicle._has_remote_subscription = False
