@@ -2,8 +2,9 @@
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import EntityCategory
+from homeassistant.helpers import entity_registry as er
 
-from .base_entity import ToyotaNABaseEntity
+from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
 from .climate_helpers import climate_parameters
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
@@ -20,6 +21,26 @@ CLIMATE_SWITCHES = (
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+
+    def remove_stale_schedules():
+        if not coordinator.last_update_success:
+            return
+        registry = er.async_get(hass)
+        entries = er.async_entries_for_config_entry(registry, config_entry.entry_id)
+        for vehicle in coordinator.data or []:
+            schedules = vehicle.charge_settings.get("schedules")
+            if not isinstance(schedules, list) or any(
+                not isinstance(schedule, dict) or schedule.get("settingId") is None
+                for schedule in schedules
+            ):
+                continue
+            prefix = vehicle_entity_unique_id(vehicle.vin, "Charge Schedule ")
+            current_ids = {f"{prefix}{schedule['settingId']}" for schedule in schedules}
+            for entry in entries:
+                if (entry.domain == "switch" and entry.platform == DOMAIN
+                        and entry.unique_id.startswith(prefix) and entry.unique_id not in current_ids):
+                    registry.async_remove(entry.entity_id)
+                    yield entry.unique_id
 
     def discover_switches():
         for vehicle in coordinator.data or []:
@@ -40,7 +61,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 if entity.available:
                     yield entity
 
-    setup_entity_discovery(config_entry, coordinator, async_add_entities, discover_switches)
+    setup_entity_discovery(
+        config_entry, coordinator, async_add_entities, discover_switches,
+        remove_stale_entities=remove_stale_schedules,
+    )
 
 
 class ToyotaClimateSettingsSwitch(ToyotaNABaseEntity, SwitchEntity):

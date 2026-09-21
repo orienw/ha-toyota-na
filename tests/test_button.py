@@ -85,6 +85,7 @@ class CoordinatorEntity(Subscriptable):
 class DataUpdateCoordinator(Subscriptable):
     def __init__(self, data):
         self.data = data
+        self.last_update_success = True
         self.refreshes = 0
         self.listeners = []
 
@@ -198,6 +199,9 @@ device_registry.DeviceEntry = types.SimpleNamespace
 device_registry.async_get = lambda hass: hass.device_registry
 entity_registry = module("homeassistant.helpers.entity_registry")
 entity_registry.async_get = lambda hass: hass.entity_registry
+entity_registry.async_entries_for_config_entry = lambda registry, entry_id: [
+    entry for entry in registry.entries.values() if entry.config_entry_id == entry_id
+]
 entity_platform = module("homeassistant.helpers.entity_platform")
 entity_platform.AddEntitiesCallback = object
 service = module("homeassistant.helpers.service")
@@ -301,6 +305,7 @@ class FakeHass:
 class FakeEntityRegistry:
     def __init__(self):
         self.entities = {}
+        self.entries = {}
         self.removed = []
 
     def async_get_entity_id(self, platform, domain, unique_id):
@@ -308,6 +313,7 @@ class FakeEntityRegistry:
 
     def async_remove(self, entity_id):
         self.removed.append(entity_id)
+        self.entries.pop(entity_id, None)
 
 
 class ButtonTests(unittest.IsolatedAsyncioTestCase):

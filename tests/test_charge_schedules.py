@@ -202,6 +202,96 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([SCHEDULE], vehicle.charge_settings["schedules"])
 
 
+class ScheduleDiscoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.vehicle = behavior.make_24mm_vehicle(types.SimpleNamespace())
+        self.vehicle._feature_flags = {"multiDayCharging": 1}
+        self.vehicle._store_charge_schedules([deepcopy(SCHEDULE)], None)
+        self.coordinator = ha.DataUpdateCoordinator([self.vehicle])
+        self.hass = ha.FakeHass(self.coordinator)
+        self.config_entry = ha.ConfigEntry()
+        self.registry = self.hass.entity_registry
+        self.added = []
+
+    def register(self, unique_id, *, domain="switch", platform=ha.DOMAIN, entry_id="entry", disabled=False):
+        entity_id = f"{domain}.entity_{len(self.registry.entries) + len(self.registry.removed)}"
+        self.registry.entries[entity_id] = types.SimpleNamespace(
+            entity_id=entity_id, unique_id=unique_id, domain=domain, platform=platform,
+            config_entry_id=entry_id, disabled_by="user" if disabled else None,
+        )
+        return entity_id
+
+    async def setup_switches(self):
+        def add_entities(entities, update):
+            self.added.extend(entities)
+            for entity in entities:
+                if not any(entry.unique_id == entity.unique_id for entry in self.registry.entries.values()):
+                    self.register(entity.unique_id)
+
+        await switch.async_setup_entry(self.hass, self.config_entry, add_entities)
+
+    async def test_deleted_schedule_is_removed_and_reused_id_is_discovered(self):
+        await self.setup_switches()
+        entity_id = next(iter(self.registry.entries))
+        self.vehicle._store_charge_schedules([], None)
+        self.coordinator.notify_listeners()
+        self.assertEqual([entity_id], self.registry.removed)
+        self.assertEqual({}, self.registry.entries)
+
+        self.vehicle._store_charge_schedules([deepcopy(SCHEDULE)], None)
+        self.coordinator.notify_listeners()
+        self.coordinator.notify_listeners()
+        self.assertEqual(2, len(self.added))
+        self.assertEqual(self.added[0].unique_id, self.added[1].unique_id)
+        self.assertEqual(1, len(self.registry.entries))
+
+    async def test_setup_removes_disabled_deleted_schedules_within_this_vehicle_and_entry(self):
+        unique_id = f"{self.vehicle.vin}.Charge Schedule 2"
+        stale = self.register(unique_id, disabled=True)
+        retained = [
+            self.register(unique_id, entry_id="other-account"),
+            self.register(unique_id, platform="other-integration"),
+            self.register(unique_id, domain="sensor"),
+            self.register("OTHER-VIN.Charge Schedule 2"),
+            self.register(f"{self.vehicle.vin}.Use Climate Settings"),
+        ]
+        await self.setup_switches()
+        self.assertEqual([stale], self.registry.removed)
+        self.assertTrue(all(entity_id in self.registry.entries for entity_id in retained))
+
+    async def test_missing_or_incomplete_schedule_lists_do_not_remove_entities(self):
+        await self.setup_switches()
+        for schedules in (None, {}, [None], [{}], [{"settingId": None}]):
+            with self.subTest(schedules=schedules):
+                self.vehicle.charge_settings["schedules"] = schedules
+                self.coordinator.notify_listeners()
+                self.assertEqual([], self.registry.removed)
+
+    async def test_failed_refresh_or_missing_vehicle_does_not_remove_entities(self):
+        await self.setup_switches()
+        self.vehicle._store_charge_schedules([], None)
+        self.coordinator.last_update_success = False
+        self.coordinator.notify_listeners()
+        self.assertEqual([], self.registry.removed)
+        self.coordinator.last_update_success = True
+        self.coordinator.data = []
+        self.coordinator.notify_listeners()
+        self.assertEqual([], self.registry.removed)
+        self.coordinator.data = [self.vehicle]
+        self.coordinator.notify_listeners()
+        self.assertEqual(1, len(self.registry.removed))
+
+    async def test_older_or_missing_schedule_payload_and_subscription_loss_preserve_switches(self):
+        self.vehicle._store_charge_schedules([deepcopy(SCHEDULE)], "2026-09-21T15:00:00Z")
+        await self.setup_switches()
+        self.vehicle._store_charge_schedules([], "2026-09-21T14:00:00Z")
+        self.vehicle._store_charge_schedules(None, "2026-09-21T16:00:00Z")
+        self.vehicle._has_remote_subscription = False
+        self.coordinator.notify_listeners()
+        self.assertEqual([], self.registry.removed)
+        self.assertEqual(1, len(self.added))
+
+
 class AppSyncScheduleTests(unittest.IsolatedAsyncioTestCase):
     async def test_schedule_writes_match_both_response_id_fields(self):
         class CallbackSocket(transport._WebSocket):

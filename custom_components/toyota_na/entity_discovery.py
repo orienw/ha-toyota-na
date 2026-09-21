@@ -6,11 +6,15 @@ def setup_entity_discovery(
     coordinator,
     async_add_entities,
     discover_entities,
+    *,
+    remove_stale_entities=None,
 ) -> None:
-    """Add each discovered entity once and listen for coordinator updates."""
+    """Discover entities on updates, forgetting IDs that were explicitly removed."""
     known_ids = set()
 
     def add_new_entities() -> None:
+        if remove_stale_entities is not None:
+            known_ids.difference_update(remove_stale_entities())
         additions = []
         addition_ids = set()
         for entity in discover_entities():
