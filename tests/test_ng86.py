@@ -41,7 +41,7 @@ class NG86Tests(unittest.IsolatedAsyncioTestCase):
         client.send_refresh_request_route.assert_awaited_once_with("TESTNG86", "NG86", "CA", "T")
         client.graphql_pre_wake.assert_not_awaited()
 
-    async def test_ng86_requires_reported_command_support_and_gr86_remains_distinct(self):
+    async def test_ng86_requires_reported_command_support_and_pre17_is_skipped(self):
         vehicle = behavior.make_vehicle()
         vehicle._generation = ApiVehicleGeneration.NG86
         vehicle._remote_capabilities = {}
@@ -49,7 +49,6 @@ class NG86Tests(unittest.IsolatedAsyncioTestCase):
         for command in (RemoteRequestCommand.DoorLock, RemoteRequestCommand.EngineStart, RemoteRequestCommand.VehicleFinder):
             self.assertFalse(vehicle.supports_command(command))
         client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
-            {**behavior.LEXUS_21MM_COUPE, "vin": "TESTGR86", "generation": "GR86"},
             {**behavior.LEXUS_21MM_COUPE, "vin": "TESTPRE17", "generation": "PRE17CY"},
         ]))
         self.assertEqual([], await get_vehicles(client))

@@ -109,6 +109,7 @@ Toyota stores these reservations in UTC; check repeating schedules when daylight
 saving time changes. Charge schedule times continue to use the vehicle's local time.
 
 Supported generations: `17CY`, `17CYPLUS`, `21MM`, `24MM`, `26BEV`, and `NG86`.
+`GR86` generation support is experimental and needs owner testing.
 
 ### Sensor display
 

@@ -80,7 +80,7 @@ async def async_get_config_entry_diagnostics(
                 user_vehicle_status = await client.get_vehicle_status_21mm(
                     vin, region
                 )
-            elif api_generation == "NG86":
+            elif api_generation in ("NG86", "GR86"):
                 user_vehicle_status = await client.get_vehicle_status_route(
                     vin, api_generation, region, vehicle.get("brand") or "T",
                 )
@@ -117,7 +117,7 @@ async def async_get_config_entry_diagnostics(
                 user_engine_status = await client.get_engine_status_17cyplus(
                     vin, region
                 )
-            elif api_generation == "NG86":
+            elif api_generation in ("NG86", "GR86"):
                 user_engine_status = await client.get_engine_status_route(
                     vin, api_generation, region, vehicle.get("brand") or "T",
                 )

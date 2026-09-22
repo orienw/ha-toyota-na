@@ -136,7 +136,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_tire_pressure_uses_actual_generation_brand_and_region(self):
         payload = {"flTirePressure": {"displayLowTirePressureWarning": True}}
         self.response.json.return_value = {"payload": payload}
-        for generation in ("17CY", "17CYPLUS", "21MM", "NG86"):
+        for generation in ("17CY", "17CYPLUS", "21MM", "NG86", "GR86"):
             with self.subTest(generation=generation):
                 self.assertEqual(payload, await client_module.get_tire_pressure(Client(), "TESTVIN", generation, "CA", "L"))
                 call = self.session.request.call_args
@@ -177,7 +177,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             await client_module.save_climate_schedule(Client(), "TESTVIN", "21MM", {})
 
     async def test_extended_commands_keep_generation_brand_and_buzzer_parameters(self):
-        for generation in ("17CY", "17CYPLUS", "21MM"):
+        for generation in ("17CY", "17CYPLUS", "21MM", "NG86", "GR86"):
             for command in ("sound-horn", "buzzer-warning"):
                 with self.subTest(generation=generation, command=command):
                     await client_module.remote_request_route(Client(), "TESTVIN", generation, command, "CA", "L")
@@ -287,19 +287,20 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(headers["Content-Type"], "application/json")
         UUID(headers["X-CORRELATIONID"])
 
-    async def test_ng86_routed_reads_and_refresh_keep_generation(self):
-        for method, path, verb in (
-            (client_module.get_vehicle_status_route, "status", "GET"),
-            (client_module.get_engine_status_route, "engine-status", "GET"),
-            (client_module.send_refresh_request_route, "refresh-status", "POST"),
-        ):
-            with self.subTest(path=path):
-                await method(Client(), "TESTNG86", "NG86", "CA", "T")
-                args, kwargs = self.session.request.call_args
-                self.assertEqual((verb, f"https://onecdn.telematicsct.com/v1/remote/route/{path}"), args)
-                self.assertEqual("NG86", kwargs["headers"]["X-GENERATION"])
-                self.assertEqual("CA", kwargs["headers"]["x-region"])
-                self.assertEqual("T", kwargs["headers"]["X-BRAND"])
+    async def test_routed_reads_and_refresh_keep_generation(self):
+        for generation in ("NG86", "GR86"):
+            for method, path, verb in (
+                (client_module.get_vehicle_status_route, "status", "GET"),
+                (client_module.get_engine_status_route, "engine-status", "GET"),
+                (client_module.send_refresh_request_route, "refresh-status", "POST"),
+            ):
+                with self.subTest(generation=generation, path=path):
+                    await method(Client(), "TESTVIN", generation, "CA", "T")
+                    args, kwargs = self.session.request.call_args
+                    self.assertEqual((verb, f"https://onecdn.telematicsct.com/v1/remote/route/{path}"), args)
+                    self.assertEqual(generation, kwargs["headers"]["X-GENERATION"])
+                    self.assertEqual("CA", kwargs["headers"]["x-region"])
+                    self.assertEqual("T", kwargs["headers"]["X-BRAND"])
 
     async def test_21mm_engine_status_reaches_cdn_root(self):
         result = await client_module.get_engine_status_21mm(Client(), "TESTVIN", "CA")

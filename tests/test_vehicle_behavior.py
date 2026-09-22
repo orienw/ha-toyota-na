@@ -224,7 +224,7 @@ class VehicleMetadataTests(unittest.TestCase):
 
 class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_generation_names_are_normalized_for_supported_vehicles(self):
-        generations = ("17cy", "17CyPlus", " 21mm ", "24mM", "26bev", "ng86")
+        generations = ("17cy", "17CyPlus", " 21mm ", "24mM", "26bev", "ng86", " gr86 ")
         client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
             {"vin": f"TEST{i}", "generation": generation}
             for i, generation in enumerate(generations)
@@ -234,16 +234,16 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
             patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
         ):
             vehicles = await get_vehicles(client)
-        self.assertEqual([f"TEST{i}" for i in range(6)], [vehicle.vin for vehicle in vehicles])
+        self.assertEqual([f"TEST{i}" for i in range(7)], [vehicle.vin for vehicle in vehicles])
         self.assertEqual(
-            ["17CY", "17CYPLUS", "21MM", "24MM", "26BEV", "NG86"],
+            ["17CY", "17CYPLUS", "21MM", "24MM", "26BEV", "NG86", "GR86"],
             [vehicle.api_generation for vehicle in vehicles],
         )
 
     async def test_unknown_generations_do_not_block_supported_vehicles(self):
         client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
             {"vin": f"SKIPPED{i}", "generation": generation}
-            for i, generation in enumerate((None, "", "future", "21MM-new", "gr86", "pre17cy", 17, [], {}))
+            for i, generation in enumerate((None, "", "future", "21MM-new", "GR86-new", "pre17cy", 17, [], {}))
         ] + [{**LEXUS_21MM_COUPE, "vin": "SUPPORTED"}]))
         with patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()) as update:
             vehicles = await get_vehicles(client)

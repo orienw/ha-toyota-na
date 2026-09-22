@@ -177,7 +177,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                             self._last_graphql_status
                         )
                 else:
-                    if self._generation == ApiVehicleGeneration.NG86:
+                    if self._generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86):
                         vehicle_status = await self._client.get_vehicle_status_route(
                             self.vin, self.api_generation, self.region, self.brand,
                         )
@@ -291,9 +291,10 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             ApiVehicleGeneration.CY17PLUS,
             ApiVehicleGeneration.MM21,
             ApiVehicleGeneration.NG86,
+            ApiVehicleGeneration.GR86,
         ):
             try:
-                if self._generation == ApiVehicleGeneration.NG86:
+                if self._generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86):
                     await self._client.send_refresh_request_route(
                         self.vin, self.api_generation, self.region, self.brand,
                     )
@@ -369,7 +370,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 self._vin, command_name, self._region
             )
             return
-        if self._generation == ApiVehicleGeneration.NG86:
+        if self._generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86):
             await self._client.remote_request_route(
                 self.vin, self.api_generation, command_name, self.region, self.brand,
             )

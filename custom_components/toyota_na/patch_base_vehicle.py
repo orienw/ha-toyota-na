@@ -281,7 +281,7 @@ class ToyotaVehicle(ABC):
         if self.uses_appsync:
             return None
         previous = self._features.get(VehicleFeatures.RemoteStartStatus)
-        if self._generation == ApiVehicleGeneration.NG86:
+        if self._generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86):
             status = await self._client.get_engine_status_route(
                 self.vin, self.api_generation, self.region, self.brand,
             )
@@ -367,7 +367,7 @@ class ToyotaVehicle(ABC):
         return self.generation in (
             ApiVehicleGeneration.CY17, ApiVehicleGeneration.CY17PLUS,
             ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24, ApiVehicleGeneration.BEV26,
-            ApiVehicleGeneration.NG86,
+            ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86,
         )
 
     @property
@@ -729,7 +729,9 @@ class ToyotaVehicle(ABC):
             self._extended_capabilities,
             keys,
         )
-        if command in self._COMMANDS_REQUIRING_EXPLICIT_CAPABILITY or self.generation == ApiVehicleGeneration.NG86:
+        if command in self._COMMANDS_REQUIRING_EXPLICIT_CAPABILITY or self.generation in (
+            ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86,
+        ):
             return supported is True
         return supported is not False
 
