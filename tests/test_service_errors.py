@@ -6,6 +6,7 @@ import types
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from aiohttp import ClientResponseError
 from toyota_na.exceptions import TokenExpired
 
 import test_button as ha
@@ -44,11 +45,15 @@ class CommandServiceErrorTests(unittest.IsolatedAsyncioTestCase):
             self.actions.append((handlers[service], (call,), operation))
 
     async def test_expected_command_failures_use_home_assistant_errors(self):
+        request_info = types.SimpleNamespace(real_url="https://example.invalid/remote/command")
+        detail = "Vehicle not reachable [ONE-RES-40001]"
         for error, expected_type, message in (
             (ValueError("Command is unavailable."), ha.exceptions.ServiceValidationError, "Command is unavailable."),
             (RuntimeError("Toyota rejected the command."), ha.exceptions.HomeAssistantError, "Toyota rejected the command."),
             (TokenExpired(), ha.exceptions.HomeAssistantError, "Toyota authentication failed. Sign in again."),
             (json.JSONDecodeError("Expecting value", "invalid", 0), ha.exceptions.HomeAssistantError, "Toyota returned an invalid response."),
+            (ClientResponseError(request_info, (), status=400, message=detail), ha.exceptions.HomeAssistantError, detail),
+            (ClientResponseError(request_info, (), status=400), ha.exceptions.HomeAssistantError, "The Toyota request failed. Try again."),
         ):
             for action, args, operation in self.actions:
                 with self.subTest(action=action, args=args, error=type(error)):

@@ -4,7 +4,7 @@ import asyncio
 from contextlib import contextmanager
 import json
 
-from aiohttp import ClientError
+from aiohttp import ClientError, ClientResponseError
 from toyota_na.exceptions import AuthError
 
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -22,5 +22,7 @@ def translate_service_errors():
         raise HomeAssistantError(str(err) or "The Toyota request timed out.") from err
     except AuthError as err:
         raise HomeAssistantError(str(err) or "Toyota authentication failed. Sign in again.") from err
+    except ClientResponseError as err:
+        raise HomeAssistantError(err.message or "The Toyota request failed. Try again.") from err
     except (ClientError, RuntimeError) as err:
         raise HomeAssistantError(str(err) or "The Toyota request failed. Try again.") from err
