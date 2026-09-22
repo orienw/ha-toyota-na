@@ -92,6 +92,77 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
             charge_options({"targetLimit": {"value": 80}}, "targetLimit"),
         )
 
+    async def test_missing_target_uses_explicit_support_and_preserves_unknown_state(self):
+        vehicle = behavior.make_24mm_vehicle()
+        coordinator = ha.DataUpdateCoordinator([vehicle])
+        entity = select.ToyotaChargeSelect("targetLimit", ha.ConfigEntry(), coordinator, "Charge Limit", vehicle.vin)
+        for flags in (None, {}, {"chargeSetting": 0}, {"chargeSetting": 2}, {"chargeSetting": True}, {"chargeSetting": "1"}):
+            with self.subTest(flags=flags):
+                vehicle._feature_flags = flags
+                self.assertFalse(entity.available)
+                self.assertIsNone(entity.current_option)
+
+        vehicle._feature_flags = {"chargeSetting": 1}
+        entities = []
+        await select.async_setup_entry(
+            ha.FakeHass(coordinator), ha.ConfigEntry(), lambda added, update: entities.extend(added),
+        )
+        self.assertEqual(["Charge Limit"], [item.sensor_name for item in entities])
+        self.assertTrue(entity.available)
+        self.assertEqual([f"{value}%" for value in range(100, 39, -10)], entity.options)
+        self.assertIsNone(entity.current_option)
+
+        vehicle.apply_graphql_status(status({"limitSelectionValues": ["Full", "80%"], "chargeSettings": {"targetLimit": None}}))
+        self.assertEqual(["100%", "80%"], entity.options)
+        self.assertIsNone(entity.current_option)
+        self.assertNotIn(VehicleFeatures.ChargeTargetLimit, vehicle.features)
+        vehicle._generation = ApiVehicleGeneration.MM21
+        self.assertFalse(entity.available)
+        vehicle._generation = ApiVehicleGeneration.BEV26
+        self.assertTrue(entity.available)
+        vehicle._has_remote_subscription = False
+        self.assertFalse(entity.available)
+
+    async def test_missing_target_writes_use_fresh_choices_and_report_only_readback(self):
+        missing = status({"limitSelectionValues": ["Full", "90%"], "chargeSettings": {}})
+        client = types.SimpleNamespace(
+            graphql_get_vehicle_status=AsyncMock(return_value=missing),
+            update_charge_settings=AsyncMock(),
+        )
+        vehicle = behavior.make_24mm_vehicle(client)
+        vehicle._feature_flags = {"chargeSetting": 1}
+        await vehicle.set_charge_setting("targetLimit", "90%")
+        client.update_charge_settings.assert_awaited_once_with(vehicle.vin, "chargingTargetLimit", 90, vehicle.region)
+        self.assertIsNone(current_charge_option(vehicle.charge_settings, "targetLimit"))
+        self.assertNotIn(VehicleFeatures.ChargeTargetLimit, vehicle.features)
+
+        client.update_charge_settings.reset_mock()
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            await vehicle.set_charge_setting("targetLimit", "80%")
+        client.update_charge_settings.assert_not_awaited()
+
+        updated = status({"chargeSettings": {"targetLimit": {"value": "90", "unit": "%"}}})
+        client.graphql_get_vehicle_status.side_effect = [missing, updated]
+        await vehicle.set_charge_setting("targetLimit", "90%")
+        self.assertEqual("90%", current_charge_option(vehicle.charge_settings, "targetLimit"))
+
+    async def test_missing_target_cannot_be_written_without_explicit_support_or_fresh_charging(self):
+        client = types.SimpleNamespace(
+            graphql_get_vehicle_status=AsyncMock(), update_charge_settings=AsyncMock(),
+        )
+        vehicle = behavior.make_24mm_vehicle(client)
+        for flags, response in (
+            (None, status({"chargeSettings": {}})),
+            ({"chargeSetting": 1}, {"telemetry": {"odo": {"value": 100}}}),
+            ({"chargeSetting": 1}, status({})),
+        ):
+            with self.subTest(flags=flags, response=response):
+                vehicle._feature_flags = flags
+                client.graphql_get_vehicle_status.return_value = response
+                with self.assertRaisesRegex(ValueError, "unavailable"):
+                    await vehicle.set_charge_setting("targetLimit", "90%")
+        client.update_charge_settings.assert_not_awaited()
+
     async def test_selects_appear_only_on_supported_vehicles(self):
         vehicle = behavior.make_24mm_vehicle()
         coordinator = ha.DataUpdateCoordinator([vehicle])

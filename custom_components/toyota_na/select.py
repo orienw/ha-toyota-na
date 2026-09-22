@@ -99,7 +99,12 @@ class ToyotaChargeSelect(ToyotaNABaseEntity, SelectEntity):
 
     @property
     def options(self):
-        return list(charge_options(self.vehicle.charge_settings, self._field)) if self.vehicle else []
+        if self.vehicle is None:
+            return []
+        return list(charge_options(
+            self.vehicle.charge_settings, self._field,
+            allow_missing_target=self.vehicle.feature_enabled("chargeSetting", default=False),
+        ))
 
     @property
     def available(self):

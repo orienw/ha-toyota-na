@@ -355,10 +355,10 @@ class ToyotaVehicle(ABC):
     def uses_appsync(self) -> bool:
         return is_appsync_generation(self.api_generation)
 
-    def feature_enabled(self, name: str) -> bool:
+    def feature_enabled(self, name: str, *, default=True) -> bool:
         """Older vehicle payloads omit the entire feature-state model."""
         if self._feature_flags is None:
-            return True
+            return default
         value = self._feature_flags.get(name)
         return type(value) is int and value == 1
 
@@ -660,7 +660,7 @@ class ToyotaVehicle(ABC):
         options = charge_options({
             **(charging.get("chargeSettings") or {}),
             "limitSelectionValues": charging.get("limitSelectionValues"),
-        }, field)
+        }, field, allow_missing_target=bool(charging) and self.feature_enabled("chargeSetting", default=False))
         if option not in options:
             raise ValueError("This charging option is unavailable for this vehicle.")
         await self._client.update_charge_settings(

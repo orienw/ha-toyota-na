@@ -14,10 +14,12 @@ CHARGE_SETTINGS = {
 }
 
 
-def charge_options(settings, field):
+def charge_options(settings, field, *, allow_missing_target=False):
     """Map displayed choices to the values accepted by Toyota."""
     _, choices_key, suffix, _ = CHARGE_SETTINGS[field]
-    if not isinstance(settings.get(field), dict):
+    if not isinstance(settings.get(field), dict) and not (
+        field == "targetLimit" and settings.get(field) is None and allow_missing_target
+    ):
         return {}
     choices = settings.get(choices_key) or []
     if field == "targetLimit":

@@ -85,6 +85,8 @@ in automations that monitor whether the whole vehicle is secured.
 Climate preferences for Remote Start appear under device configuration.
 Remote Start runs the engine or climate system the vehicle supports.
 Charging settings and buttons follow the vehicle's reported options and state.
+The charge limit remains selectable when Toyota explicitly reports support but
+omits the current target; its current value stays Unknown until reported.
 
 `toyota_na.disable_charge_schedules` turns off all saved charge schedules while
 keeping their times and days. Individual schedules can be re-enabled with their switches.
