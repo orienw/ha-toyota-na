@@ -1,5 +1,6 @@
 from datetime import timedelta
 import logging
+from zoneinfo import ZoneInfo
 
 from toyota_na.auth import ToyotaOneAuth
 from toyota_na.client import ToyotaOneClient
@@ -23,6 +24,8 @@ from .patch_client import (
     get_electric_realtime_status,
     get_electric_status,
     get_climate_settings,
+    get_climate_schedules,
+    save_climate_schedule,
     update_climate_settings,
     update_charge_settings,
     save_charge_schedule,
@@ -59,6 +62,8 @@ from .patch_client import (
 ToyotaOneClient.get_electric_realtime_status = get_electric_realtime_status
 ToyotaOneClient.get_electric_status = get_electric_status
 ToyotaOneClient.get_climate_settings = get_climate_settings
+ToyotaOneClient.get_climate_schedules = get_climate_schedules
+ToyotaOneClient.save_climate_schedule = save_climate_schedule
 ToyotaOneClient.save_charge_schedule = save_charge_schedule
 ToyotaOneClient.disable_charge_schedules = disable_charge_schedules
 ToyotaOneClient.update_charge_settings = update_charge_settings
@@ -208,6 +213,16 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
         vehicle = next(
             item for item in coordinator.data if item.vin == vin
         )
+        if remote_action in ("set_climate_schedule", "delete_climate_schedule"):
+            fields = {"enabled": "enabled", "start_time": "time", "date": "date", "days": "days", "temperature": "temperature"}
+            changes = {field: service_call.data[key] for key, field in fields.items() if key in service_call.data}
+            with translate_service_errors():
+                await vehicle.update_climate_schedule(
+                    service_call.data.get("schedule_id"), zone=ZoneInfo(hass.config.time_zone),
+                    delete=remote_action == "delete_climate_schedule", **changes,
+                )
+            coordinator.async_set_updated_data(coordinator.data)
+            return
         if remote_action == "disable_charge_schedules":
             with translate_service_errors():
                 changed = await vehicle.disable_charge_schedules()
@@ -254,7 +269,10 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
 
         return
 
-    for action in (*COMMAND_MAP, "set_charge_schedule", "delete_charge_schedule", "disable_charge_schedules"):
+    for action in (
+        *COMMAND_MAP, "set_charge_schedule", "delete_charge_schedule", "disable_charge_schedules",
+        "set_climate_schedule", "delete_climate_schedule",
+    ):
         hass.services.async_register(DOMAIN, action, async_service_handle)
 
     return True

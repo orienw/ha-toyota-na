@@ -92,6 +92,17 @@ week) or updates named fields when you pass a schedule ID. Times are the
 vehicle's local time. `toyota_na.delete_charge_schedule` removes a schedule by
 ID.
 
+On vehicles that report climate schedule support, the Climate Schedules sensor
+lists saved preconditioning reservations and their temperature range. Use
+`toyota_na.set_climate_schedule` with a start time, temperature, and either a date
+or repeating days to create one. Pass a schedule ID to edit selected fields;
+existing seat and defroster options are preserved. Each schedule has an on/off
+switch, and `toyota_na.delete_climate_schedule` removes it.
+
+Climate schedule dates and times use Home Assistant's configured timezone.
+Toyota stores these reservations in UTC; check repeating schedules when daylight
+saving time changes. Charge schedule times continue to use the vehicle's local time.
+
 Supported generations: `17CY`, `17CYPLUS`, `21MM`, `24MM`, `26BEV`, and `NG86`.
 
 ### Sensor display

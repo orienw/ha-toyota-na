@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
 from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
@@ -15,6 +16,7 @@ from homeassistant.util.unit_conversion import PressureConverter
 from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN, SENSORS
 from .entity_discovery import setup_entity_discovery
+from .climate_schedule_helpers import local_climate_schedule
 
 
 async def async_setup_entry(
@@ -29,6 +31,8 @@ async def async_setup_entry(
 
     def discover_sensors():
         for vehicle in coordinator.data or []:
+            if isinstance(vehicle.climate_schedules.get("airConditioningReservation"), list):
+                yield ToyotaClimateSchedulesSensor(coordinator, "Climate Schedules", vehicle.vin)
             for config in SENSORS:
                 feature = vehicle.features.get(config["feature"])
                 if not isinstance(feature, ToyotaNumeric):
@@ -44,6 +48,34 @@ async def async_setup_entry(
                 )
 
     setup_entity_discovery(config_entry, coordinator, async_add_devices, discover_sensors)
+
+
+class ToyotaClimateSchedulesSensor(ToyotaNABaseEntity, SensorEntity):
+    _attr_icon = "mdi:calendar-clock"
+
+    @property
+    def available(self):
+        return self.vehicle is not None and isinstance(self.vehicle.climate_schedules.get("airConditioningReservation"), list)
+
+    @property
+    def native_value(self):
+        if self.available:
+            return len(self.vehicle.climate_schedules["airConditioningReservation"])
+        return None
+
+    @property
+    def extra_state_attributes(self):
+        if not self.available:
+            return None
+        settings = self.vehicle.climate_schedules
+        zone = ZoneInfo(self.hass.config.time_zone)
+        return {
+            "schedules": [local_climate_schedule(item, zone) for item in settings["airConditioningReservation"]],
+            "temperature_unit": settings.get("temperatureUnit"),
+            "min_temperature": settings.get("minTemp"),
+            "max_temperature": settings.get("maxTemp"),
+            "temperature_step": settings.get("tempInterval"),
+        }
 
 
 class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):

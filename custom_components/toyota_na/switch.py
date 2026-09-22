@@ -1,5 +1,7 @@
 """Enable the vehicle's saved climate preferences."""
 
+from zoneinfo import ZoneInfo
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import EntityCategory
 from homeassistant.exceptions import ServiceValidationError
@@ -7,6 +9,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
 from .climate_helpers import climate_parameters
+from .climate_schedule_helpers import local_climate_schedule
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
 from .service_helpers import translate_service_errors
@@ -30,19 +33,22 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         registry = er.async_get(hass)
         entries = er.async_entries_for_config_entry(registry, config_entry.entry_id)
         for vehicle in coordinator.data or []:
-            schedules = vehicle.charge_settings.get("schedules")
-            if not isinstance(schedules, list) or any(
-                not isinstance(schedule, dict) or schedule.get("settingId") is None
-                for schedule in schedules
+            for schedules, identifier_key, name in (
+                (vehicle.charge_settings.get("schedules"), "settingId", "Charge Schedule "),
+                (vehicle.climate_schedules.get("airConditioningReservation"), "reservationNo", "Climate Schedule "),
             ):
-                continue
-            prefix = vehicle_entity_unique_id(vehicle.vin, "Charge Schedule ")
-            current_ids = {f"{prefix}{schedule['settingId']}" for schedule in schedules}
-            for entry in entries:
-                if (entry.domain == "switch" and entry.platform == DOMAIN
-                        and entry.unique_id.startswith(prefix) and entry.unique_id not in current_ids):
-                    registry.async_remove(entry.entity_id)
-                    yield entry.unique_id
+                if not isinstance(schedules, list) or any(
+                    not isinstance(schedule, dict) or schedule.get(identifier_key) is None
+                    for schedule in schedules
+                ):
+                    continue
+                prefix = vehicle_entity_unique_id(vehicle.vin, name)
+                current_ids = {f"{prefix}{schedule[identifier_key]}" for schedule in schedules}
+                for entry in entries:
+                    if (entry.domain == "switch" and entry.platform == DOMAIN
+                            and entry.unique_id.startswith(prefix) and entry.unique_id not in current_ids):
+                        registry.async_remove(entry.entity_id)
+                        yield entry.unique_id
 
     def discover_switches():
         for vehicle in coordinator.data or []:
@@ -60,6 +66,14 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 entity = ToyotaChargeScheduleSwitch(
                     identifier, config_entry, coordinator, f"Charge Schedule {identifier}", vehicle.vin,
                 )
+                if entity.available:
+                    yield entity
+
+            for schedule in vehicle.climate_schedules.get("airConditioningReservation") or []:
+                if not isinstance(schedule, dict) or schedule.get("reservationNo") is None:
+                    continue
+                identifier = str(schedule["reservationNo"])
+                entity = ToyotaClimateScheduleSwitch(identifier, coordinator, f"Climate Schedule {identifier}", vehicle.vin)
                 if entity.available:
                     yield entity
 
@@ -135,6 +149,47 @@ class ToyotaClimatePreferenceSwitch(ToyotaClimateSettingsSwitch):
         if self._setting == "extendedRuntime":
             return {"extendedRuntime": enabled}
         return {"parameter": (*self._setting, enabled)}
+
+
+class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, identifier, *args):
+        super().__init__(*args)
+        self._identifier = identifier
+
+    @property
+    def schedule(self):
+        schedules = self.vehicle.climate_schedules.get("airConditioningReservation") if self.vehicle else None
+        return next((item for item in schedules or [] if str(item["reservationNo"]) == self._identifier), {})
+
+    @property
+    def available(self):
+        return self.vehicle is not None and self.vehicle.supports_climate_schedules and self.is_on is not None
+
+    @property
+    def is_on(self):
+        return {"active": True, "inactive": False}.get(self.schedule.get("status"))
+
+    @property
+    def extra_state_attributes(self):
+        if self.schedule:
+            return local_climate_schedule(self.schedule, ZoneInfo(self.hass.config.time_zone))
+        return None
+
+    async def async_turn_on(self, **kwargs):
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs):
+        await self._set_enabled(False)
+
+    async def _set_enabled(self, enabled):
+        if not self.available:
+            raise ServiceValidationError("This climate schedule is unavailable.")
+        with translate_service_errors():
+            await self.vehicle.update_climate_schedule(self._identifier, zone=ZoneInfo(self.hass.config.time_zone), enabled=enabled)
+        self.coordinator.async_set_updated_data(self.coordinator.data)
 
 
 class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):

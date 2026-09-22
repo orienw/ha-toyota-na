@@ -275,3 +275,69 @@ disable_charge_schedules:
       selector:
         device:
           integration: toyota_na
+
+set_climate_schedule:
+  name: Set climate schedule
+  description: Create or update a preconditioning schedule. Dates and times use Home Assistant's timezone.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+    schedule_id:
+      description: ID from Climate Schedules. Omit to create a new schedule.
+      selector:
+        number:
+          min: 0
+          step: 1
+          mode: box
+    enabled:
+      description: Enable or disable an existing schedule. New schedules are enabled.
+      selector:
+        boolean:
+    start_time:
+      description: Start time in Home Assistant's timezone, required for new schedules. Use whole minutes.
+      selector:
+        time:
+    date:
+      description: Date for a one-time schedule. Choose this or repeating days.
+      selector:
+        date:
+    days:
+      description: Repeating days of the week. Choose these or a single date.
+      selector:
+        select:
+          multiple: true
+          options:
+            - Sunday
+            - Monday
+            - Tuesday
+            - Wednesday
+            - Thursday
+            - Friday
+            - Saturday
+    temperature:
+      description: Temperature in the unit shown by Climate Schedules, required for new schedules. Use the reported range and step.
+      selector:
+        number:
+          step: any
+          mode: box
+
+delete_climate_schedule:
+  name: Delete climate schedule
+  description: Remove a saved preconditioning schedule.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na
+    schedule_id:
+      description: ID from Climate Schedules.
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 1
+          mode: box

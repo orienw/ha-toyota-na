@@ -145,6 +145,37 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual("L", call.kwargs["headers"]["X-BRAND"])
                 self.assertEqual("CA", call.kwargs["headers"]["x-region"])
 
+    async def test_climate_reservations_use_route_headers_and_saved_device_id(self):
+        self.response.json.return_value = {"payload": {"airConditioningReservation": []}}
+        self.assertEqual({"airConditioningReservation": []}, await client_module.get_climate_schedules(Client(), "TESTVIN", "21MM", "CA", "L"))
+        self.assertEqual(("GET", "https://onecdn.telematicsct.com/v1/remote/route/ac-reservation"), self.session.request.call_args.args)
+        for method, identifier, delete in (("POST", None, False), ("PUT", 1, False), ("DELETE", 1, True)):
+            for result in ({"returnCode": "ONE-RES-10000", "reservationNo": 1}, {"payload": {"returnCode": "ONE-RES-10000", "reservationNo": 1}}):
+                with self.subTest(method=method, result=result):
+                    self.response.json.return_value = {"payload": result}
+                    self.assertEqual(1, await client_module.save_climate_schedule(
+                        Client(), "TESTVIN", "21MM", {"temperature": "22.5"}, "CA", "L", identifier=identifier, delete=delete,
+                    ))
+                    call = self.session.request.call_args
+                    self.assertEqual((method, "https://onecdn.telematicsct.com/v1/remote/route/ac-reservation"), call.args)
+                    self.assertEqual("device", call.kwargs["headers"]["device-id"])
+                    self.assertEqual("21MM", call.kwargs["headers"]["X-GENERATION"])
+                    self.assertEqual("L", call.kwargs["headers"]["X-BRAND"])
+                    self.assertEqual("CA", call.kwargs["headers"]["x-region"])
+                    if identifier is None:
+                        self.assertNotIn("ReservationNo", call.kwargs["headers"])
+                    else:
+                        self.assertEqual("1", call.kwargs["headers"]["ReservationNo"])
+                    if delete:
+                        self.assertNotIn("json", call.kwargs)
+                    else:
+                        self.assertEqual({"temperature": "22.5"}, call.kwargs["json"])
+
+    async def test_climate_schedule_rejection_preserves_toyota_message(self):
+        self.response.json.return_value = {"payload": {"returnCode": "FAILED", "message": "Schedule limit reached"}}
+        with self.assertRaisesRegex(RuntimeError, "Schedule limit reached"):
+            await client_module.save_climate_schedule(Client(), "TESTVIN", "21MM", {})
+
     async def test_extended_commands_keep_generation_brand_and_buzzer_parameters(self):
         for generation in ("17CY", "17CYPLUS", "21MM"):
             for command in ("sound-horn", "buzzer-warning"):

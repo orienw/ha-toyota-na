@@ -12,6 +12,7 @@ from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .vehicle_helpers import can_extend_remote_runtime, endpoint_generation, first_capability, is_appsync_generation, parse_api_timestamp
 from .climate_helpers import apply_climate_changes
+from .climate_schedule_helpers import build_climate_schedule, climate_schedule_matches
 from .charging_helpers import (
     CHARGE_SETTINGS,
     build_charge_schedule,
@@ -238,6 +239,8 @@ class ToyotaVehicle(ABC):
         self._legacy_capabilities = legacy_capabilities or []
         self._climate_settings = {}
         self._climate_lock = asyncio.Lock()
+        self._climate_schedules = {}
+        self._climate_schedule_lock = asyncio.Lock()
         self._charge_settings = {}
         self._engine_details = {}
         self._schedule_lock = asyncio.Lock()
@@ -404,6 +407,78 @@ class ToyotaVehicle(ABC):
             )
             self._climate_settings.clear()
             self._climate_settings.update(settings)
+
+    @property
+    def climate_schedules(self):
+        return self._climate_schedules
+
+    @property
+    def supports_climate_schedules(self):
+        return (
+            self._extended_capabilities.get("scheduleReservation") is True
+            and self.subscribed and self.feature_enabled("remoteClimate")
+        )
+
+    async def _read_climate_schedules(self):
+        settings = await self._client.get_climate_schedules(
+            self.vin, self.api_generation, self.region, self.brand,
+        )
+        if (
+            not isinstance(settings, dict)
+            or settings.get("returnCode") not in (None, "ONE-RES-10000")
+            or not isinstance(settings.get("airConditioningReservation"), list)
+            or any(not isinstance(item, dict) or item.get("reservationNo") is None
+                   for item in settings["airConditioningReservation"])
+        ):
+            raise RuntimeError("Toyota did not return current climate schedules.")
+        self._climate_schedules.clear()
+        self._climate_schedules.update(settings)
+        return settings["airConditioningReservation"]
+
+    async def update_climate_schedules(self):
+        if self._extended_capabilities.get("scheduleReservation") is True:
+            async with self._climate_schedule_lock:
+                await self._read_climate_schedules()
+
+    async def update_climate_schedule(self, identifier=None, *, zone, delete=False, **changes):
+        if not self.supports_climate_schedules:
+            raise ValueError("Climate schedules are unavailable for this vehicle.")
+        async with self._climate_schedule_lock:
+            schedules = await self._read_climate_schedules()
+            existing = None
+            if identifier is not None:
+                identifier = schedule_identifier(identifier)
+                existing = next((item for item in schedules if str(item["reservationNo"]) == str(identifier)), None)
+                if existing is None:
+                    raise ValueError("This climate schedule no longer exists.")
+            if delete and identifier is None:
+                raise ValueError("Choose a climate schedule to delete.")
+            previous_ids = {str(item["reservationNo"]) for item in schedules}
+            body = {} if delete else build_climate_schedule(self.climate_schedules, existing, changes, zone)
+            saved_id = await self._client.save_climate_schedule(
+                self.vin, self.api_generation, body, self.region, self.brand,
+                identifier=identifier, delete=delete,
+            )
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT
+            delay = 5
+            while loop.time() < deadline:
+                try:
+                    schedules = await asyncio.wait_for(self._read_climate_schedules(), deadline - loop.time())
+                except asyncio.TimeoutError:
+                    break
+                if identifier is not None:
+                    candidates = [item for item in schedules if str(item["reservationNo"]) == str(identifier)]
+                elif saved_id is not None:
+                    candidates = [item for item in schedules if str(item["reservationNo"]) == str(saved_id)
+                                  and str(item["reservationNo"]) not in previous_ids]
+                else:
+                    candidates = [item for item in schedules if str(item["reservationNo"]) not in previous_ids]
+                if (delete and not candidates) or (not delete and any(climate_schedule_matches(item, body) for item in candidates)):
+                    return
+                await asyncio.sleep(min(delay, max(0, deadline - loop.time())))
+                delay = min(30, delay * 2)
+            raise RuntimeError("Toyota accepted the climate schedule change but did not return the updated schedule.")
 
     async def update_tire_pressure(self) -> None:
         if self.uses_appsync or not self.can_receive_status:
@@ -670,6 +745,8 @@ class ToyotaVehicle(ABC):
         self._features = previous.features
         self._climate_settings = previous.climate_settings
         self._climate_lock = previous._climate_lock
+        self._climate_schedules = previous.climate_schedules
+        self._climate_schedule_lock = previous._climate_schedule_lock
         self._charge_settings = previous.charge_settings
         self._engine_details = previous._engine_details
         self._schedule_lock = previous._schedule_lock

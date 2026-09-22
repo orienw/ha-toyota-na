@@ -876,6 +876,33 @@ async def save_charge_schedule(self, vin, generation, schedule, region="US", bra
     return await submit()
 
 
+async def get_climate_schedules(self, vin, generation, region="US", brand="T"):
+    return await self.api_get(
+        REMOTE_ROUTE + "ac-reservation",
+        _vehicle_headers(vin, region, **{"X-GENERATION": generation, "X-BRAND": brand}),
+    )
+
+
+async def save_climate_schedule(self, vin, generation, schedule, region="US", brand="T", *, identifier=None, delete=False):
+    headers = _vehicle_headers(vin, region, **{
+        "X-GENERATION": generation, "X-BRAND": brand,
+        "device-id": self.auth.get_device_id(),
+    })
+    if identifier is not None:
+        headers["ReservationNo"] = str(identifier)
+    method = "DELETE" if delete else "PUT" if identifier is not None else "POST"
+    result = await self.api_request(
+        method, REMOTE_ROUTE + "ac-reservation", headers,
+        **({} if delete else {"json": schedule}),
+    )
+    if isinstance(result, dict) and isinstance(result.get("payload"), dict):
+        result = result["payload"]
+    if not isinstance(result, dict) or result.get("returnCode") != "ONE-RES-10000":
+        message = result.get("message") if isinstance(result, dict) else None
+        raise RuntimeError(message or "Toyota did not accept the climate schedule change.")
+    return result.get("reservationNo")
+
+
 async def disable_charge_schedules(self, vin, generation, region="US", brand="T"):
     """Disable all saved charge schedules without deleting them."""
     async def submit():
