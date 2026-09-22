@@ -79,6 +79,9 @@ Native controls:
 * Stop Power Supply button, while external power is active
 * Enable/disable switches for saved multi-day charge schedules
 
+The main lock reports the vehicle's door locks. Check cargo sensors separately
+in automations that monitor whether the whole vehicle is secured.
+
 Climate preferences for Remote Start appear under device configuration.
 Remote Start runs the engine or climate system the vehicle supports.
 Charging settings and buttons follow the vehicle's reported options and state.

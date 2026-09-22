@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
 
 from .base_entity import ToyotaNABaseEntity
@@ -89,8 +89,12 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
 
         lock_states = [
             feature.locked
-            for feature in self.vehicle.features.values()
-            if isinstance(feature, ToyotaLockableOpening)
+            for key, feature in self.vehicle.features.items()
+            if key in (
+                VehicleFeatures.FrontDriverDoor, VehicleFeatures.FrontPassengerDoor,
+                VehicleFeatures.RearDriverDoor, VehicleFeatures.RearPassengerDoor,
+            )
+            and isinstance(feature, ToyotaLockableOpening)
             and feature.locked is not None
         ]
 

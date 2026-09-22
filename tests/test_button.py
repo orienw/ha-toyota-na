@@ -466,6 +466,34 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(LAST_WAKE_AT, self.config_entry.data)
         self.assertEqual(self.hass.tasks, [])
 
+    def test_primary_lock_ignores_other_lockable_openings(self):
+        entity = lock_platform.ToyotaLock(self.config_entry, self.coordinator, "", self.vehicle.vin)
+        doors = (
+            VehicleFeatures.FrontDriverDoor, VehicleFeatures.FrontPassengerDoor,
+            VehicleFeatures.RearDriverDoor, VehicleFeatures.RearPassengerDoor,
+        )
+        for door in doors:
+            for locked in (True, False):
+                with self.subTest(door=door, locked=locked):
+                    self.vehicle.features = {
+                        key: ToyotaLockableOpening(closed=True, locked=True) for key in doors
+                    }
+                    self.vehicle.features[door] = ToyotaLockableOpening(closed=True, locked=locked)
+                    for key in (VehicleFeatures.Trunk, VehicleFeatures.Hood, VehicleFeatures.GlassHatch):
+                        self.vehicle.features[key] = ToyotaLockableOpening(closed=True, locked=not locked)
+                    self.assertIs(entity.is_locked, locked)
+
+    def test_primary_lock_is_unknown_without_reported_door_locks(self):
+        entity = lock_platform.ToyotaLock(self.config_entry, self.coordinator, "", self.vehicle.vin)
+        for door in (None, ToyotaOpening(True), ToyotaOpening(False), ToyotaLockableOpening(closed=True, locked=None)):
+            for cargo_locked in (True, False):
+                with self.subTest(door=door, cargo_locked=cargo_locked):
+                    self.vehicle.features = {
+                        VehicleFeatures.FrontDriverDoor: door,
+                        VehicleFeatures.Trunk: ToyotaLockableOpening(closed=True, locked=cargo_locked),
+                    }
+                    self.assertIsNone(entity.is_locked)
+
     async def test_lock_availability_tracks_capabilities(self):
         entities = []
         await lock_platform.async_setup_entry(
