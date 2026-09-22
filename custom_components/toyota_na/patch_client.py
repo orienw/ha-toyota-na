@@ -869,6 +869,26 @@ async def save_charge_schedule(self, vin, generation, schedule, region="US", bra
     return await submit()
 
 
+async def disable_charge_schedules(self, vin, generation, region="US", brand="T"):
+    """Disable all saved charge schedules without deleting them."""
+    async def submit():
+        result = await self.api_request(
+            "PUT", REMOTE_ROUTE + "charging/disable-all",
+            _vehicle_headers(vin, region, **{
+                "X-GENERATION": generation, "X-BRAND": brand,
+                "device-id": str(uuid.uuid4()),
+            }),
+        ) or {}
+        request_no = result.get("appRequestNo") or result.get("correlationId")
+        if result.get("returnCode") != "ONE-RES-10000" or not request_no:
+            raise RuntimeError(result.get("message") or "Toyota did not accept disabling the charge schedules.")
+        return {"payload": {"requestNo": request_no}}
+
+    if generation in ("24MM", "26BEV"):
+        return await _run_appsync_operation(self, vin, submit, region)
+    return await submit()
+
+
 async def _run_appsync_operation(self, vin, submit, region, *, fail_on_unknown=False):
     # Callbacks can omit request numbers, so serialize this account's
     # operations for each vehicle.

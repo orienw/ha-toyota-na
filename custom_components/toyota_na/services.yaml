@@ -265,3 +265,13 @@ delete_charge_schedule:
           min: 0
           step: 1
           mode: box
+
+disable_charge_schedules:
+  name: Disable all charge schedules
+  description: Turn off all saved charge schedules without deleting their times or days.
+  fields:
+    vehicle:
+      required: true
+      selector:
+        device:
+          integration: toyota_na

@@ -86,6 +86,25 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(("DELETE", "https://onecdn.telematicsct.com/oneapi/v1/electric/charging/2"), args)
         self.assertNotIn("json", kwargs)
 
+    async def test_bulk_disable_uses_route_and_vehicle_headers_without_body(self):
+        self.response.json.return_value = {"payload": {"returnCode": "ONE-RES-10000", "correlationId": "123"}}
+        result = await client_module.disable_charge_schedules(Client(), "TESTVIN", "21MM", "CA", "L")
+        args, kwargs = self.session.request.call_args
+        self.assertEqual(("PUT", "https://onecdn.telematicsct.com/v1/remote/route/charging/disable-all"), args)
+        self.assertEqual("L", kwargs["headers"]["X-BRAND"])
+        self.assertEqual("21MM", kwargs["headers"]["X-GENERATION"])
+        self.assertEqual("TESTVIN", kwargs["headers"]["VIN"])
+        UUID(kwargs["headers"]["device-id"])
+        self.assertNotIn("json", kwargs)
+        self.assertEqual({"payload": {"requestNo": "123"}}, result)
+
+    async def test_bulk_disable_requires_toyota_acceptance_and_a_request_id(self):
+        for payload in ({}, {"returnCode": "ONE-RES-10000"}, {"returnCode": "FAILED", "appRequestNo": "123"}):
+            with self.subTest(payload=payload):
+                self.response.json.return_value = {"payload": payload}
+                with self.assertRaisesRegex(RuntimeError, "did not accept"):
+                    await client_module.disable_charge_schedules(Client(), "TESTVIN", "21MM")
+
 
     async def test_optional_read_helpers_propagate_expired_credentials(self):
         client = Client()

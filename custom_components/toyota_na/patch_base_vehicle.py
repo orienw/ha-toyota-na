@@ -498,24 +498,46 @@ class ToyotaVehicle(ABC):
             await self._client.save_charge_schedule(
                 self.vin, self.api_generation, body, self.region, self.brand, delete=delete,
             )
-            loop = asyncio.get_running_loop()
-            deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT
-            readback_delay = 5
-            while loop.time() < deadline:
-                try:
-                    schedules = await asyncio.wait_for(self._read_charge_schedules(), deadline - loop.time())
-                except asyncio.TimeoutError:
-                    break
+
+            def confirmed(schedules):
                 candidates = [item for item in schedules if isinstance(item, dict)]
                 if identifier is None:
                     candidates = [item for item in candidates if str(item.get("settingId")) not in previous_ids]
                 else:
                     candidates = [item for item in candidates if str(item.get("settingId")) == str(identifier)]
-                if (delete and not candidates) or (not delete and any(schedule_matches(item, body) for item in candidates)):
-                    return
-                await asyncio.sleep(min(readback_delay, max(0, deadline - loop.time())))
-                readback_delay = min(30, readback_delay * 2)
-            raise RuntimeError("Toyota accepted the schedule change but did not return the updated schedule.")
+                return (delete and not candidates) or (not delete and any(schedule_matches(item, body) for item in candidates))
+
+            await self._wait_for_charge_schedules(confirmed)
+
+    async def disable_charge_schedules(self) -> bool:
+        if not self.supports_charge_schedules:
+            raise ValueError("Multi-day charge schedules are unavailable for this vehicle.")
+        async with self._schedule_lock:
+            def all_disabled(schedules):
+                return all(isinstance(item, dict) and item.get("enabled") is False for item in schedules)
+
+            if all_disabled(await self._read_charge_schedules()):
+                return False
+            await self._client.disable_charge_schedules(
+                self.vin, self.api_generation, self.region, self.brand,
+            )
+            await self._wait_for_charge_schedules(all_disabled)
+            return True
+
+    async def _wait_for_charge_schedules(self, confirmed):
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT
+        readback_delay = 5
+        while loop.time() < deadline:
+            try:
+                schedules = await asyncio.wait_for(self._read_charge_schedules(), deadline - loop.time())
+            except asyncio.TimeoutError:
+                break
+            if confirmed(schedules):
+                return
+            await asyncio.sleep(min(readback_delay, max(0, deadline - loop.time())))
+            readback_delay = min(30, readback_delay * 2)
+        raise RuntimeError("Toyota accepted the schedule change but did not return the updated schedule.")
 
     async def set_charge_setting(self, field, option):
         if not self.supports_charge_setting(field):

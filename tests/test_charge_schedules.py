@@ -3,7 +3,7 @@
 from copy import deepcopy
 import types
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import test_appsync_transport as transport
 import test_button as ha
@@ -39,10 +39,15 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
             else:
                 next(item for item in self.schedules if item["settingId"] == identifier).update(body)
 
+        async def disable(*args):
+            for item in self.schedules:
+                item["enabled"] = False
+
         self.client = types.SimpleNamespace(
             graphql_get_vehicle_status=AsyncMock(side_effect=graphql),
             get_electric_status=AsyncMock(side_effect=electric),
             save_charge_schedule=AsyncMock(side_effect=save),
+            disable_charge_schedules=AsyncMock(side_effect=disable),
         )
         vehicle = behavior.make_17cy_vehicle(self.client) if generation == ApiVehicleGeneration.CY17 else behavior.make_24mm_vehicle(self.client)
         vehicle._generation = generation
@@ -64,6 +69,59 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
         body = self.client.save_charge_schedule.call_args.args[2]
         self.assertEqual({"settingId": 1, "enabled": False, "startTime": "23:00", "endTime": "07:00", "daysOfTheWeek": ["Monday", "Wednesday"]}, body)
         self.assertEqual("23:00", entity.extra_state_attributes["startTime"])
+
+    async def test_bulk_disable_preserves_schedules_on_each_transport(self):
+        for generation in (ApiVehicleGeneration.CY17, ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24, ApiVehicleGeneration.BEV26):
+            with self.subTest(generation=generation):
+                vehicle = self.make_vehicle(generation)
+                self.schedules.append({**deepcopy(SCHEDULE), "settingId": 2, "enabled": False})
+                expected = [{**item, "enabled": False} for item in deepcopy(self.schedules)]
+                await vehicle.disable_charge_schedules()
+                self.assertEqual(expected, vehicle.charge_settings["schedules"])
+                self.client.disable_charge_schedules.assert_awaited_once_with(
+                    vehicle.vin, vehicle.api_generation, vehicle.region, vehicle.brand,
+                )
+                self.client.save_charge_schedule.assert_not_awaited()
+
+    async def test_bulk_disable_reads_current_state_and_skips_already_disabled_schedules(self):
+        vehicle = self.make_vehicle()
+        self.schedules[0]["enabled"] = False
+        await vehicle.disable_charge_schedules()
+        self.assertFalse(vehicle.charge_settings["schedules"][0]["enabled"])
+        self.schedules.clear()
+        await vehicle.disable_charge_schedules()
+        self.client.disable_charge_schedules.assert_not_awaited()
+
+    async def test_bulk_disable_requires_schedule_access(self):
+        vehicle = self.make_vehicle()
+        vehicle._feature_flags["multiDayCharging"] = 2
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            await vehicle.disable_charge_schedules()
+        self.client.disable_charge_schedules.assert_not_awaited()
+
+    async def test_bulk_disable_waits_for_every_schedule_to_be_reported_disabled(self):
+        vehicle = self.make_vehicle()
+        self.schedules.append({**deepcopy(SCHEDULE), "settingId": 2})
+
+        async def disable_one(*args):
+            self.schedules[0]["enabled"] = False
+
+        async def reported_after_delay(delay):
+            self.schedules[1]["enabled"] = False
+
+        self.client.disable_charge_schedules.side_effect = disable_one
+        with patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=reported_after_delay) as sleep:
+            await vehicle.disable_charge_schedules()
+        sleep.assert_awaited_once_with(5)
+        self.assertTrue(all(item["enabled"] is False for item in vehicle.charge_settings["schedules"]))
+
+    async def test_bulk_disable_does_not_report_unconfirmed_state(self):
+        vehicle = self.make_vehicle()
+        self.client.disable_charge_schedules.side_effect = None
+        with patch.object(patch_base_vehicle, "SCHEDULE_UPDATE_TIMEOUT", 0):
+            with self.assertRaisesRegex(RuntimeError, "accepted.*did not return"):
+                await vehicle.disable_charge_schedules()
+        self.assertTrue(vehicle.charge_settings["schedules"][0]["enabled"])
 
     async def test_create_and_delete_confirm_state_on_each_transport(self):
         for generation in (ApiVehicleGeneration.CY17, ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24, ApiVehicleGeneration.BEV26):
@@ -317,6 +375,27 @@ class ScheduleDiscoveryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AppSyncScheduleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bulk_disable_subscribes_before_write_and_accepts_numberless_callback(self):
+        for generation in ("24MM", "26BEV"):
+            with self.subTest(generation=generation):
+                callback = {"vin": "TESTVIN24", "status": "COMPLETED"}
+                websocket = transport._CallbackWebSocket([
+                    {"vin": "TESTVIN24", "appRequestNo": 41, "status": "ERROR"}, callback,
+                ])
+
+                async def request(method, endpoint, headers):
+                    self.assertEqual(2, websocket.stage)
+                    self.assertEqual("PUT", method)
+                    self.assertTrue(endpoint.endswith("/charging/disable-all"))
+                    return {"returnCode": "ONE-RES-10000", "correlationId": "42"}
+
+                client = types.SimpleNamespace(auth=transport._Auth(), api_request=AsyncMock(side_effect=request))
+                with patch.object(transport.patch_client.aiohttp, "ClientSession", return_value=transport._WebSocketSession(websocket)):
+                    result = await transport.patch_client.disable_charge_schedules(client, "TESTVIN24", generation)
+                self.assertEqual(callback, result)
+                self.assertEqual([], websocket.callbacks)
+                client.api_request.assert_awaited_once()
+
     async def test_schedule_writes_match_response_ids_when_callbacks_include_them(self):
         for generation in ("24MM", "26BEV"):
             for method in ("POST", "PUT", "DELETE"):
@@ -371,6 +450,7 @@ class ScheduleServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.vehicle = behavior.make_24mm_vehicle()
         self.vehicle.update_charge_schedule = AsyncMock()
+        self.vehicle.disable_charge_schedules = AsyncMock(return_value=True)
         self.coordinator = ha.DataUpdateCoordinator([self.vehicle])
         self.hass = ha.FakeHass(self.coordinator)
         self.entry = ha.ConfigEntry()
@@ -392,6 +472,25 @@ class ScheduleServiceTests(unittest.IsolatedAsyncioTestCase):
         ))
         self.vehicle.update_charge_schedule.assert_awaited_with(1, delete=True)
         self.assertFalse(self.hass.tasks)
+
+    async def test_bulk_disable_service_updates_entities_and_reports_failures(self):
+        call = types.SimpleNamespace(service="disable_charge_schedules", data={"vehicle": "device"})
+        notify = self.coordinator.async_set_updated_data = Mock()
+        await self.handlers[call.service](call)
+        self.vehicle.disable_charge_schedules.assert_awaited_once_with()
+        notify.assert_called_once_with(self.coordinator.data)
+        self.assertFalse(self.hass.tasks)
+        self.vehicle.disable_charge_schedules.side_effect = RuntimeError("Vehicle is unavailable")
+        with self.assertRaisesRegex(ha.exceptions.HomeAssistantError, "Vehicle is unavailable"):
+            await self.handlers[call.service](call)
+        notify.assert_called_once()
+
+    async def test_bulk_disable_noop_does_not_record_a_wake(self):
+        self.vehicle.disable_charge_schedules.return_value = False
+        await self.handlers["disable_charge_schedules"](types.SimpleNamespace(
+            service="disable_charge_schedules", data={"vehicle": "device"},
+        ))
+        self.assertEqual({}, self.entry.data)
 
     async def test_schedule_services_preserve_failure_messages_with_ha_exception_types(self):
         for service in ("set_charge_schedule", "delete_charge_schedule"):
