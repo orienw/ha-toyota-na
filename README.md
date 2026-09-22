@@ -26,7 +26,7 @@ Sensors:
 * Trunk Status
 * Vehicle Location
 * Last Parked Location
-* Tire Pressure
+* Tire Pressure, including reported low-pressure warnings on older vehicles
 * Fuel Level
 * Odometer
 * Oil Status

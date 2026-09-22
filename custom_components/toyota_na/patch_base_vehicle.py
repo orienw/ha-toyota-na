@@ -10,7 +10,7 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
-from .vehicle_helpers import can_extend_remote_runtime, endpoint_generation, first_capability, is_appsync_generation
+from .vehicle_helpers import can_extend_remote_runtime, endpoint_generation, first_capability, is_appsync_generation, parse_api_timestamp
 from .climate_helpers import apply_climate_changes
 from .charging_helpers import (
     CHARGE_SETTINGS,
@@ -404,6 +404,41 @@ class ToyotaVehicle(ABC):
             )
             self._climate_settings.clear()
             self._climate_settings.update(settings)
+
+    async def update_tire_pressure(self) -> None:
+        if self.uses_appsync or not self.can_receive_status:
+            return
+        status = await self._client.get_tire_pressure(
+            self.vin, self.api_generation, self.region, self.brand,
+        )
+        self._parse_tire_pressure(status)
+
+    def _parse_tire_pressure(self, status) -> None:
+        if not isinstance(status, dict) or status.get("vin", self.vin) != self.vin:
+            return
+        observed_at = parse_api_timestamp(status.get("tirePressureTimestamp"))
+        for key, warning_feature in (
+            ("flTirePressure", VehicleFeatures.FrontDriverTireWarning),
+            ("frTirePressure", VehicleFeatures.FrontPassengerTireWarning),
+            ("rlTirePressure", VehicleFeatures.RearDriverTireWarning),
+            ("rrTirePressure", VehicleFeatures.RearPassengerTireWarning),
+            ("spareTirePressure", VehicleFeatures.SpareTireWarning),
+        ):
+            tire = status.get(key)
+            if not isinstance(tire, dict):
+                continue
+            warning = tire.get("displayLowTirePressureWarning")
+            if isinstance(warning, bool):
+                self._store_opening(warning_feature, not warning, None, observed_at)
+            value = tire.get("value")
+            if type(value) in (int, float):
+                self._store_numeric(
+                    self._vehicle_telemetry_map[key], value, tire.get("unit") or "psi", observed_at,
+                )
+        if observed_at is not None:
+            self._store_numeric(
+                VehicleFeatures.LastTirePressureTimeStamp, observed_at.timestamp(), observed_at=observed_at,
+            )
 
     async def update_climate(self) -> None:
         if self.supports_climate_settings:

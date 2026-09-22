@@ -133,6 +133,18 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(call.args, ("PUT", "https://onecdn.telematicsct.com/v1/remote/route/climate-settings"))
                 self.assertEqual(call.kwargs["json"], settings)
 
+    async def test_tire_pressure_uses_actual_generation_brand_and_region(self):
+        payload = {"flTirePressure": {"displayLowTirePressureWarning": True}}
+        self.response.json.return_value = {"payload": payload}
+        for generation in ("17CY", "17CYPLUS", "21MM", "NG86"):
+            with self.subTest(generation=generation):
+                self.assertEqual(payload, await client_module.get_tire_pressure(Client(), "TESTVIN", generation, "CA", "L"))
+                call = self.session.request.call_args
+                self.assertEqual(("GET", "https://onecdn.telematicsct.com/oneapi/v1/telemetry/tires/pressure"), call.args)
+                self.assertEqual(generation, call.kwargs["headers"]["GENERATION"])
+                self.assertEqual("L", call.kwargs["headers"]["X-BRAND"])
+                self.assertEqual("CA", call.kwargs["headers"]["x-region"])
+
     async def test_extended_commands_keep_generation_brand_and_buzzer_parameters(self):
         for generation in ("17CY", "17CYPLUS", "21MM"):
             for command in ("sound-horn", "buzzer-warning"):
