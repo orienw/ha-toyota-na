@@ -75,6 +75,18 @@ class ClimateScheduleFormatTests(unittest.TestCase):
         self.assertEqual("14:00", build_climate_schedule(SETTINGS, saved, {"time": "07:00"}, ZONE, now=july)["time"])
         self.assertEqual("15:00", build_climate_schedule(SETTINGS, saved, {"days": ["Monday", "Friday"]}, ZONE, now=july)["time"])
 
+    def test_repeating_schedules_on_clock_change_days_use_the_offset_in_effect(self):
+        saved = {**SCHEDULE, "time": "15:00", "days": ["Monday"]}
+        for now, changes, expected in (
+            (datetime(2026, 3, 7, 20, tzinfo=ZONE), {"days": ["Monday", "Friday"]}, "15:00"),
+            (datetime(2026, 3, 8, 12, tzinfo=ZONE), {"time": "02:30"}, "09:30"),
+            (datetime(2026, 11, 1, 12, tzinfo=ZONE), {"time": "01:30"}, "09:30"),
+        ):
+            with self.subTest(now=now, changes=changes):
+                self.assertEqual(expected, build_climate_schedule(SETTINGS, saved, changes, ZONE, now=now)["time"])
+        local = local_climate_schedule({**saved, "time": "07:30"}, ZONE, now=datetime(2026, 11, 1, 12, tzinfo=ZONE))
+        self.assertEqual(("23:30", ["Sunday"]), (local["time"], local["days"]))
+
     def test_one_time_dates_use_the_offset_on_the_selected_date(self):
         for selected_date, expected_date, expected_time in (
             ("2026-09-22", "09-23-2026", "06:30"),

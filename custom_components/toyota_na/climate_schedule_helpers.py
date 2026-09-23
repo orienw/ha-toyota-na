@@ -22,16 +22,20 @@ def _shift_days(days, offset):
     return [WEEKDAYS[(WEEKDAYS.index(day) + offset) % 7] for day in days]
 
 
+def _current_offset(zone, now=None):
+    # Repeating reservations are a UTC time and weekdays, so they convert with
+    # the offset in effect now. A fixed offset keeps display and edits exact
+    # inverses and has no clock-change gaps.
+    return timezone((now or datetime.now(zone)).astimezone(zone).utcoffset())
+
+
 def local_climate_schedule(schedule, zone, *, now=None):
     result = deepcopy(schedule)
     result["time_zone"] = str(zone)
     repeating = schedule.get("reservationType") == "REPETITION"
     try:
-        # Repeating reservations run at a fixed UTC time, so convert them at
-        # today's offset rather than the offset on the date they were saved.
-        today = (now or datetime.now(zone)).astimezone(timezone.utc).strftime("%m-%d-%Y") if repeating else None
-        utc = _reservation_datetime(schedule, today)
-        local = utc.astimezone(zone)
+        utc = _reservation_datetime(schedule, "01-01-2000" if repeating else None)
+        local = utc.astimezone(_current_offset(zone, now) if repeating else zone)
         result["date"] = None if repeating else local.date().isoformat()
         result["time"] = local.strftime("%H:%M")
         result["days"] = _shift_days(schedule.get("days") or [], (local.date() - utc.date()).days)
@@ -83,14 +87,15 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
             days = local.get("days")
         if body.get("reservationType") not in ("ONE_TIME", "REPETITION"):
             raise RuntimeError("Toyota did not return a valid climate reservation type.")
+        conversion = _current_offset(zone, now) if body["reservationType"] == "REPETITION" else zone
         try:
-            local_time = datetime.combine(date.fromisoformat(selected_date), time.fromisoformat(selected_time), zone)
+            local_time = datetime.combine(date.fromisoformat(selected_date), time.fromisoformat(selected_time), conversion)
         except (TypeError, ValueError) as err:
             if "date" in changes:
                 raise ValueError("Climate schedule date must use YYYY-MM-DD.") from err
             raise RuntimeError("Toyota did not return a valid climate schedule date.") from err
         utc = local_time.astimezone(timezone.utc)
-        if utc.astimezone(zone).replace(tzinfo=None) != local_time.replace(tzinfo=None):
+        if utc.astimezone(conversion).replace(tzinfo=None) != local_time.replace(tzinfo=None):
             raise ValueError("This local time does not exist because the clocks move forward. Choose another time.")
         body["date"] = utc.strftime("%m-%d-%Y")
         body["time"] = utc.strftime("%H:%M")

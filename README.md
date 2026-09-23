@@ -105,10 +105,10 @@ existing seat and defroster options are preserved. Each schedule has an on/off
 switch, and `toyota_na.delete_climate_schedule` removes it.
 
 Climate schedule dates and times use Home Assistant's configured timezone.
-Toyota stores these reservations in UTC, so repeating schedules run an hour
-earlier or later after daylight saving time changes. The Climate Schedules sensor
-shows the shifted time; set the time again to move it back. Charge schedule times
-continue to use the vehicle's local time.
+Toyota stores these reservations in UTC, so a repeating schedule may move by an
+hour when daylight saving time changes. The Climate Schedules sensor converts its
+time with the current UTC offset; set the time again if it moved. Charge schedule
+times continue to use the vehicle's local time.
 
 Supported generations: `17CY`, `17CYPLUS`, `21MM`, `24MM`, `26BEV`, and `NG86`.
 `GR86` generation support is experimental and needs owner testing.
