@@ -304,7 +304,7 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.client.save_climate_schedule.assert_awaited_once()
         self.assertEqual("active", self.vehicle.climate_schedules["airConditioningReservation"][0]["status"])
 
-    async def test_poll_and_write_share_a_lock_after_vehicle_replacement(self):
+    async def test_poll_skips_schedules_while_a_write_confirms_after_vehicle_replacement(self):
         started, release = asyncio.Event(), asyncio.Event()
         save = self.client.save_climate_schedule.side_effect
 
@@ -319,13 +319,34 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         replacement.inherit_state(self.vehicle)
         write = asyncio.create_task(self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False))
         await started.wait()
-        poll = asyncio.create_task(replacement.update_climate_schedules())
-        await asyncio.sleep(0)
-        self.assertFalse(poll.done())
+        reads = self.client.get_climate_schedules.await_count
+        await asyncio.wait_for(replacement.update_climate_schedules(), 1)
+        self.assertEqual(reads, self.client.get_climate_schedules.await_count)
         release.set()
-        await asyncio.gather(write, poll)
+        await write
         self.assertIs(self.vehicle.climate_schedules, replacement.climate_schedules)
         self.assertEqual("inactive", replacement.climate_schedules["airConditioningReservation"][0]["status"])
+
+    async def test_write_waits_for_a_poll_read_in_progress(self):
+        started, release = asyncio.Event(), asyncio.Event()
+        read = self.client.get_climate_schedules.side_effect
+
+        async def delayed_read(*args):
+            result = await read(*args)
+            started.set()
+            await release.wait()
+            return result
+
+        self.client.get_climate_schedules.side_effect = delayed_read
+        poll = asyncio.create_task(self.vehicle.update_climate_schedules())
+        await started.wait()
+        self.client.get_climate_schedules.side_effect = read
+        write = asyncio.create_task(self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False))
+        await asyncio.sleep(0)
+        self.client.save_climate_schedule.assert_not_awaited()
+        release.set()
+        await asyncio.gather(poll, write)
+        self.assertEqual("inactive", self.vehicle.climate_schedules["airConditioningReservation"][0]["status"])
 
     async def test_sensor_and_switch_discovery_remove_deleted_switch_and_allow_id_reuse(self):
         entry = ha.ConfigEntry()

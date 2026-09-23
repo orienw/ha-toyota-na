@@ -443,7 +443,12 @@ class ToyotaVehicle(ABC):
         return reservations
 
     async def update_climate_schedules(self):
-        if self._extended_capabilities.get("scheduleReservation") is True:
+        # A pending change reloads the schedules itself, so skip the read
+        # rather than hold up the poll while it confirms.
+        if (
+            self._extended_capabilities.get("scheduleReservation") is True
+            and not self._climate_schedule_lock.locked()
+        ):
             async with self._climate_schedule_lock:
                 await self._read_climate_schedules()
 
