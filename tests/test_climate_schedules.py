@@ -327,6 +327,28 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(self.vehicle.climate_schedules, replacement.climate_schedules)
         self.assertEqual("inactive", replacement.climate_schedules["airConditioningReservation"][0]["status"])
 
+    async def test_poll_skips_schedules_while_a_queued_change_takes_over_the_lock(self):
+        release = asyncio.Event()
+        save = self.client.save_climate_schedule.side_effect
+
+        async def delayed_save(*args, **kwargs):
+            await release.wait()
+            return await save(*args, **kwargs)
+
+        self.client.save_climate_schedule.side_effect = delayed_save
+        lock = self.vehicle._climate_schedule_lock
+        await lock.acquire()
+        queued = asyncio.create_task(self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False))
+        await asyncio.sleep(0)
+        lock.release()
+        reads = self.client.get_climate_schedules.await_count
+        async with asyncio.timeout(1):
+            await self.vehicle.update_climate_schedules()
+        self.assertEqual(reads, self.client.get_climate_schedules.await_count)
+        release.set()
+        await queued
+        self.assertFalse(self.vehicle._climate_schedule_writes)
+
     async def test_write_waits_for_a_poll_read_in_progress(self):
         started, release = asyncio.Event(), asyncio.Event()
         read = self.client.get_climate_schedules.side_effect

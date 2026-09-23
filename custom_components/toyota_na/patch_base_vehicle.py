@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import asyncio
+from contextlib import asynccontextmanager
 from enum import Enum, auto, unique
 from typing import Optional, Union
 
@@ -241,6 +242,7 @@ class ToyotaVehicle(ABC):
         self._climate_lock = asyncio.Lock()
         self._climate_schedules = {}
         self._climate_schedule_lock = asyncio.Lock()
+        self._climate_schedule_writes = set()
         self._charge_settings = {}
         self._engine_details = {}
         self._schedule_lock = asyncio.Lock()
@@ -447,15 +449,26 @@ class ToyotaVehicle(ABC):
         # rather than hold up the poll while it confirms.
         if (
             self._extended_capabilities.get("scheduleReservation") is True
-            and not self._climate_schedule_lock.locked()
+            and not self._climate_schedule_writes
         ):
             async with self._climate_schedule_lock:
                 await self._read_climate_schedules()
 
+    @asynccontextmanager
+    async def _climate_schedule_write(self):
+        """Serialize a change, marking it pending while it waits for the lock."""
+        write = object()
+        self._climate_schedule_writes.add(write)
+        try:
+            async with self._climate_schedule_lock:
+                yield
+        finally:
+            self._climate_schedule_writes.discard(write)
+
     async def update_climate_schedule(self, identifier=None, *, zone, delete=False, **changes):
         if not self.supports_climate_schedules:
             raise ValueError("Climate schedules are unavailable for this vehicle.")
-        async with self._climate_schedule_lock:
+        async with self._climate_schedule_write():
             schedules = await self._read_climate_schedules()
             existing = None
             if identifier is not None:
@@ -761,6 +774,7 @@ class ToyotaVehicle(ABC):
         self._climate_lock = previous._climate_lock
         self._climate_schedules = previous.climate_schedules
         self._climate_schedule_lock = previous._climate_schedule_lock
+        self._climate_schedule_writes = previous._climate_schedule_writes
         self._charge_settings = previous.charge_settings
         self._engine_details = previous._engine_details
         self._schedule_lock = previous._schedule_lock
