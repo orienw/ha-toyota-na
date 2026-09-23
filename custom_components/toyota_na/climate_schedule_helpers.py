@@ -13,8 +13,8 @@ SCHEDULE_FIELDS = (
 )
 
 
-def _reservation_datetime(schedule, default_date=None):
-    selected_date = schedule.get("date") or default_date
+def _reservation_datetime(schedule, selected_date=None):
+    selected_date = selected_date or schedule.get("date")
     return datetime.strptime(f"{selected_date} {schedule.get('time')}", "%m-%d-%Y %H:%M").replace(tzinfo=timezone.utc)
 
 
@@ -22,14 +22,17 @@ def _shift_days(days, offset):
     return [WEEKDAYS[(WEEKDAYS.index(day) + offset) % 7] for day in days]
 
 
-def local_climate_schedule(schedule, zone):
+def local_climate_schedule(schedule, zone, *, now=None):
     result = deepcopy(schedule)
     result["time_zone"] = str(zone)
+    repeating = schedule.get("reservationType") == "REPETITION"
     try:
-        fallback = datetime.now(zone).strftime("%m-%d-%Y") if schedule.get("reservationType") == "REPETITION" else None
-        utc = _reservation_datetime(schedule, fallback)
+        # Repeating reservations run at a fixed UTC time, so convert them at
+        # today's offset rather than the offset on the date they were saved.
+        today = (now or datetime.now(zone)).astimezone(timezone.utc).strftime("%m-%d-%Y") if repeating else None
+        utc = _reservation_datetime(schedule, today)
         local = utc.astimezone(zone)
-        result["date"] = local.date().isoformat()
+        result["date"] = None if repeating else local.date().isoformat()
         result["time"] = local.strftime("%H:%M")
         result["days"] = _shift_days(schedule.get("days") or [], (local.date() - utc.date()).days)
     except (TypeError, ValueError):
@@ -56,7 +59,7 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
         if existing:
             body["status"] = "active" if changes["enabled"] else "inactive"
     if not existing or changes.keys() & {"time", "date", "days"}:
-        local = local_climate_schedule(existing, zone) if existing else {}
+        local = local_climate_schedule(existing, zone, now=now) if existing else {}
         try:
             selected_time = schedule_time(changes.get("time", local.get("time")))
         except ValueError as err:
@@ -76,7 +79,7 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
             selected_date = now.date().isoformat()
             days = changes["days"]
         else:
-            selected_date = local.get("date")
+            selected_date = now.date().isoformat() if body.get("reservationType") == "REPETITION" else local.get("date")
             days = local.get("days")
         if body.get("reservationType") not in ("ONE_TIME", "REPETITION"):
             raise RuntimeError("Toyota did not return a valid climate reservation type.")

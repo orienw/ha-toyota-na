@@ -13,7 +13,7 @@ from toyota_na.exceptions import LoginError
 import test_button as ha
 import test_vehicle_behavior as behavior
 
-from custom_components.toyota_na import patch_base_vehicle, sensor, switch
+from custom_components.toyota_na import climate_schedule_helpers, patch_base_vehicle, sensor, switch
 from custom_components.toyota_na.climate_schedule_helpers import build_climate_schedule, climate_schedule_matches, local_climate_schedule
 
 
@@ -33,6 +33,12 @@ SETTINGS = {
 }
 
 
+class FrozenDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return NOW.astimezone(tz)
+
+
 class ClimateScheduleFormatTests(unittest.TestCase):
     def test_repeating_times_and_days_roll_over_in_both_directions(self):
         for zone, local_time, expected_time, expected_days in (
@@ -47,9 +53,27 @@ class ClimateScheduleFormatTests(unittest.TestCase):
                 self.assertEqual(expected_days, body["days"])
                 self.assertEqual("22.5", body["temperature"])
                 self.assertNotIn("status", body)
-                local = local_climate_schedule(body, zone)
+                local = local_climate_schedule(body, zone, now=NOW)
                 self.assertEqual(local_time, local["time"])
                 self.assertEqual(["Monday", "Wednesday"], local["days"])
+
+    def test_repeating_schedules_follow_the_current_offset_after_a_clock_change(self):
+        january = datetime(2026, 1, 12, 9, tzinfo=ZONE)
+        july = datetime(2026, 7, 13, 9, tzinfo=ZONE)
+        body = build_climate_schedule(SETTINGS, None, {
+            "time": "07:00", "days": ["Monday"], "temperature": 22,
+        }, ZONE, now=january)
+        saved = {**body, "reservationNo": 2, "status": "active"}
+        self.assertEqual(("15:00", "01-12-2026"), (saved["time"], saved["date"]))
+        for utc_time, now, local_time, days in (
+            ("15:00", january, "07:00", ["Monday"]), ("15:00", july, "08:00", ["Monday"]),
+            ("07:30", january, "23:30", ["Sunday"]), ("07:30", july, "00:30", ["Monday"]),
+        ):
+            with self.subTest(utc_time=utc_time, now=now):
+                local = local_climate_schedule({**saved, "time": utc_time}, ZONE, now=now)
+                self.assertEqual((local_time, days, None), (local["time"], local["days"], local["date"]))
+        self.assertEqual("14:00", build_climate_schedule(SETTINGS, saved, {"time": "07:00"}, ZONE, now=july)["time"])
+        self.assertEqual("15:00", build_climate_schedule(SETTINGS, saved, {"days": ["Monday", "Friday"]}, ZONE, now=july)["time"])
 
     def test_one_time_dates_use_the_offset_on_the_selected_date(self):
         for selected_date, expected_date, expected_time in (
@@ -112,6 +136,9 @@ class ClimateScheduleFormatTests(unittest.TestCase):
 
 class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        clock = patch.object(climate_schedule_helpers, "datetime", FrozenDateTime)
+        clock.start()
+        self.addCleanup(clock.stop)
         self.server = deepcopy(SETTINGS)
 
         async def read(*args):
