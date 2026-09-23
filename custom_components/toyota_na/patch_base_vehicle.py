@@ -423,17 +423,24 @@ class ToyotaVehicle(ABC):
         settings = await self._client.get_climate_schedules(
             self.vin, self.api_generation, self.region, self.brand,
         )
+        # Like Toyota's app, a successful response without a list has no
+        # schedules, and reservations without an ID are skipped.
+        if (
+            isinstance(settings, dict) and settings.get("returnCode") == "ONE-RES-10000"
+            and settings.get("airConditioningReservation") is None
+        ):
+            settings["airConditioningReservation"] = []
         if (
             not isinstance(settings, dict)
             or settings.get("returnCode") not in (None, "ONE-RES-10000")
             or not isinstance(settings.get("airConditioningReservation"), list)
-            or any(not isinstance(item, dict) or item.get("reservationNo") is None
-                   for item in settings["airConditioningReservation"])
+            or any(not isinstance(item, dict) for item in settings["airConditioningReservation"])
         ):
             raise RuntimeError("Toyota did not return current climate schedules.")
+        reservations = [item for item in settings["airConditioningReservation"] if item.get("reservationNo") is not None]
         self._climate_schedules.clear()
-        self._climate_schedules.update(settings)
-        return settings["airConditioningReservation"]
+        self._climate_schedules.update(settings, airConditioningReservation=reservations)
+        return reservations
 
     async def update_climate_schedules(self):
         if self._extended_capabilities.get("scheduleReservation") is True:

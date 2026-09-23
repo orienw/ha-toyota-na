@@ -202,7 +202,10 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.client.save_climate_schedule.assert_not_awaited()
 
     async def test_missing_or_malformed_responses_preserve_cached_schedules_and_block_writes(self):
-        for result in (None, {}, {"airConditioningReservation": None}, {"airConditioningReservation": [{}]}, {**SETTINGS, "returnCode": "FAILED"}):
+        for result in (
+            None, {}, {"airConditioningReservation": None}, {**SETTINGS, "airConditioningReservation": {}},
+            {**SETTINGS, "airConditioningReservation": [None]}, {**SETTINGS, "returnCode": "FAILED"},
+        ):
             with self.subTest(result=result):
                 self.client.get_climate_schedules.side_effect = None
                 self.client.get_climate_schedules.return_value = result
@@ -210,6 +213,31 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
                     await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
                 self.assertEqual([SCHEDULE], self.vehicle.climate_schedules["airConditioningReservation"])
         self.client.save_climate_schedule.assert_not_awaited()
+
+    async def test_successful_responses_without_a_list_allow_deleting_the_last_and_creating_the_first(self):
+        read = self.client.get_climate_schedules.side_effect
+
+        async def read_null_when_empty(*args):
+            result = await read(*args)
+            return {**result, "airConditioningReservation": result["airConditioningReservation"] or None}
+
+        self.client.get_climate_schedules.side_effect = read_null_when_empty
+        await self.vehicle.update_climate_schedule(1, zone=ZONE, delete=True)
+        self.assertEqual([], self.vehicle.climate_schedules["airConditioningReservation"])
+        await self.vehicle.update_climate_schedule(zone=ZONE, time="08:00", days=["Monday"], temperature=22)
+        self.assertEqual([1], [item["reservationNo"] for item in self.vehicle.climate_schedules["airConditioningReservation"]])
+        self.client.get_climate_schedules.side_effect = None
+        self.client.get_climate_schedules.return_value = {
+            key: value for key, value in SETTINGS.items() if key != "airConditioningReservation"
+        }
+        await self.vehicle.update_climate_schedules()
+        self.assertEqual([], self.vehicle.climate_schedules["airConditioningReservation"])
+
+    async def test_reservations_without_an_id_are_skipped(self):
+        self.server["airConditioningReservation"].insert(0, {"reservationNo": None, "status": "active"})
+        await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
+        schedules = self.vehicle.climate_schedules["airConditioningReservation"]
+        self.assertEqual([(1, "inactive")], [(item["reservationNo"], item["status"]) for item in schedules])
 
     async def test_deleted_schedule_cannot_be_edited(self):
         self.server["airConditioningReservation"].clear()
