@@ -22,9 +22,9 @@ def remote_status(**changes):
 
 class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_extend_refreshes_session_before_sending(self):
-        client = types.SimpleNamespace(
-            graphql_get_vehicle_status=AsyncMock(return_value=remote_status()),
-            remote_request_24mm=AsyncMock(),
+        client = types.SimpleNamespace(graphql_get_vehicle_status=AsyncMock(return_value=remote_status()))
+        client.remote_request_24mm = AsyncMock(
+            side_effect=lambda *args: client.graphql_get_vehicle_status.assert_awaited_once()
         )
         vehicle = behavior.make_24mm_vehicle(client)
         vehicle.apply_graphql_status(remote_status())
@@ -50,7 +50,7 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         vehicle = behavior.make_24mm_vehicle(client)
         vehicle.apply_graphql_status(remote_status())
-        with self.assertRaisesRegex(ValueError, "unavailable"):
+        with self.assertRaisesRegex(ValueError, "unavailable for this session"):
             await vehicle.send_command(RemoteRequestCommand.ExtendRuntime)
         client.remote_request_24mm.assert_not_awaited()
 

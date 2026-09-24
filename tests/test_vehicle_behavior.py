@@ -1088,7 +1088,7 @@ class VehicleStateTests(unittest.TestCase):
         )
 
     def test_placeholder_rear_doors_do_not_create_entities(self):
-        vehicle = make_vehicle()
+        vehicle = make_24mm_vehicle()
         vehicle.apply_graphql_status(
             {
                 "lastUpdateDateTime": "2026-08-13T12:00:00Z",
@@ -1119,7 +1119,7 @@ class VehicleStateTests(unittest.TestCase):
         self.assertTrue(vehicle.features[VehicleFeatures.Trunk].closed)
 
     def test_empty_preferred_backdoor_does_not_hide_reported_trunk(self):
-        vehicle = make_vehicle()
+        vehicle = make_24mm_vehicle()
         vehicle.apply_graphql_status(
             {
                 "vehicleState": {
@@ -1853,11 +1853,11 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 calls.append(args)
                 return {}
 
-        await get_telemetry(Client(), "TESTVIN", "US", "17CYPLUS")
+        await get_telemetry(Client(), "TESTVIN", "CA", "17CYPLUS")
 
         self.assertEqual(calls[0][1]["X-BRAND"], "T")
         self.assertNotIn("X-APPBRAND", calls[0][1])
-        self.assertEqual(calls[0][1]["x-region"], "US")
+        self.assertEqual(calls[0][1]["x-region"], "CA")
 
     async def test_legacy_command_uses_toyota_transport_headers(self):
         calls = []

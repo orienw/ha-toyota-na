@@ -357,7 +357,10 @@ class ClimateSettingsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_temperature_range_and_step_are_checked_before_writing(self):
         for temperature in (17, 31, 22.25, float("nan"), float("inf")):
-            with self.subTest(temperature=temperature), self.assertRaises(ValueError):
+            with (
+                self.subTest(temperature=temperature),
+                self.assertRaisesRegex(ValueError, "finite number|range and step"),
+            ):
                 await self.vehicle.update_climate_settings(temperature=temperature)
         self.client.update_climate_settings.assert_not_awaited()
 

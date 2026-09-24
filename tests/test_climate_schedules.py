@@ -191,6 +191,8 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(23, self.vehicle.climate_schedules["airConditioningReservation"][1]["temperature"])
                 await self.vehicle.update_climate_schedule(2, zone=ZONE, delete=True)
                 self.assertEqual([SCHEDULE], self.vehicle.climate_schedules["airConditioningReservation"])
+                for request in (self.client.get_climate_schedules, self.client.save_climate_schedule):
+                    self.assertEqual(generation, request.call_args.args[1])
 
     async def test_poll_populates_schedules_and_propagates_expired_authentication(self):
         self.vehicle.climate_schedules.clear()

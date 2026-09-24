@@ -253,6 +253,13 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
         websocket = _WebSocket()
         session = _WebSocketSession(websocket)
         client = _CommandClient()
+        send = client.graphql_send_remote_command
+
+        async def send_after_subscribing(*args):
+            self.assertEqual(2, websocket.stage)
+            return await send(*args)
+
+        client.graphql_send_remote_command = send_after_subscribing
 
         with patch.object(
             patch_client.aiohttp,

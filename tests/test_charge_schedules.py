@@ -129,6 +129,7 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
                 vehicle = self.make_vehicle(generation)
                 await vehicle.update_charge_schedule(startTime="10:00:00", endTime="12:00", daysOfTheWeek=["Sunday"])
                 self.assertEqual(2, len(vehicle.charge_settings["schedules"]))
+                self.assertEqual(generation.value, self.client.save_charge_schedule.call_args.args[1])
                 body = self.client.save_charge_schedule.call_args.args[2]
                 self.assertNotIn("settingId", body)
                 self.assertEqual("10:00", body["startTime"])

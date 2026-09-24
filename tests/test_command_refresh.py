@@ -71,9 +71,11 @@ class CommandRefreshTests(unittest.IsolatedAsyncioTestCase):
         coordinator = ha.DataUpdateCoordinator([vehicle])
         with patch.object(command_refresh, "ENGINE_STATUS_TIMEOUT", 0):
             await command_refresh.refresh_after_command(coordinator, vehicle.vin, RemoteRequestCommand.EngineStart)
+        # wait_for cancels an expired read before it is awaited, so check for any call.
+        vehicle.poll_engine_status.assert_not_called()
         coordinator.data = []
         await command_refresh.refresh_after_command(coordinator, vehicle.vin, RemoteRequestCommand.EngineStart)
-        vehicle.poll_engine_status.assert_not_awaited()
+        vehicle.poll_engine_status.assert_not_called()
 
     async def test_unload_cancels_engine_followup(self):
         vehicle = behavior.make_vehicle(types.SimpleNamespace(remote_request_21mm=AsyncMock()))

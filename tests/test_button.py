@@ -60,7 +60,8 @@ class SensorEntity:
     state_class = property(lambda self: self._attr_state_class)
     device_class = property(lambda self: self._attr_device_class)
     options = property(lambda self: self._attr_options)
-    entity_registry_enabled_default = True
+    _attr_entity_registry_enabled_default = True
+    entity_registry_enabled_default = property(lambda self: self._attr_entity_registry_enabled_default)
 
 
 class SourceType(Enum):

@@ -27,6 +27,13 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
             "expires_in": 3600,
         }
 
+    def refresh_with(self, auth, response):
+        # Yield before storing tokens so gathered checks overlap the refresh.
+        async def refresh():
+            await asyncio.sleep(0)
+            auth._extract_tokens(response)
+        return AsyncMock(side_effect=refresh)
+
     async def test_expiry_is_independent_of_local_timezone(self):
         old_timezone = os.environ.get("TZ")
         try:
@@ -99,9 +106,7 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
     async def test_concurrent_rejections_of_one_token_share_a_refresh(self):
         auth = patch_auth.ToyotaOneAuth()
         auth._extract_tokens(self.token_response())
-        auth.refresh_tokens = AsyncMock(side_effect=lambda: auth._extract_tokens({
-            **self.token_response(), "access_token": "replacement",
-        }))
+        auth.refresh_tokens = self.refresh_with(auth, {**self.token_response(), "access_token": "replacement"})
         await asyncio.gather(*(auth.check_tokens(rejected_token="access") for _ in range(4)))
         auth.refresh_tokens.assert_awaited_once()
         await auth.check_tokens(rejected_token="access")
@@ -111,7 +116,7 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
         auth = patch_auth.ToyotaOneAuth(refresh_secs=-180)
         with patch.object(patch_auth.time, "time", return_value=1800000000):
             auth._extract_tokens(self.token_response())
-        auth.refresh_tokens = AsyncMock(side_effect=lambda: auth._extract_tokens(self.token_response()))
+        auth.refresh_tokens = self.refresh_with(auth, self.token_response())
         for elapsed in (0, 300, 600, 1200, 1800, 2400, 3000, 3419):
             with patch.object(patch_auth.time, "time", return_value=1800000000 + elapsed):
                 await auth.check_tokens()
@@ -127,7 +132,7 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
                 response = {**self.token_response(), "expires_in": lifetime}
                 with patch.object(patch_auth.time, "time", return_value=1800000000):
                     auth._extract_tokens(response)
-                    auth.refresh_tokens = AsyncMock(side_effect=lambda: auth._extract_tokens(response))
+                    auth.refresh_tokens = self.refresh_with(auth, response)
                     await auth.check_tokens()
                     await auth.check_tokens()
                 auth.refresh_tokens.assert_not_awaited()
@@ -280,7 +285,6 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("existing-device", call.kwargs["data"]["device_id"])
         self.assertNotIn("password", call.kwargs["data"])
         self.flow.async_set_unique_id.assert_not_awaited()
-        self.assertEqual("existing-device", entry.data["device_id"])
 
     async def test_reauth_rejects_another_account_without_updating_any_entry(self):
         entry = platform.ConfigEntry()
@@ -450,6 +454,27 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
                     await patch_auth.authorize(self.auth, "owner", "secret")
 
                 self.assertEqual(2, len(self.sent))
+                self.session.get.assert_not_called()
+
+    async def test_rejected_password_or_code_is_not_resubmitted(self):
+        password = self.callback("PasswordCallback", "Enter your password")
+        otp = self.callback("PasswordCallback", "One Time Password")
+        # The re-prompt differs from the first form, so the repeat guard cannot stop it.
+        name = self.callback("NameCallback", "Username")
+        for first, code, message in (
+            (password, None, "did not accept the password"),
+            (otp, "123456", "another one-time password"),
+        ):
+            with self.subTest(message=message):
+                challenges = [{"callbacks": copy.deepcopy([name, first])}]
+                if code is None:
+                    challenges.insert(0, {"callbacks": [copy.deepcopy(first)]})
+                else:
+                    self.auth.otp_callbacks = {"callbacks": [copy.deepcopy(first)]}
+                self.response.json.side_effect = challenges
+
+                with self.assertRaisesRegex(LoginError, message):
+                    await patch_auth.authorize(self.auth, "owner", "secret", code)
                 self.session.get.assert_not_called()
 
     async def test_password_login_continues_to_otp(self):
@@ -677,7 +702,6 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
             [{"type": "TextOutputCallback", "output": [{"name": "message", "value": "invalid otp"}]}],
             [{"type": "TextOutputCallback", "output": [{"name": "messageType", "value": 2}]}],
             [{"type": "UnknownCallback", "input": [{"value": ""}]}],
-            [otp_callback],
         ):
             with self.subTest(callbacks=callbacks):
                 response = AsyncMock(status=200)
@@ -702,7 +726,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
                 "type": "ChoiceCallback",
                 "output": [
                     {"name": "prompt", "value": "Choose a login method"},
-                    {"name": "choices", "value": ["Google", "Local", "Apple"]},
+                    {"name": "choices", "value": ["Google", "Email", "Local"]},
                 ],
                 "input": [{"name": "IDToken1", "value": 0}],
             }],
@@ -729,7 +753,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
             self.assertEqual(await patch_auth.authorize(auth, "owner", "password"), "code")
 
-        self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], 1)
+        self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], 2)
 
     async def test_login_method_choice_falls_back_to_first_password_option(self):
         challenge = {

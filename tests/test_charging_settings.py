@@ -289,10 +289,13 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
 
 class ChargingTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_setting_mutations_wait_for_callback_after_subscription(self):
-        for variable, value, operation, key, variables in (
-            ("currentCharge", 127, "PostChargeSettings", "postChargeSettings", {"currentCharge": 127}),
+        # PostChargeSettings never selects requestNo, so its first callback completes it.
+        for variable, value, operation, key, variables, payload, stage in (
+            ("currentCharge", 127, "PostChargeSettings", "postChargeSettings", {"currentCharge": 127},
+             {"correlationId": "correlation"}, 3),
             ("minimumElectricSupply", 30, "PostPowerSupplyModeLimit", "executeRemoteCommand",
-             {"command": "set-power-supply", "minimumElectricSupply": "30"}),
+             {"command": "set-power-supply", "minimumElectricSupply": "30"},
+             {"correlationId": "correlation", "requestNo": 42}, 4),
         ):
             with self.subTest(variable=variable):
                 websocket = transport._WebSocket()
@@ -301,12 +304,12 @@ class ChargingTransportTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(operation, args[0])
                     self.assertEqual(variables, args[2])
                     self.assertEqual("CA", kwargs["region"])
-                    return {key: {"payload": {"correlationId": "correlation", "requestNo": 42}}}
+                    return {key: {"payload": payload}}
                 client = types.SimpleNamespace(auth=transport._Auth(), graphql_request=AsyncMock(side_effect=mutate))
                 with patch.object(transport.patch_client.aiohttp, "ClientSession", return_value=transport._WebSocketSession(websocket)):
                     result = await transport.patch_client.update_charge_settings(client, "TESTVIN24", variable, value, "CA")
                 self.assertEqual("COMPLETED", result["status"])
-                self.assertEqual(4, websocket.stage)
+                self.assertEqual(stage, websocket.stage)
 
     async def test_commands_for_one_vehicle_are_serialized(self):
         client = types.SimpleNamespace()
