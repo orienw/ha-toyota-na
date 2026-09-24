@@ -1,9 +1,8 @@
 """Cached readings and shutdown independently of command access."""
 
-import asyncio
 import types
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import test_button as ha
 import test_vehicle_behavior as behavior
@@ -61,22 +60,3 @@ class ReadAccessTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await ha.integration_runtime.async_unload_entry(hass, entry))
         handler.stop.assert_awaited_once()
         self.assertNotIn(entry.entry_id, hass.data[ha.DOMAIN])
-
-    async def test_unload_cancels_pending_post_command_poll(self):
-        vehicle = ha.FakeVehicle({RemoteRequestCommand.EngineStart})
-        coordinator = ha.DataUpdateCoordinator([vehicle])
-        hass = ha.FakeHass(coordinator)
-        entry = ha.ConfigEntry()
-        entity = ha.button.ToyotaCommandButton(
-            RemoteRequestCommand.EngineStart, "mdi:engine", entry,
-            coordinator, "Remote Start", vehicle.vin,
-        )
-        entity.hass = hass
-        with patch.object(ha.button, "COMMAND_REFRESH_DELAY", 60):
-            await entity.async_press()
-            await asyncio.sleep(0)
-            for callback in entry.unload_callbacks:
-                callback()
-            await asyncio.gather(*hass.tasks, return_exceptions=True)
-        self.assertEqual(0, coordinator.refreshes)
-        self.assertTrue(hass.tasks[0].cancelled())

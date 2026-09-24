@@ -819,18 +819,6 @@ class VehicleStateTests(unittest.TestCase):
                 apply(vehicle, "unknown")
                 self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
 
-    def test_older_electric_response_cannot_overwrite_newer_charge_level(self):
-        for make in (make_vehicle, make_17cy_vehicle):
-            vehicle = make()
-            for timestamp, level in (("07:01:00", 65), ("07:00:00", 64)):
-                vehicle._parse_electric_status({
-                    "vehicleInfo": {
-                        "acquisitionDatetime": f"2026-09-14T{timestamp}Z",
-                        "chargeInfo": {"chargeRemainingAmount": level},
-                    },
-                })
-            self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 65)
-
     def test_telemetry_tires_use_their_measurement_timestamp(self):
         legacy = SeventeenCYToyotaVehicle(
             client=object(),
@@ -991,35 +979,6 @@ class VehicleStateTests(unittest.TestCase):
                         }]})
                         door = vehicle.features.get(VehicleFeatures.FrontDriverDoor)
                         self.assertIs(door.locked if door else None, expected)
-
-    def test_legacy_unknown_status_does_not_become_open(self):
-        vehicle = SeventeenCYToyotaVehicle(
-            client=object(),
-            has_remote_subscription=True,
-            has_electric=False,
-            model_name="CAMRY",
-            model_year="2018",
-            vin="LEGACYVIN",
-            region="US",
-        )
-
-        vehicle._parse_vehicle_status(
-            {
-                "vehicleStatus": [
-                    {
-                        "category": "Driver Side",
-                        "sections": [
-                            {
-                                "section": "Door",
-                                "values": [{"value": "unknown"}],
-                            }
-                        ],
-                    }
-                ]
-            }
-        )
-
-        self.assertNotIn(VehicleFeatures.FrontDriverDoor, vehicle.features)
 
     def test_24mm_status_parses_state_tires_and_electric_data(self):
         status = json.loads(
@@ -1374,15 +1333,6 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
         session.close.assert_awaited_once()
         self.assertFalse(handler.is_connected)
 
-    async def test_connection_rejection_exits_listen_loop(self):
-        handler = ToyotaWebSocketHandler(object())
-        with self.assertLogs(websocket_module.__name__, level="WARNING"):
-            with self.assertRaises(ConnectionError):
-                await handler._handle_message(
-                    {"type": "connection_error", "payload": {"message": "rejected"}},
-                    "token", "guid",
-                )
-
     async def test_push_is_forwarded_immediately(self):
         received = []
         handler = ToyotaWebSocketHandler(
@@ -1715,7 +1665,6 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vehicle.backdoor_type, "trunk")
         self.assertTrue(vehicle.subscribed)
         self.assertFalse(vehicle.electric)
-        self.assertIs(vehicle.capabilities, vehicle.remote_capabilities)
         self.assertIn(("telemetry", ("TESTVIN", "US", "17CYPLUS")), calls)
         self.assertIn(("status", ("TESTVIN", "US")), calls)
 

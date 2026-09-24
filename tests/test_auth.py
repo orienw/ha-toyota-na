@@ -235,7 +235,7 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         self.auth.request_tokens.assert_not_awaited()
 
     async def test_expired_credentials_request_home_assistant_reauthentication(self):
-        client = types.SimpleNamespace(auth=types.SimpleNamespace(login=AsyncMock()))
+        client = types.SimpleNamespace()
         entry = platform.ConfigEntry()
         entry.data = self.credentials
         with patch.object(
@@ -245,7 +245,6 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
                 await platform.integration_runtime.update_vehicles_status(
                     None, client, entry, None,
                 )
-        client.auth.login.assert_not_called()
 
     async def test_reauthentication_keeps_device_id_and_updates_existing_entry(self):
         entry = platform.ConfigEntry()
@@ -626,16 +625,6 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
                         self.assertIs(error, caught.exception)
                     self.assertEqual(tokens, auth.get_tokens())
                     session.post.assert_called_once()
-
-    async def test_login_pauses_for_otp_before_exchanging_tokens(self):
-        challenge = {"callbacks": []}
-        auth = types.SimpleNamespace(
-            authorize=AsyncMock(side_effect=[challenge, "code"]), request_tokens=AsyncMock(),
-        )
-        self.assertEqual(await patch_auth.login(auth, "owner", "password"), challenge)
-        auth.request_tokens.assert_not_awaited()
-        await patch_auth.login(auth, "owner", "password", "otp")
-        auth.request_tokens.assert_awaited_once_with("code")
 
     async def test_invalid_otp_retry_uses_the_latest_server_challenge(self):
         def challenge(auth_id):

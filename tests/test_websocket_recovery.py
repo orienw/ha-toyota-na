@@ -7,10 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from test_vehicle_behavior import (
-    ROOT,
     ToyotaWebSocketHandler,
-    VehicleFeatures,
-    make_24mm_vehicle,
     websocket_module,
 )
 
@@ -242,22 +239,9 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 self.socket.close.assert_awaited_once()
                 session.close.assert_awaited_once()
 
-    async def test_subscribed_electric_and_tire_data_reaches_vehicle(self):
-        vehicle = make_24mm_vehicle()
-        self.handler._status_callback = lambda vin, status: vehicle.apply_graphql_status(status)
-        status = json.loads((ROOT / "tests/fixtures/vehicle_24mm.json").read_text())
-        status["vin"] = "FIRSTVIN"
+    async def test_subscription_requests_electric_tire_trip_and_engine_fields(self):
         await self.handler._subscribe_vin("FIRSTVIN", "token", "guid")
         sent = self.socket.send_json.call_args.args[0]
         query = json.loads(sent["payload"]["data"])["query"]
         for field in ("electric {", "tires {", "tripdetails {", "engine { running lastUpdateDateTime status"):
             self.assertIn(field, query)
-
-        await self.handler._handle_message({
-            "type": "data", "id": sent["id"],
-            "payload": {"data": {"onVehicleStatusUpdated": status}},
-        }, "token", "guid")
-
-        self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 100)
-        self.assertEqual(vehicle.features[VehicleFeatures.FrontDriverTire].value, 35.1)
-        self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)

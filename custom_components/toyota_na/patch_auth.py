@@ -305,10 +305,3 @@ async def refresh_tokens(self):
                     raise LoginError()
             resp.raise_for_status()
             self._extract_tokens(await resp.json())
-
-
-async def login(self, username, password, otp=None):
-    authorization_code = await self.authorize(username, password, otp)
-    if isinstance(authorization_code, dict):
-        return authorization_code
-    await self.request_tokens(authorization_code)

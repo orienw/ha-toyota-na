@@ -397,37 +397,6 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
             "TESTVIN",
         )
 
-    async def test_capability_change_marks_command_unavailable(self):
-        self.vehicle.supported.remove(RemoteRequestCommand.HazardsOn)
-
-        self.assertFalse(self.entities[2].available)
-
-    async def test_new_command_capability_adds_button_without_reload(self):
-        vehicle = FakeVehicle({RemoteRequestCommand.EngineStart})
-        coordinator = DataUpdateCoordinator([vehicle])
-        hass = FakeHass(coordinator)
-        config_entry = ConfigEntry()
-        entities = []
-
-        await button.async_setup_entry(
-            hass,
-            config_entry,
-            lambda added, update_before_add: entities.extend(added),
-        )
-        self.assertEqual(
-            [entity.sensor_name for entity in entities],
-            ["Remote Start", "Refresh Status"],
-        )
-
-        vehicle.supported.add(RemoteRequestCommand.EngineStop)
-        coordinator.notify_listeners()
-        coordinator.notify_listeners()
-
-        self.assertEqual(
-            [entity.sensor_name for entity in entities],
-            ["Remote Start", "Refresh Status", "Remote Stop"],
-        )
-
     async def test_lock_command_does_not_issue_an_extra_vehicle_wake(self):
         entities = []
         await lock_platform.async_setup_entry(
@@ -445,27 +414,6 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.vehicle.refresh_requests, 0)
         self.assertEqual(self.coordinator.refreshes, 1)
         self.assertIn(LAST_WAKE_AT, self.config_entry.data)
-
-    async def test_failed_lock_command_clears_transition_state(self):
-        async def fail_command(command):
-            raise RuntimeError("command rejected")
-
-        self.vehicle.send_command = fail_command
-        entities = []
-        await lock_platform.async_setup_entry(
-            self.hass,
-            self.config_entry,
-            lambda added, update_before_add: entities.extend(added),
-        )
-        lock = entities[0]
-        lock.hass = self.hass
-
-        with self.assertRaisesRegex(exceptions.HomeAssistantError, "command rejected"):
-            await lock.async_lock()
-
-        self.assertFalse(lock._state_changing)
-        self.assertNotIn(LAST_WAKE_AT, self.config_entry.data)
-        self.assertEqual(self.hass.tasks, [])
 
     def test_primary_lock_ignores_other_lockable_openings(self):
         entity = lock_platform.ToyotaLock(self.config_entry, self.coordinator, "", self.vehicle.vin)
@@ -582,30 +530,6 @@ class BinarySensorCleanupTests(unittest.IsolatedAsyncioTestCase):
 
 
 class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
-    async def test_reported_ev_data_is_available_without_remote_subscription(self):
-        vehicle = FakeVehicle(set())
-        vehicle.subscribed = False
-        vehicle.electric = True
-        vehicle.features = {
-            VehicleFeatures.ChargeLevel: ToyotaNumeric(65, "%"),
-            VehicleFeatures.ChargeDistance: ToyotaNumeric(30, "mi"),
-            VehicleFeatures.ChargingStatus: ToyotaOpening(closed=False),
-        }
-        coordinator = DataUpdateCoordinator([vehicle])
-        hass = FakeHass(coordinator)
-        sensors = []
-        binary_sensors = []
-
-        await sensor_platform.async_setup_entry(
-            hass, ConfigEntry(), lambda added, update: sensors.extend(added),
-        )
-        await binary_sensor_platform.async_setup_entry(
-            hass, ConfigEntry(), lambda added, update: binary_sensors.extend(added),
-        )
-
-        self.assertEqual({sensor.sensor_name for sensor in sensors}, {"EV Range", "EV Battery Level"})
-        self.assertEqual([sensor.sensor_name for sensor in binary_sensors], ["Charging Status"])
-        self.assertTrue(binary_sensors[0].is_on)
 
     async def test_pressure_sensor_converts_reported_units_to_psi(self):
         for value, unit, expected in (

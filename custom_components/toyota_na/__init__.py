@@ -5,13 +5,12 @@ from zoneinfo import ZoneInfo
 from toyota_na.auth import ToyotaOneAuth
 from toyota_na.client import ToyotaOneClient
 from .patch_auth import (
-    authorize, check_tokens, extract_tokens, get_tokens, logged_in, login,
+    authorize, check_tokens, extract_tokens, get_tokens, logged_in,
     refresh_tokens, request_tokens, set_tokens,
 )
 
 ToyotaOneAuth.authorize = authorize
 ToyotaOneAuth.check_tokens = check_tokens
-ToyotaOneAuth.login = login
 ToyotaOneAuth.request_tokens = request_tokens
 ToyotaOneAuth.refresh_tokens = refresh_tokens
 ToyotaOneAuth._extract_tokens = extract_tokens

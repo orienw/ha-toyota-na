@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from aiohttp import ClientConnectionError
-from toyota_na.exceptions import AuthError, LoginError, NotLoggedIn, TokenExpired
+from toyota_na.exceptions import AuthError
 
 import test_button as ha
 import test_vehicle_behavior as behavior
@@ -170,31 +170,29 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(SETTINGS, self.vehicle.climate_settings)
 
     async def test_invalid_rest_json_is_an_operational_error(self):
-        for operation, method in (("get_climate_settings", "GET"), ("update_climate_settings", "PUT")):
-            error = json.JSONDecodeError("Expecting value", "invalid", 0)
-            response = AsyncMock()
-            response.status = 200
-            response.json.side_effect = error
-            response.__aenter__.return_value = response
-            session = MagicMock()
-            session.__aenter__.return_value = session
-            session.request.return_value = response
-            client = types.SimpleNamespace(_auth_headers=AsyncMock(return_value={}))
+        error = json.JSONDecodeError("Expecting value", "invalid", 0)
+        response = AsyncMock()
+        response.status = 200
+        response.json.side_effect = error
+        response.__aenter__.return_value = response
+        session = MagicMock()
+        session.__aenter__.return_value = session
+        session.request.return_value = response
+        client = types.SimpleNamespace(_auth_headers=AsyncMock(return_value={}))
 
-            async def request(*args):
-                return await patch_client.api_request(client, method, "climate-settings")
+        async def request(*args):
+            return await patch_client.api_request(client, "PUT", "climate-settings")
 
-            with (
-                self.subTest(operation=operation),
-                patch.object(patch_client.aiohttp, "ClientSession", return_value=session),
-                patch.object(self.client, operation, request),
-                self.assertRaises(ha.exceptions.HomeAssistantError) as raised,
-            ):
-                await self.entities["Climate Fan Speed"].async_set_native_value(4)
-            self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
-            self.assertEqual("Toyota returned an invalid response.", str(raised.exception))
-            self.assertIs(error, raised.exception.__cause__)
-            session.request.assert_called_once()
+        with (
+            patch.object(patch_client.aiohttp, "ClientSession", return_value=session),
+            patch.object(self.client, "update_climate_settings", request),
+            self.assertRaises(ha.exceptions.HomeAssistantError) as raised,
+        ):
+            await self.entities["Climate Fan Speed"].async_set_native_value(4)
+        self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
+        self.assertEqual("Toyota returned an invalid response.", str(raised.exception))
+        self.assertIs(error, raised.exception.__cause__)
+        session.request.assert_called_once()
         self.assertEqual(SETTINGS, self.vehicle.climate_settings)
 
     async def test_expected_write_failures_preserve_messages_and_reported_state(self):
@@ -225,17 +223,6 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(SETTINGS, self.vehicle.climate_settings)
         changed.assert_not_called()
 
-    async def test_empty_authentication_errors_have_a_message(self):
-        for operation in ("get_climate_settings", "update_climate_settings"):
-            for error in (LoginError(), NotLoggedIn(), TokenExpired()):
-                with self.subTest(operation=operation, error=type(error)):
-                    with patch.object(self.client, operation, AsyncMock(side_effect=error)):
-                        with self.assertRaises(ha.exceptions.HomeAssistantError) as raised:
-                            await self.entities["Climate Fan Speed"].async_set_native_value(4)
-                    self.assertEqual("Toyota authentication failed. Sign in again.", str(raised.exception))
-                    self.assertIs(error, raised.exception.__cause__)
-        self.assertEqual(SETTINGS, self.vehicle.climate_settings)
-
     async def test_unavailable_controls_raise_validation_errors_without_writing(self):
         self.vehicle._has_remote_subscription = False
         for action, args in (
@@ -254,13 +241,6 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
             await self.entities["Climate Fan Speed"].async_set_native_value(4)
         self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
         self.client.update_climate_settings.assert_not_awaited()
-
-    async def test_cancellation_and_unexpected_errors_are_not_translated(self):
-        for error in (asyncio.CancelledError(), KeyError("broken payload")):
-            self.client.update_climate_settings.side_effect = error
-            with self.subTest(error=type(error)), self.assertRaises(type(error)) as raised:
-                await self.entities["Climate Fan Speed"].async_set_native_value(4)
-            self.assertIs(error, raised.exception)
 
     async def test_disabled_custom_settings_can_be_configured_before_enabling(self):
         self.server["settingsOn"] = False

@@ -340,11 +340,6 @@ class ToyotaVehicle(ABC):
         return self._remote_capabilities
 
     @property
-    def capabilities(self):
-        """Compatibility alias for remote service capabilities."""
-        return self._remote_capabilities
-
-    @property
     def extended_capabilities(self):
         return self._extended_capabilities
 

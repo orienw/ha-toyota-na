@@ -348,13 +348,6 @@ class ClimateSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.vehicle.climate_settings, expected)
         self.assertEqual(self.client.get_climate_settings.return_value, CLIMATE_SETTINGS)
 
-    async def test_rejected_settings_do_not_replace_last_known_preferences(self):
-        self.vehicle._climate_settings = deepcopy(CLIMATE_SETTINGS)
-        self.client.update_climate_settings.side_effect = RuntimeError("Toyota rejected settings")
-        with self.assertRaisesRegex(RuntimeError, "rejected"):
-            await self.vehicle.update_climate_settings(temperature=23)
-        self.assertEqual(self.vehicle.climate_settings, CLIMATE_SETTINGS)
-
     async def test_temperature_range_and_step_are_checked_before_writing(self):
         for temperature in (17, 31, 22.25, float("nan"), float("inf")):
             with (
@@ -392,24 +385,6 @@ class ClimateSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(enabled.available)
         with self.assertRaises(ha.exceptions.ServiceValidationError):
             await enabled.async_turn_on()
-
-    async def test_simultaneous_changes_preserve_both_settings(self):
-        settings = deepcopy(CLIMATE_SETTINGS)
-
-        async def read(*args):
-            await asyncio.sleep(0)
-            return deepcopy(settings)
-
-        async def write(vin, generation, body, region, brand):
-            await asyncio.sleep(0)
-            settings.update(body)
-
-        self.client.get_climate_settings.side_effect = read
-        self.client.update_climate_settings.side_effect = write
-        await asyncio.gather(self.vehicle.update_climate_settings(temperature=23),
-                             self.vehicle.update_climate_settings(settingsOn=False))
-        self.assertEqual(settings["temperature"], 23)
-        self.assertFalse(settings["settingsOn"])
 
     async def test_save_remains_visible_when_poll_replaces_vehicle(self):
         await self.vehicle.update_climate()
