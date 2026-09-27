@@ -550,7 +550,8 @@ class ToyotaVehicle(ABC):
     def supports_command(self, command: RemoteRequestCommand) -> bool:
         """Return whether the API transport and vehicle support a command."""
         if command == RemoteRequestCommand.Refresh:
-            return self.subscribed and self.feature_enabled("vehicleState")
+            status = (self._feature_flags or {}).get("vehicleState")
+            return self.subscribed and (status is None or self.feature_enabled("vehicleState"))
         if not self.subscribed or not self.feature_enabled("remoteCommands"):
             return False
         if command == RemoteRequestCommand.ExtendRuntime:
