@@ -139,6 +139,104 @@ GRAPHQL_GET_VEHICLE_STATUS = (
     + "} }"
 )
 
+# Keep the pre-2.9 selection available when an endpoint rejects newer fields.
+GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS = """
+    vin lastUpdateDateTime
+    vehicleState {
+      lastUpdateDateTime driverPosition
+      doors {
+        driverSide { lock { status } position { status } }
+        passengerSide { lock { status } position { status } }
+        rearDriverSide { lock { status } position { status } }
+        rearPassengerSide { lock { status } position { status } }
+      }
+      windows {
+        driverSide { position { status } }
+        passengerSide { position { status } }
+        rearDriverSide { position { status } }
+        rearPassengerSide { position { status } }
+      }
+      hatch { lock { status } position { status } }
+      hood { position { status } }
+      moonroof { position { status } }
+      trunk { lock { status } position { status } }
+      tailgate { lock { status } position { status } }
+      tires {
+        frontLeft { psi kpa bar displayLowTirePressureWarning }
+        frontRight { psi kpa bar displayLowTirePressureWarning }
+        rearLeft { psi kpa bar displayLowTirePressureWarning }
+        rearRight { psi kpa bar displayLowTirePressureWarning }
+        spare { psi kpa bar displayLowTirePressureWarning }
+        lastUpdateDateTime
+      }
+      engine { running lastUpdateDateTime status }
+    }
+    tripdetails {
+      lastUpdateDateTime
+      tripA { value unit }
+      tripB { value unit }
+      tripCount { value unit }
+    }
+    location { latitude longitude lastUpdateDateTime }
+    telemetry {
+      lastUpdateDateTime
+      odo { unit value }
+      fugage { unit value }
+      range { unit value }
+      totalAverageFuelConsumption { unit value }
+      averageFuelConsumptionSinceStart { unit value }
+    }
+    electric {
+      lastUpdateDateTime
+      battery {
+        chargeRemainingAmount { unit value }
+        powerSupplyPossibleTime { unit value }
+        travelableDistance { unit value }
+        travelableDistanceAC { unit value }
+        plugInEnergy { unit value }
+        stateOfChargeDisplay { unit value }
+      }
+      charging {
+        chargeType chargingStatus chargingState
+        remainingChargeTime { unit value }
+        remainingChargeTimeTo80Percent { unit value }
+        connector { status plugInInfo plugStatus }
+        chargeSettings {
+          targetLimit { value unit }
+          maxACCurrent { value setting }
+          maxDCPower { value setting }
+          lastUpdateDateTime
+        }
+        lastUpdateDateTime
+      }
+      gasoline {
+        powerSupplyPossibleTime { unit value }
+        travelableDistance { unit value }
+      }
+    }
+"""
+
+GRAPHQL_GET_BASIC_VEHICLE_STATUS = (
+    "query GetVehicleStatus($vin: String!) { getVehicleStatus(vin: $vin) {"
+    + GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS
+    + "} }"
+)
+
+_OPTIONAL_STATUS_PATHS = (
+    ("vehicleState", "glassHatch"),
+    ("vehicleState", "engine", "startTime"),
+    ("vehicleState", "engine", "stopTime"),
+    ("vehicleState", "engine", "lastUpdateBy"),
+    ("electric", "charging", "actualChargingRate"),
+    ("electric", "charging", "limitSelectionValues"),
+    ("electric", "charging", "chargeSettings", "schedules"),
+    ("electric", "charging", "chargeSettings", "electricSupplyModeLimit"),
+    ("electric", "charging", "chargeSettings", "electricSupplyLimitFunction"),
+    ("electric", "charging", "chargeSettings", "acCurrentSelections"),
+    ("electric", "charging", "chargeSettings", "dcPowerSelections"),
+    ("electric", "charging", "chargeSettings", "electricSupplyLimitSelections"),
+)
+
 GRAPHQL_REMOTE_COMMAND_STATUS = """subscription ReceiveRemoteCommandStatus($vin: String!) {
   onPostRemoteCallback(vin: $vin) {
     appRequestNo type category remoteCommandType message status vin command commandEnded
@@ -510,6 +608,78 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
         _LOGGER.debug("Electric status failed: %s", e)
         return None
 
+def graphql_schema_errors(errors):
+    """Recognize rejected query fields separately from auth and resolver errors."""
+    return isinstance(errors, list) and any(
+        err.get("errorType") == "ValidationError"
+        or (isinstance(err.get("extensions"), dict)
+            and err["extensions"].get("code") == "GRAPHQL_VALIDATION_FAILED")
+        or str(err.get("message", "")).lower().startswith(("validation error", "cannot query field"))
+        for err in errors if isinstance(err, dict)
+    )
+
+
+def _failed_status_sections(data, errors):
+    """Find sections lost to errors in fields omitted by the basic selection."""
+    status = (data or {}).get("getVehicleStatus")
+    sections = set()
+    for err in errors:
+        path = err.get("path")
+        if not isinstance(path, list) or len(path) < 3 or path[0] != "getVehicleStatus":
+            continue
+        if any(tuple(path[1:len(optional) + 1]) == optional for optional in _OPTIONAL_STATUS_PATHS):
+            section = status.get(path[1]) if isinstance(status, dict) else None
+            if status is None or (isinstance(status, dict) and (
+                section is None or (path[1] == "electric" and isinstance(section, dict) and section.get("charging") is None)
+            )):
+                sections.add(path[1])
+    return sections
+
+
+def _merge_status_fallback(original_data, fallback_data, sections):
+    """Recover missing sections without replacing valid first-response data."""
+    if not isinstance(fallback_data, dict):
+        return original_data
+    original = (original_data or {}).get("getVehicleStatus")
+    if not isinstance(original, dict):
+        return fallback_data or original_data
+    fallback = fallback_data.get("getVehicleStatus")
+    if not isinstance(fallback, dict):
+        return original_data
+    recovered = {key: fallback[key] for key in sections if isinstance(fallback.get(key), dict)}
+    electric = original.get("electric")
+    mixed_electric = None
+    if "electric" in recovered and isinstance(electric, dict):
+        fallback_electric = recovered["electric"]
+        charging = fallback_electric.get("charging")
+        if not isinstance(charging, dict):
+            recovered.pop("electric")
+        else:
+            mixed_electric = {**electric, "lastUpdateDateTime": None, "charging": {
+                **charging, "lastUpdateDateTime": charging.get("lastUpdateDateTime")
+                or fallback_electric.get("lastUpdateDateTime") or fallback.get("lastUpdateDateTime"),
+            }}
+            # Battery/range readings still belong to the first response.
+            for key in ("battery", "gasoline"):
+                value = electric.get(key)
+                if isinstance(value, dict):
+                    mixed_electric[key] = {**value, "lastUpdateDateTime": value.get("lastUpdateDateTime")
+                                          or electric.get("lastUpdateDateTime") or original.get("lastUpdateDateTime")}
+    if not recovered:
+        return original_data
+    status = {**original, **recovered}
+    if original.get("lastUpdateDateTime") or fallback.get("lastUpdateDateTime"):
+        # A combined document has no shared timestamp: retain each section's source.
+        for key, value in status.items():
+            if isinstance(value, dict) and not value.get("lastUpdateDateTime"):
+                source = fallback if key in recovered else original
+                status[key] = {**value, "lastUpdateDateTime": source.get("lastUpdateDateTime")}
+        status["lastUpdateDateTime"] = None
+    if mixed_electric is not None:
+        status["electric"] = mixed_electric
+    return {**original_data, "getVehicleStatus": status}
+
+
 async def graphql_request(
     self,
     operation_name,
@@ -521,6 +691,7 @@ async def graphql_request(
     backdoor_type=None,
     raise_errors=False,
     read_only=False,
+    fallback_query=None,
 ):
     """Make an AppSync request, retrying only explicitly read-only operations."""
     headers = {
@@ -542,26 +713,40 @@ async def graphql_request(
     }
     if backdoor_type:
         headers["backdoorType"] = backdoor_type
-    payload = json.dumps({
+    payload = {
         "operationName": operation_name,
         "query": query,
         "variables": variables,
-    })
+    }
     auth_retried = False
     retries = 0
+    original_data = None
+    recovery_sections = set()
     async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         while True:
             token = await self.auth.get_access_token()
             headers["Authorization"] = "Bearer " + token
-            async with session.post(GRAPHQL_ENDPOINT, headers=headers, data=payload) as resp:
-                body = await resp.text()
-                status = resp.status
             try:
-                result = json.loads(body)
-            except json.JSONDecodeError:
-                if status < 400:
-                    raise
-                result = {}
+                async with session.post(GRAPHQL_ENDPOINT, headers=headers, data=json.dumps(payload)) as resp:
+                    body = await resp.text()
+                    status = resp.status
+                try:
+                    result = json.loads(body)
+                except json.JSONDecodeError:
+                    if status < 400:
+                        raise
+                    result = {}
+            except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError):
+                if original_data is not None and not raise_errors:
+                    return original_data
+                raise
+            if not isinstance(result, dict):
+                if status >= 400:
+                    result = {}
+                elif raise_errors:
+                    raise RuntimeError("Toyota GraphQL returned an invalid response.")
+                else:
+                    return original_data
             errors = result.get("errors") or []
             auth_errors = errors or ([result] if status == 403 else [])
             auth_failed = status == 401 or any(
@@ -583,6 +768,22 @@ async def graphql_request(
                 await asyncio.sleep(2 ** retries)
                 retries += 1
                 continue
+            data = result.get("data")
+            if data is not None and not isinstance(data, dict):
+                if raise_errors:
+                    raise RuntimeError("Toyota GraphQL returned an invalid response.")
+                return original_data
+            if read_only and fallback_query and status in (200, 400):
+                recovery_sections = _failed_status_sections(data, errors)
+                if recovery_sections or (
+                    graphql_schema_errors(errors)
+                    and all(value is None for value in (data or {}).values())
+                ):
+                    _LOGGER.debug("GraphQL %s failed on optional status fields; retrying the basic query", operation_name)
+                    original_data = data
+                    payload["query"] = fallback_query
+                    fallback_query = None
+                    continue
             if status >= 400:
                 _LOGGER.debug(
                     "GraphQL %s error: HTTP %d: %s",
@@ -595,7 +796,7 @@ async def graphql_request(
                         "Toyota GraphQL %s failed with HTTP %d"
                         % (operation_name, status)
                     )
-                return None
+                return original_data
             if errors:
                 err = errors[0]
                 _LOGGER.debug(
@@ -619,7 +820,9 @@ async def graphql_request(
                     if code:
                         detail = f"{detail} [{code}]"
                     raise RuntimeError(detail)
-            return result.get("data")
+            if original_data is not None:
+                return _merge_status_fallback(original_data, data, recovery_sections)
+            return data
 
 
 async def graphql_pre_wake(self, guid, region="US"):
@@ -671,8 +874,10 @@ async def graphql_get_vehicle_status(
         region=region,
         backdoor_type=backdoor_type,
         read_only=True,
+        fallback_query=GRAPHQL_GET_BASIC_VEHICLE_STATUS,
     )
-    return data.get("getVehicleStatus") if data else None
+    status = data.get("getVehicleStatus") if data else None
+    return status if isinstance(status, dict) else None
 
 
 async def graphql_send_remote_command(

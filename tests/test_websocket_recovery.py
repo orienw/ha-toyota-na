@@ -51,6 +51,105 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(delay, expected)
         return resume
 
+    async def test_malformed_push_does_not_interrupt_other_subscriptions(self):
+        cached = {"vin": "FIRSTVIN", "electric": {"battery": {"stateOfChargeDisplay": {"value": 85}}}}
+        self.handler._cached_status["FIRSTVIN"] = cached
+        for payload in (None, [], {"data": None}, {"data": ["invalid"]}, {"data": {"onVehicleStatusUpdated": ["invalid"]}}):
+            with self.subTest(payload=payload):
+                await self.handler._handle_message({"type": "data", "id": "first", "payload": payload}, "token", "guid")
+                self.assertEqual(cached, self.handler.get_cached_status("FIRSTVIN"))
+                self.assertEqual({"FIRSTVIN": "first", "SECONDVIN": "second"}, self.handler._subscriptions)
+                self.socket.close.assert_not_awaited()
+        state = {"vin": "SECONDVIN", "telemetry": {"odo": {"value": 1234}}}
+        await self.handler._handle_message({
+            "type": "data", "id": "second", "payload": {"data": {"onVehicleStatusUpdated": state}},
+        }, "token", "guid")
+        self.assertEqual([("SECONDVIN", state)], self.received)
+
+    async def test_malformed_subscription_errors_retry_only_the_affected_vehicle(self):
+        for payload in ("Unauthorized", [], {"errors": ["Validation error"]}, {"errors": "invalid"}, {"errors": [None, {"extensions": "invalid"}]}):
+            with self.subTest(payload=payload):
+                self.handler._subscriptions["FIRSTVIN"] = "first"
+                self.handler._retry_delays.clear()
+                with self.assertLogs(websocket_module.__name__, level="WARNING"):
+                    await self.handler._handle_message({"type": "error", "id": "first", "payload": payload}, "token", "guid")
+                self.assertEqual({"SECONDVIN": "second"}, self.handler._subscriptions)
+                self.assertEqual({"FIRSTVIN"}, set(self.handler._retry_tasks))
+                self.assertNotIn("FIRSTVIN", self.handler._basic_status_vins)
+                self.socket.close.assert_not_awaited()
+                await self.next_sleep(5)
+                await self.handler._cancel_retries()
+
+    async def test_schema_rejection_recovers_status_without_downgrading_other_car(self):
+        with self.assertLogs(websocket_module.__name__, level="WARNING"):
+            await self.handler._handle_message({
+                "type": "error", "id": "first",
+                "payload": {"errors": [{"message": "Validation error of type FieldUndefined: actualChargingRate"}]},
+            }, "token", "guid")
+        retry = self.handler._retry_tasks["FIRSTVIN"]
+        resume = await self.next_sleep(5)
+        resume.set()
+        await retry
+        sent = self.socket.send_json.call_args.args[0]
+        query = json.loads(sent["payload"]["data"])["query"]
+        self.assertNotIn("actualChargingRate", query)
+        self.assertIn("stateOfChargeDisplay", query)
+        self.assertEqual(self.handler._subscriptions["SECONDVIN"], "second")
+        self.socket.close.assert_not_awaited()
+
+        await self.next_sleep(30)
+        timeout = self.handler._retry_tasks["FIRSTVIN"]
+        await self.handler._handle_message({"type": "start_ack", "id": sent["id"]}, "token", "guid")
+        await asyncio.gather(timeout, return_exceptions=True)
+        state = {"vin": "FIRSTVIN", "electric": {"battery": {"stateOfChargeDisplay": {"value": 85}}}}
+        await self.handler._handle_message({
+            "type": "data", "id": sent["id"],
+            "payload": {"data": {"onVehicleStatusUpdated": state}},
+        }, "token", "guid")
+        self.assertEqual(self.received, [("FIRSTVIN", state)])
+        self.assertEqual(self.handler.get_cached_status("FIRSTVIN"), state)
+
+        await self.handler._subscribe_vin("SECONDVIN", "token", "guid")
+        second = self.socket.send_json.call_args.args[0]
+        self.assertIn("actualChargingRate", json.loads(second["payload"]["data"])["query"])
+
+    async def test_readded_vehicle_retries_full_fields_and_ignores_retired_schema_errors(self):
+        rejection = {"type": "error", "id": "first", "payload": {"errors": [{"errorType": "ValidationError"}]}}
+        with self.assertLogs(websocket_module.__name__, level="WARNING"):
+            await self.handler._handle_message(rejection, "token", "guid")
+        retry = self.handler._retry_tasks["FIRSTVIN"]
+        await self.next_sleep(5)
+        await self.handler.update_vehicle_contexts({"SECONDVIN": {"region": "CA"}})
+        await asyncio.gather(retry, return_exceptions=True)
+        self.assertTrue(retry.cancelled())
+        await self.handler._handle_message(rejection, "token", "guid")
+        await self.handler.update_vehicle_contexts({"FIRSTVIN": {"region": "US"}, "SECONDVIN": {"region": "CA"}})
+        retry = self.handler._retry_tasks["FIRSTVIN"]
+        resume = await self.next_sleep(0)
+        resume.set()
+        await retry
+        sent = self.socket.send_json.call_args.args[0]
+        self.assertIn("actualChargingRate", json.loads(sent["payload"]["data"])["query"])
+
+    async def test_reconnect_keeps_fallback_isolated_to_the_rejected_vehicle(self):
+        with self.assertLogs(websocket_module.__name__, level="WARNING"):
+            await self.handler._handle_message({
+                "type": "error", "id": "first",
+                "payload": {"errors": [{"errorType": "ValidationError"}]},
+            }, "token", "guid")
+        retry = self.handler._retry_tasks["FIRSTVIN"]
+        await self.next_sleep(5)
+        await self.handler._disconnect()
+        self.assertTrue(retry.cancelled())
+        self.assertEqual({}, self.handler._subscriptions)
+        self.handler._ws = self.socket
+        self.socket.reset_mock()
+        await self.handler._handle_message({"type": "connection_ack"}, "fresh-token", "guid")
+        documents = [json.loads(call.args[0]["payload"]["data"]) for call in self.socket.send_json.call_args_list]
+        queries = {doc["variables"]["vin"]: doc["query"] for doc in documents}
+        self.assertNotIn("actualChargingRate", queries["FIRSTVIN"])
+        self.assertIn("actualChargingRate", queries["SECONDVIN"])
+
     async def test_rejected_subscription_retries_with_fresh_auth_and_preserves_other_car(self):
         with self.assertLogs(websocket_module.__name__, level="WARNING"):
             await self.handler._handle_message({"type": "error", "id": "first"}, "old-token", "guid")
@@ -65,6 +164,7 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent["type"], "start")
         self.assertEqual(sent["payload"]["extensions"]["authorization"]["Authorization"], "Bearer fresh-token")
         self.assertEqual(json.loads(sent["payload"]["data"])["variables"], {"vin": "FIRSTVIN"})
+        self.assertIn("actualChargingRate", json.loads(sent["payload"]["data"])["query"])
         self.assertNotEqual(sent["id"], "first")
         self.socket.close.assert_not_awaited()
         self.assertEqual(self.handler._subscriptions["SECONDVIN"], "second")

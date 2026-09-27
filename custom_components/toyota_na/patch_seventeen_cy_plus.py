@@ -632,6 +632,9 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         sections = [status] + [
             status.get(key) or {} for key in ("vehicleState", "telemetry", "location", "electric", "tripdetails")
         ]
+        electric = status.get("electric") or {}
+        sections.extend(value for key in ("battery", "gasoline", "charging")
+                        if isinstance(value := electric.get(key), dict))
         for section in sections:
             updated_at = parse_api_timestamp(section.get("lastUpdateDateTime"))
             if updated_at is not None:
@@ -831,6 +834,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
         observed_at = parse_api_timestamp(electric.get("lastUpdateDateTime")) or observed_at
         battery = electric.get("battery") or {}
+        battery_observed_at = parse_api_timestamp(battery.get("lastUpdateDateTime")) or observed_at
         charge_level = None
         for key in (
             "stateOfChargeDisplay",
@@ -846,7 +850,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 VehicleFeatures.ChargeLevel,
                 charge_level.get("value"),
                 charge_level.get("unit", "%"),
-                observed_at,
+                battery_observed_at,
             )
 
         electric_range = battery.get("travelableDistance") or {}
@@ -854,13 +858,13 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             VehicleFeatures.ChargeDistance,
             electric_range.get("value"),
             electric_range.get("unit", ""),
-            observed_at,
+            battery_observed_at,
         ):
             self._store_numeric(
                 VehicleFeatures.EvTravelableDistance,
                 electric_range.get("value"),
                 electric_range.get("unit", ""),
-                observed_at,
+                battery_observed_at,
             )
 
         electric_range_ac = battery.get("travelableDistanceAC") or {}
@@ -868,7 +872,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             VehicleFeatures.ChargeDistanceAC,
             electric_range_ac.get("value"),
             electric_range_ac.get("unit", ""),
-            observed_at,
+            battery_observed_at,
         )
 
         gasoline = electric.get("gasoline") or {}
@@ -879,7 +883,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         ):
             measurement = source.get(key) or {}
             self._store_numeric(
-                feature, measurement.get("value"), measurement.get("unit", ""), observed_at,
+                feature, measurement.get("value"), measurement.get("unit", ""),
+                parse_api_timestamp(source.get("lastUpdateDateTime")) or observed_at,
             )
 
         charging = electric.get("charging") or {}

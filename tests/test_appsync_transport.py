@@ -327,6 +327,217 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         session_patch.start()
         self.addCleanup(session_patch.stop)
 
+    async def test_malformed_status_responses_do_not_retry(self):
+        for body in (
+            [], "invalid", {"data": ["invalid"]},
+            {"data": ["invalid"], "errors": [{"errorType": "ValidationError"}]},
+            {"data": {"getVehicleStatus": ["invalid"]}},
+        ):
+            with self.subTest(body=body):
+                self.session.post.reset_mock()
+                self.session.post.return_value = _Response(200, body)
+                self.assertIsNone(await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24"))
+                self.session.post.assert_called_once()
+
+    async def test_malformed_command_response_raises_without_replay(self):
+        for body in ([], {"data": ["invalid"]}):
+            with self.subTest(body=body):
+                self.session.post.reset_mock()
+                self.session.post.return_value = _Response(200, body)
+                with self.assertRaisesRegex(RuntimeError, "invalid response"):
+                    await patch_client.graphql_refresh_status(self.client, "TESTVIN24")
+                self.session.post.assert_called_once()
+
+    async def test_partial_status_recovers_failed_sections_without_replacing_valid_data(self):
+        original = {"vin": "TESTVIN24", "electric": None, "telemetry": {"odo": {"value": 0}}}
+        electric = {"battery": {"stateOfChargeDisplay": {"value": 85}}, "charging": {"chargingStatus": "charging"}}
+        for path in (
+            ["electric", "charging", "actualChargingRate"],
+            ["electric", "charging", "chargeSettings", "schedules", 0, "enabled"],
+            ["electric", "charging", "chargeSettings", "acCurrentSelections", 0, "enabled"],
+            ["electric", "charging", "chargeSettings", "dcPowerSelections"],
+            ["electric", "charging", "chargeSettings", "electricSupplyModeLimit", "value"],
+            ["electric", "charging", "chargeSettings", "electricSupplyLimitFunction"],
+            ["electric", "charging", "chargeSettings", "electricSupplyLimitSelections"],
+            ["electric", "charging", "limitSelectionValues"],
+            ["vehicleState", "glassHatch", "position", "status"],
+            ["vehicleState", "engine", "startTime"],
+            ["vehicleState", "engine", "stopTime"],
+            ["vehicleState", "engine", "lastUpdateBy"],
+        ):
+            with self.subTest(path=path):
+                state = {**original, path[0]: None}
+                restored = electric if path[0] == "electric" else {"engine": {"running": True}}
+                self.session.post.reset_mock()
+                self.session.post.side_effect = [
+                    _Response(200, {"data": {"getVehicleStatus": state}, "errors": [{
+                        "path": ["getVehicleStatus", *path], "message": "Optional field failed",
+                    }]}),
+                    _Response(200, {"data": {"getVehicleStatus": {
+                        **state, path[0]: restored, "telemetry": {"odo": {"value": 999}},
+                    }}}),
+                ]
+                result = await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24")
+                self.assertEqual({**state, path[0]: restored}, result)
+                self.assertEqual(2, self.session.post.call_count)
+
+    async def test_optional_errors_do_not_retry_healthy_sections_or_unrelated_paths(self):
+        optional_path = ["getVehicleStatus", "electric", "charging", "chargeSettings", "schedules"]
+        for electric, path in (
+            ({"battery": {"stateOfChargeDisplay": {"value": 0}}, "charging": {"chargeSettings": None}}, optional_path),
+            (None, ["getVehicleStatus", "electric", "battery", "stateOfChargeDisplay"]),
+            (None, ["getVehicleStatus", "electric", "schedules"]),
+            (None, ["anotherOperation", *optional_path[1:]]),
+            (None, None), (None, "electric.charging.chargeSettings.schedules"),
+        ):
+            with self.subTest(electric=electric, path=path):
+                state = {"vin": "TESTVIN24", "electric": electric}
+                self.session.post.reset_mock()
+                self.session.post.return_value = _Response(200, {
+                    "data": {"getVehicleStatus": state},
+                    "errors": [{"path": path, "message": "Field failed"}],
+                })
+                self.assertEqual(state, await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24"))
+                self.session.post.assert_called_once()
+
+    async def test_failed_partial_recovery_preserves_first_response(self):
+        state = {"vin": "TESTVIN24", "electric": None, "telemetry": {"odo": {"value": 1234}}}
+        original = _Response(200, {"data": {"getVehicleStatus": state}, "errors": [{
+            "path": ["getVehicleStatus", "electric", "charging", "actualChargingRate"],
+            "message": "Optional field failed",
+        }]})
+        malformed = _Response()
+        malformed.text = AsyncMock(return_value="not json")
+        for failure, attempts in (
+            (_Response(503, {}), 4), (_Response(403, {}), 2),
+            (_Response(200, []), 2), (_Response(200, {"data": ["invalid"]}), 2),
+            (_Response(200, {"data": {"getVehicleStatus": None}}), 2),
+            (original, 2), (malformed, 2),
+            (aiohttp.ClientConnectionError("Disconnected"), 2), (TimeoutError(), 2),
+        ):
+            with self.subTest(failure=failure):
+                self.session.post.reset_mock()
+                self.session.post.side_effect = [original, *([failure] * 3)]
+                with patch.object(patch_client.asyncio, "sleep", AsyncMock()):
+                    self.assertEqual(state, await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24"))
+                self.assertEqual(attempts, self.session.post.call_count)
+        self.auth.check_tokens.assert_not_awaited()
+
+    async def test_partial_recovery_does_not_hide_authentication_failure_or_cancellation(self):
+        original = _Response(200, {"data": {"getVehicleStatus": {"vin": "TESTVIN24", "electric": None}}, "errors": [{
+            "path": ["getVehicleStatus", "electric", "charging", "actualChargingRate"],
+        }]})
+        for body in ({}, []):
+            with self.subTest(body=body):
+                self.session.post.reset_mock()
+                self.auth.check_tokens.reset_mock()
+                self.session.post.side_effect = [original, _Response(401, body), _Response(401, body)]
+                with self.assertRaises(patch_client.TokenExpired):
+                    await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24")
+                self.assertEqual(3, self.session.post.call_count)
+                self.auth.check_tokens.assert_awaited_once()
+        self.session.post.side_effect = [original, patch_client.asyncio.CancelledError()]
+        with self.assertRaises(patch_client.asyncio.CancelledError):
+            await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24")
+
+    async def test_optional_error_can_recover_a_null_vehicle_result(self):
+        self.session.post.side_effect = [
+            _Response(200, {"data": {"getVehicleStatus": None}, "errors": [{
+                "path": ["getVehicleStatus", "electric", "charging", "actualChargingRate"],
+            }]}),
+            _Response(),
+        ]
+        self.assertEqual({"vin": "TESTVIN24"}, await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24"))
+        self.assertEqual(2, self.session.post.call_count)
+
+    async def test_transient_retry_budget_is_shared_with_fallback(self):
+        self.session.post.side_effect = [
+            _Response(503, {}),
+            _Response(200, {"errors": [{"errorType": "ValidationError"}]}),
+            _Response(503, {}), _Response(503, {}),
+        ]
+        with patch.object(patch_client.asyncio, "sleep", AsyncMock()) as sleep:
+            self.assertIsNone(await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24"))
+        self.assertEqual([1, 2], [call.args[0] for call in sleep.await_args_list])
+        self.assertEqual(4, self.session.post.call_count)
+
+    async def test_status_schema_rejection_retries_with_compatible_fields(self):
+        state = {"vin": "TESTVIN24", "electric": {
+            "battery": {"stateOfChargeDisplay": {"value": 85, "unit": "%"}},
+            "charging": {"chargingStatus": "charging"},
+        }}
+        for status, error, data in (
+            (200, {"message": "Validation error of type FieldUndefined: actualChargingRate"}, None),
+            (400, {"errorType": "ValidationError"}, {"getVehicleStatus": None}),
+            (200, {"extensions": {"code": "GRAPHQL_VALIDATION_FAILED"}}, None),
+        ):
+            with self.subTest(status=status, error=error):
+                self.session.post.reset_mock()
+                self.session.post.side_effect = [
+                    _Response(status, {"errors": [error], "data": data}),
+                    _Response(200, {"data": {"getVehicleStatus": state}}),
+                ]
+                result = await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24", "hatch", "CA")
+                self.assertEqual(state, result)
+                requests = [json.loads(call.kwargs["data"]) for call in self.session.post.call_args_list]
+                self.assertEqual(2, len(requests))
+                self.assertIn("actualChargingRate", requests[0]["query"])
+                for field in ("actualChargingRate", "glassHatch", "acCurrentSelections", "schedules"):
+                    self.assertNotIn(field, requests[1]["query"])
+                for field in ("battery {", "chargingStatus", "stateOfChargeDisplay", "tires {", "doors {"):
+                    self.assertIn(field, requests[1]["query"])
+                self.assertEqual({"vin": "TESTVIN24"}, requests[1]["variables"])
+                self.assertEqual("GetVehicleStatus", requests[1]["operationName"])
+                self.assertEqual("CA", self.session.post.call_args.kwargs["headers"]["x-region"])
+        self.auth.check_tokens.assert_not_awaited()
+
+    async def test_status_fallback_is_bounded_and_does_not_replay_mutations(self):
+        self.session.post.return_value = _Response(200, {"errors": [{"errorType": "ValidationError"}]})
+        self.assertIsNone(await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24"))
+        self.assertEqual(2, self.session.post.call_count)
+        self.session.post.reset_mock()
+        with self.assertRaises(RuntimeError):
+            await patch_client.graphql_request(
+                self.client, "Write", "mutation Write { command }", {},
+                raise_errors=True, fallback_query="mutation Write { otherCommand }",
+            )
+        self.session.post.assert_called_once()
+
+    async def test_status_fallback_retains_token_recovery(self):
+        self.auth.get_access_token.side_effect = ["old-token", "old-token", "fresh-token"]
+        self.session.post.side_effect = [
+            _Response(200, {"errors": [{"errorType": "ValidationError"}]}),
+            _Response(401, {}),
+            _Response(),
+        ]
+        self.assertEqual({"vin": "TESTVIN24"}, await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24"))
+        self.assertEqual(3, self.session.post.call_count)
+        for call in self.session.post.call_args_list[1:]:
+            self.assertNotIn("actualChargingRate", json.loads(call.kwargs["data"])["query"])
+        self.auth.check_tokens.assert_awaited_once_with(rejected_token="old-token")
+        self.assertEqual("Bearer fresh-token", self.session.post.call_args.kwargs["headers"]["Authorization"])
+
+    async def test_status_fallback_preserves_partial_data_and_ignores_permission_errors(self):
+        state = {"vin": "TESTVIN24", "electric": {"battery": {"stateOfChargeDisplay": {"value": 0}}}}
+        for status, data, errors, expected_calls in (
+            (200, {"getVehicleStatus": state}, [{"errorType": "ValidationError"}], 1),
+            (200, {"getVehicleStatus": state}, [{"message": "Feature unavailable"}], 1),
+            (200, {"getVehicleStatus": {"vin": "TESTVIN24", "electric": None}}, [], 1),
+            (403, None, [{"message": "Feature unavailable"}], 1),
+            (429, None, [{"errorType": "ValidationError"}], 3),
+            (503, None, [{"errorType": "ValidationError"}], 3),
+        ):
+            with self.subTest(status=status, data=data):
+                self.session.post.reset_mock()
+                self.session.post.return_value = _Response(status, {"data": data, "errors": errors})
+                with patch.object(patch_client.asyncio, "sleep", AsyncMock()):
+                    result = await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24")
+                self.assertEqual(data["getVehicleStatus"] if data else None, result)
+                self.assertEqual(expected_calls, self.session.post.call_count)
+                for call in self.session.post.call_args_list:
+                    self.assertIn("actualChargingRate", json.loads(call.kwargs["data"])["query"])
+        self.auth.check_tokens.assert_not_awaited()
+
     async def test_read_refreshes_rejected_tokens_once(self):
         for response in (
             _Response(401, {}),
