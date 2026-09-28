@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -308,6 +309,10 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("T", session.headers["X-APPBRAND"])
         self.assertEqual("hatch", session.headers["backdoorType"])
         self.assertEqual("TESTVIN24", session.headers["vin"])
+        self.assertEqual(patch_client.APP_VERSION, session.headers["X-APPVERSION"])
+        self.assertEqual(patch_client.USER_AGENT, session.headers["User-Agent"])
+        self.assertEqual(4, UUID(session.headers["X-CORRELATIONID"]).version)
+        self.assertIn("X-DEVICE-TIMEZONE", session.headers)
         self.assertEqual("GetVehicleStatus", session.payload["operationName"])
 
 
