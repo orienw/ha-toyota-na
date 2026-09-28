@@ -619,6 +619,7 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
             electric_status = await self.api_get(url, headers)
             vehicle_info = electric_status.get("vehicleInfo") if isinstance(electric_status, dict) else None
             if not isinstance(vehicle_info, dict):
+                _LOGGER.debug("Electric status %s returned no vehicle info", version)
                 continue
             charge_info = vehicle_info.get("chargeInfo")
             if version == "v2" or (
@@ -639,6 +640,7 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
                     return {**electric_status, "vehicleInfo": vehicle_info}
                 return electric_status
             primary = electric_status
+            _LOGGER.debug("Electric status %s returned no charge readings; trying v2", version)
         except AuthError:
             raise
         except Exception as e:
