@@ -53,6 +53,65 @@ class RequestTimeoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["POST"], calls)
 
 
+class ElectricStatusHttpTests(unittest.IsolatedAsyncioTestCase):
+    async def test_app_headers_reach_v3_without_changing_legacy_requests(self):
+        requests = []
+        reject_v3 = False
+        status = {"vehicleInfo": {"chargeInfo": {"chargeRemainingAmount": 80}}}
+
+        async def handle(request):
+            requests.append((request.path, dict(request.query), {
+                key.lower(): value for key, value in request.headers.items()
+            }, await request.read()))
+            if reject_v3 and request.match_info["version"] == "v3":
+                return web.json_response({}, status=403)
+            return web.json_response({"payload": status})
+
+        app = web.Application()
+        app.router.add_get("/oneapi/{version}/electric/status", handle)
+        client = Client()
+        client.auth = types.SimpleNamespace(
+            get_access_token=AsyncMock(return_value="test-token"),
+            get_guid=AsyncMock(return_value="test-guid"),
+        )
+        client._auth_headers = types.MethodType(client_module._auth_headers, client)
+        async with TestServer(app) as server:
+            with patch.object(client_module, "API_GATEWAY", str(server.make_url("/oneapi/"))), patch("time.tzname", ("PST", "PDT")):
+                for generation, request_no, reject_v3 in (
+                    ("17CY", None, False), ("17CYPLUS", None, False),
+                    ("21MM", None, False), ("21MM", "refresh/123", False),
+                    ("21MM", "refresh/123", True),
+                ):
+                    with self.subTest(generation=generation, request_no=request_no, reject_v3=reject_v3):
+                        requests.clear()
+                        self.assertEqual(await client.get_electric_status(
+                            "TESTVIN", request_no, "CA", generation,
+                        ), status)
+                        versions = ["v2"] if generation == "17CY" else ["v3", "v2"] if reject_v3 else ["v3"]
+                        self.assertEqual([item[0] for item in requests], [f"/oneapi/{version}/electric/status" for version in versions])
+                        for version, (_, query, headers, body) in zip(versions, requests):
+                            self.assertEqual(query, {"realtime-status": request_no} if request_no else {})
+                            self.assertEqual(body, b"")
+                            expected = {
+                                "authorization": "Bearer test-token", "x-guid": "test-guid",
+                                "x-api-key": client_module.RESOLVER_API_KEY, "x-channel": "ONEAPP",
+                                "vin": "TESTVIN", "x-brand": "T", "x-region": "CA", "x-locale": "en-US",
+                            }
+                            if version == "v3":
+                                expected.update({
+                                    "content-type": "application/json", "x-appbrand": "T",
+                                    "x-appversion": "3.5.0", "user-agent": "okhttp/5.3.2",
+                                    "x-osname": "Android", "x-osversion": "14",
+                                    "x-device-timezone": "PST", "x-generation": generation,
+                                })
+                                self.assertEqual(UUID(headers["x-correlationid"]).version, 4)
+                            else:
+                                expected.update({"x-appversion": "3.4.0", "user-agent": client_module.USER_AGENT})
+                                self.assertEqual(headers.get("x-generation"), "17CY" if generation == "17CY" else None)
+                                self.assertTrue({"x-appbrand", "x-correlationid", "content-type", "x-device-timezone"}.isdisjoint(headers))
+                            self.assertEqual({key: headers.get(key) for key in expected}, expected)
+
+
 class RestTransportTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.response = AsyncMock()
@@ -66,6 +125,20 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.patch = patch.object(client_module.aiohttp, "ClientSession", return_value=self.session)
         self.patch.start()
         self.addCleanup(self.patch.stop)
+
+    async def test_v3_command_status_keeps_vehicle_and_correlation_headers(self):
+        await Client().api_get("v3/electric/status?remote-control=charge-123", {
+            "VIN": "TESTVIN", "X-GENERATION": "21MM", "X-BRAND": "L",
+            "x-region": "CA", "X-CORRELATIONID": "existing-request",
+        })
+        headers = self.session.request.call_args.kwargs["headers"]
+        self.assertEqual(headers["X-CORRELATIONID"], "existing-request")
+        self.assertEqual(headers["X-BRAND"], "L")
+        self.assertEqual(headers["X-APPBRAND"], "T")
+        self.assertEqual(headers["X-GENERATION"], "21MM")
+        self.assertEqual(headers["x-region"], "CA")
+        self.assertEqual(headers["VIN"], "TESTVIN")
+        self.assertEqual(headers["X-APPVERSION"], "3.5.0")
 
     async def test_legacy_schedule_body_uses_hour_minute_objects(self):
         self.response.json.return_value = {"payload": {"returnCode": "ONE-RES-10000", "appRequestNo": "123"}}
