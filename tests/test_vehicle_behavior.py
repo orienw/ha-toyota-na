@@ -1493,6 +1493,47 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(door.locked)
         self.assertFalse(trunk.closed)
 
+    async def test_malformed_cached_ev_push_does_not_block_polled_status(self):
+        status = json.loads((ROOT / "tests/fixtures/vehicle_24mm.json").read_text())
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(return_value=[dict(TWENTY_FOUR_MM_PHEV, vin="TESTVIN24")]),
+            get_telemetry=AsyncMock(return_value={}),
+            graphql_get_vehicle_status=AsyncMock(side_effect=[None, status]),
+        )
+        current, = await get_vehicles(client)
+        self.assertNotIn(VehicleFeatures.ChargeLevel, current.features)
+
+        handler = ToyotaWebSocketHandler(
+            client, lambda vin, pushed: current.apply_graphql_status(pushed)
+        )
+        handler._vehicle_contexts = {"TESTVIN24": {}}
+        handler._subscriptions = {"TESTVIN24": "subscription"}
+        client._ws_handler = handler
+        await handler._handle_message(
+            {
+                "type": "data",
+                "id": "subscription",
+                "payload": {"data": {"onVehicleStatusUpdated": {
+                    "vin": "TESTVIN24", "electric": {"battery": "malformed"},
+                }}},
+            },
+            "token",
+            "guid",
+        )
+
+        recovered, = await get_vehicles(client)
+
+        self.assertEqual(client.graphql_get_vehicle_status.await_count, 2)
+        for feature in (
+            VehicleFeatures.ChargeLevel, VehicleFeatures.ChargeDistance,
+            VehicleFeatures.ChargeDistanceAC, VehicleFeatures.ChargingStatus,
+            VehicleFeatures.PlugStatus, VehicleFeatures.RemainingChargeTime,
+            VehicleFeatures.EvTravelableDistance, VehicleFeatures.ChargeType,
+            VehicleFeatures.ConnectorStatus,
+        ):
+            self.assertIn(feature, recovered.features)
+        self.assertEqual(recovered.features[VehicleFeatures.ChargeLevel].value, 100)
+
     async def test_pushes_survive_an_inflight_status_poll(self):
         rest_status = {
             "occurrenceDate": "2026-08-14T12:00:00Z",
