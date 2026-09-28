@@ -277,7 +277,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(generation=generation, payload=payload):
                     self.session.request.reset_mock()
                     self.response.json.side_effect = [{"payload": payload}, {"payload": status}]
-                    result = await Client().get_electric_status("TESTVIN", region="CA", generation=generation)
+                    with self.assertLogs(client_module._LOGGER, level="DEBUG") as logs:
+                        result = await Client().get_electric_status("TESTVIN", region="CA", generation=generation)
+                    self.assertTrue(any("v3 returned no" in line for line in logs.output), logs.output)
                     current, legacy = self.session.request.call_args_list
                     self.assertEqual(current.args, ("GET", "https://onecdn.telematicsct.com/oneapi/v3/electric/status"))
                     self.assertEqual(current.kwargs["headers"]["X-GENERATION"], generation)
