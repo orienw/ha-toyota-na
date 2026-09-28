@@ -11,12 +11,10 @@ from typing import Optional
 import aiohttp
 
 from .patch_client import (
-    GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS,
     GRAPHQL_VEHICLE_STATUS_FIELDS,
     GRAPHQL_WS_ENDPOINT,
     HTTP_TIMEOUT,
     appsync_authorization,
-    graphql_schema_errors,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,13 +23,6 @@ SUBSCRIBE_VEHICLE_STATUS = (
     "subscription ReceiveVehicleStatus($vin: String!) {"
     " onVehicleStatusUpdated(vin: $vin) {"
     + GRAPHQL_VEHICLE_STATUS_FIELDS
-    + "} }"
-)
-
-SUBSCRIBE_BASIC_VEHICLE_STATUS = (
-    "subscription ReceiveVehicleStatus($vin: String!) {"
-    " onVehicleStatusUpdated(vin: $vin) {"
-    + GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS
     + "} }"
 )
 
@@ -50,7 +41,6 @@ class ToyotaWebSocketHandler:
         self._session = None
         self._ws = None
         self._subscriptions = {}  # vin -> subscription_id
-        self._basic_status_vins = set()
         self._cached_status = {}  # vin -> latest vehicle status dict
         self._vehicle_contexts: dict[str, dict] = {}
         self._task = None
@@ -92,7 +82,6 @@ class ToyotaWebSocketHandler:
             self._cancel_retry(vin)
             self._retry_delays.pop(vin, None)
             self._cached_status.pop(vin, None)
-            self._basic_status_vins.discard(vin)
             sub_id = self._subscriptions.pop(vin, None)
             if sub_id and self.is_connected:
                 try:
@@ -269,10 +258,9 @@ class ToyotaWebSocketHandler:
                     )
 
         elif msg_type == "data":
-            payload = msg.get("payload")
-            data = payload.get("data") if isinstance(payload, dict) else None
-            status = data.get("onVehicleStatusUpdated") if isinstance(data, dict) else None
-            if isinstance(status, dict) and status:
+            payload = msg.get("payload", {}).get("data", {})
+            status = payload.get("onVehicleStatusUpdated")
+            if status:
                 vin = status.get("vin", "")
                 if (
                     vin not in self._vehicle_contexts
@@ -310,10 +298,6 @@ class ToyotaWebSocketHandler:
             )
             if vin is not None:
                 self._subscriptions.pop(vin)
-                payload = msg.get("payload")
-                errors = payload.get("errors") if isinstance(payload, dict) else None
-                if msg_type == "error" and graphql_schema_errors(errors):
-                    self._basic_status_vins.add(vin)
                 _LOGGER.warning(
                     "WebSocket: subscription ended for VIN ...%s (%s); retrying",
                     vin[-4:], msg_type,
@@ -345,10 +329,7 @@ class ToyotaWebSocketHandler:
             "payload": {
                 "data": json.dumps(
                     {
-                        "query": (
-                            SUBSCRIBE_BASIC_VEHICLE_STATUS
-                            if vin in self._basic_status_vins else SUBSCRIBE_VEHICLE_STATUS
-                        ),
+                        "query": SUBSCRIBE_VEHICLE_STATUS,
                         "variables": {"vin": vin},
                     }
                 ),
