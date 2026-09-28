@@ -238,13 +238,111 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.response.json.return_value = {"payload": status}
         for generation, version in (("17CY", "v2"), ("17CYPLUS", "v3"), ("21MM", "v3")):
             with self.subTest(generation=generation):
+                self.session.request.reset_mock()
                 result = await Client().get_electric_status(
                     "TESTVIN", region="CA", generation=generation,
                 )
+                self.session.request.assert_called_once()
                 args, kwargs = self.session.request.call_args
                 self.assertEqual(args, ("GET", f"https://onecdn.telematicsct.com/oneapi/{version}/electric/status"))
                 self.assertEqual(kwargs["headers"]["X-GENERATION"], generation)
                 self.assertEqual(kwargs["headers"]["x-region"], "CA")
+                self.assertEqual(result, status)
+
+    async def test_electric_status_recovers_from_unusable_v3_response(self):
+        status = {"vehicleInfo": {"chargeInfo": {"chargeRemainingAmount": 80}}}
+        for generation in ("17CYPLUS", "21MM"):
+            for payload in (None, [], "invalid", {}, {"vehicleInfo": None}, {"vehicleInfo": []}):
+                with self.subTest(generation=generation, payload=payload):
+                    self.session.request.reset_mock()
+                    self.response.json.side_effect = [{"payload": payload}, {"payload": status}]
+                    result = await Client().get_electric_status("TESTVIN", region="CA", generation=generation)
+                    current, legacy = self.session.request.call_args_list
+                    self.assertEqual(current.args, ("GET", "https://onecdn.telematicsct.com/oneapi/v3/electric/status"))
+                    self.assertEqual(current.kwargs["headers"]["X-GENERATION"], generation)
+                    self.assertEqual(legacy.args, ("GET", "https://onecdn.telematicsct.com/oneapi/v2/electric/status"))
+                    self.assertNotIn("X-GENERATION", legacy.kwargs["headers"])
+                    self.assertEqual(legacy.kwargs["headers"]["VIN"], "TESTVIN")
+                    self.assertEqual(legacy.kwargs["headers"]["x-region"], "CA")
+                    self.assertEqual(result, status)
+
+    async def test_electric_status_recovers_from_v3_errors(self):
+        status = {"vehicleInfo": {"chargeInfo": {"chargeRemainingAmount": 80}}}
+        for error in (
+            aiohttp.ClientResponseError(MagicMock(), (), status=404, message="Not Found"),
+            aiohttp.ClientConnectionError("Disconnected"),
+            TimeoutError(),
+            json.JSONDecodeError("Not JSON", "<html>", 0),
+        ):
+            with self.subTest(error=type(error).__name__):
+                self.session.request.reset_mock()
+                self.response.json.side_effect = [error, {"payload": status}]
+                self.assertEqual(await Client().get_electric_status("TESTVIN"), status)
+                self.assertEqual(self.session.request.call_count, 2)
+
+    async def test_electric_status_does_not_retry_http_auth_rejections(self):
+        for status in (401, 403):
+            with self.subTest(status=status):
+                self.session.request.reset_mock()
+                self.response.status = status
+                self.response.text.return_value = "{}"
+                self.response.raise_for_status.side_effect = aiohttp.ClientResponseError(
+                    MagicMock(), (), status=status, message="Rejected",
+                )
+                self.assertIsNone(await Client().get_electric_status("TESTVIN"))
+                self.session.request.assert_called_once()
+
+    async def test_electric_reads_propagate_auth_and_cancellation_at_either_attempt(self):
+        for error in (LoginError(), asyncio.CancelledError()):
+            for attempt in (0, 1):
+                with self.subTest(error=type(error).__name__, attempt=attempt):
+                    self.session.request.reset_mock()
+                    client = Client()
+                    client._auth_headers = AsyncMock(side_effect=[{}] * attempt + [error])
+                    self.response.json.return_value = {"payload": {}}
+                    with self.assertRaises(type(error)) as caught:
+                        await client.get_electric_status("TESTVIN")
+                    self.assertIs(caught.exception, error)
+                    self.assertEqual(client._auth_headers.await_count, attempt + 1)
+                    self.assertEqual(self.session.request.call_count, attempt)
+
+    async def test_electric_status_exhausts_fallback_without_retrying_17cy(self):
+        for generation, count in (("17CY", 1), ("17CYPLUS", 2), ("21MM", 2)):
+            for response in ({"payload": {}}, TimeoutError()):
+                with self.subTest(generation=generation, response=type(response).__name__):
+                    self.session.request.reset_mock()
+                    self.response.json.side_effect = [response] * count
+                    self.assertIsNone(await Client().get_electric_status("TESTVIN", generation=generation))
+                    self.assertEqual(self.session.request.call_count, count)
+
+    async def test_electric_status_keeps_successful_partial_v3_data(self):
+        for info in ({}, {"timerChargeInfo": []}, {"chargeInfo": {"chargeRemainingAmount": 80}}):
+            with self.subTest(info=info):
+                self.session.request.reset_mock()
+                status = {"vehicleInfo": info}
+                self.response.json.return_value = {"payload": status}
+                self.assertEqual(await Client().get_electric_status("TESTVIN"), status)
+                self.session.request.assert_called_once()
+
+    async def test_electric_refresh_falls_back_without_repeating_wake(self):
+        status = {"vehicleInfo": {"chargeInfo": {"plugStatus": 40}}}
+        for generation in ("17CYPLUS", "21MM"):
+            with self.subTest(generation=generation):
+                self.session.request.reset_mock()
+                self.response.json.side_effect = [
+                    {"payload": {"appRequestNo": "request/123", "returnCode": "ONE-RES-10000"}},
+                    {"payload": {}},
+                    {"payload": status},
+                ]
+                result = await client_module.get_electric_realtime_status(Client(), "TESTVIN", generation, "CA")
+                wake, current, legacy = self.session.request.call_args_list
+                self.assertEqual(wake.args, ("POST", "https://onecdn.telematicsct.com/oneapi/v2/electric/realtime-status"))
+                self.assertEqual(current.args, ("GET", "https://onecdn.telematicsct.com/oneapi/v3/electric/status?realtime-status=request%2F123"))
+                self.assertEqual(legacy.args, ("GET", "https://onecdn.telematicsct.com/oneapi/v2/electric/status?realtime-status=request%2F123"))
+                self.assertEqual(wake.kwargs["headers"]["X-GENERATION"], generation)
+                self.assertNotIn("X-GENERATION", legacy.kwargs["headers"])
+                self.assertEqual(legacy.kwargs["headers"]["VIN"], "TESTVIN")
+                self.assertEqual(legacy.kwargs["headers"]["x-region"], "CA")
                 self.assertEqual(result, status)
 
     async def test_electric_refresh_followup_keeps_generation_and_request_number(self):
