@@ -14,6 +14,49 @@ from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration,
 
 
 class ReadAccessTests(unittest.IsolatedAsyncioTestCase):
+    async def test_21mm_legacy_fallback_restores_all_nine_ev_entities(self):
+        status = {"vehicleInfo": {"acquisitionDatetime": "2026-09-27T12:00:00Z", "chargeInfo": {
+            "evDistance": 200, "evDistanceAC": 180, "evDistanceUnit": "km",
+            "chargeRemainingAmount": 85, "plugStatus": 40, "remainingChargeTime": 90,
+            "evTravelableDistance": 200, "chargeType": 2, "connectorStatus": 5,
+        }}}
+        expected = {
+            "EV Range": 200, "EV Range AC": 180, "EV Battery Level": 85,
+            "Plug Status": "charging", "Remaining Charge Time": 90,
+            "EV Travelable Distance": 200, "Charge Type": 2, "Connector Status": "locked",
+        }
+        for response in (
+            {"vehicleInfo": {"chargeInfo": None}},
+            {"vehicleInfo": {"chargeInfo": {"gasolineTravelableDistance": 0}}},
+            patch_client.aiohttp.ClientResponseError(MagicMock(), (), status=401),
+        ):
+            with self.subTest(response=response):
+                client = types.SimpleNamespace(
+                    api_get=AsyncMock(side_effect=[response, status]),
+                    get_telemetry=AsyncMock(return_value={}),
+                    get_vehicle_status_21mm=AsyncMock(return_value={}),
+                    get_engine_status_21mm=AsyncMock(return_value={}),
+                    get_climate_settings=AsyncMock(return_value=None),
+                )
+                client.get_electric_status = types.MethodType(patch_client.get_electric_status, client)
+                vehicle = behavior.make_vehicle(client)
+                vehicle._has_electric = True
+                await vehicle.update()
+                coordinator = ha.DataUpdateCoordinator([vehicle])
+                hass, entry, entities = ha.FakeHass(coordinator), ha.ConfigEntry(), []
+                for platform in (sensor, binary_sensor):
+                    await platform.async_setup_entry(hass, entry, lambda added, update: entities.extend(added))
+                by_name = {entity.sensor_name: entity for entity in entities}
+                self.assertEqual(set(expected) | {"Charging Status"}, set(by_name))
+                for name, value in expected.items():
+                    self.assertTrue(by_name[name].available, name)
+                    self.assertEqual(value, by_name[name].native_value, name)
+                self.assertTrue(by_name["Charging Status"].available)
+                self.assertTrue(by_name["Charging Status"].is_on)
+                self.assertEqual(["v3/electric/status", "v2/electric/status"], [
+                    call.args[0] for call in client.api_get.call_args_list
+                ])
+
     async def test_missing_status_capability_does_not_suppress_scheduled_wakes(self):
         for flags, enabled in (
             (None, True), ({}, True),

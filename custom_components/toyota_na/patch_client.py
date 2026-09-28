@@ -612,7 +612,6 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
                 and any(charge_info.get(key) is not None for key in (
                     "evDistance", "evDistanceAC", "chargeRemainingAmount", "plugStatus",
                     "remainingChargeTime", "evTravelableDistance", "chargeType", "connectorStatus",
-                    "gasolineTravelableDistance",
                 ))
             ):
                 if primary is not None:
@@ -630,8 +629,6 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
             raise
         except Exception as e:
             _LOGGER.debug("Electric status %s failed: %s", version, e)
-            if isinstance(e, aiohttp.ClientResponseError) and e.status == 401:
-                break
     return primary
 
 def graphql_schema_errors(errors):

@@ -331,6 +331,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 *({"vehicleInfo": {"chargeInfo": charge}} for charge in (
                     None, [], "invalid", {}, {"evDistanceUnit": "km"},
                     {"chargeRemainingAmount": None, "plugStatus": None, "connectorStatus": None},
+                    {"gasolineTravelableDistance": 0}, {"gasolineTravelableDistance": 20},
                 )),
             ):
                 with self.subTest(generation=generation, payload=payload):
@@ -360,14 +361,14 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await Client().get_electric_status("TESTVIN"), status)
                 self.assertEqual(self.session.request.call_count, 2)
 
-    async def test_electric_status_does_not_retry_http_unauthorized(self):
+    async def test_electric_status_stops_after_both_endpoints_reject_authorization(self):
         self.response.status = 401
         self.response.text.return_value = "{}"
         self.response.raise_for_status.side_effect = aiohttp.ClientResponseError(
             MagicMock(), (), status=401, message="Unauthorized",
         )
         self.assertIsNone(await Client().get_electric_status("TESTVIN"))
-        self.session.request.assert_called_once()
+        self.assertEqual(self.session.request.call_count, 2)
 
     async def test_electric_status_falls_back_when_v3_resource_is_forbidden(self):
         status = {"vehicleInfo": {"chargeInfo": {"chargeRemainingAmount": 80}}}
@@ -417,7 +418,6 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             {"chargeInfo": {"chargeRemainingAmount": 80}},
             {"chargeInfo": {"chargeRemainingAmount": 0, "evDistance": None}},
             {"chargeInfo": {"plugStatus": 0}},
-            {"chargeInfo": {"gasolineTravelableDistance": 20}},
         ):
             with self.subTest(info=info):
                 self.session.request.reset_mock()
