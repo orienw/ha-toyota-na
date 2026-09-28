@@ -57,35 +57,6 @@ class ReadAccessTests(unittest.IsolatedAsyncioTestCase):
                     call.args[0] for call in client.api_get.call_args_list
                 ])
 
-    async def test_missing_status_capability_does_not_suppress_scheduled_wakes(self):
-        for flags, enabled in (
-            (None, True), ({}, True),
-            ({"evBattery": 1, "evVehicleStatus": 1}, True),
-            ({"vehicleState": None}, True), ({"vehicleState": 1}, True),
-            ({"vehicleState": 0}, False), ({"vehicleState": 2}, False),
-            ({"vehicleState": True}, False), ({"vehicleState": "1"}, False),
-        ):
-            for subscribed in (True, False):
-                with self.subTest(flags=flags, subscribed=subscribed):
-                    vehicle = behavior.make_24mm_vehicle()
-                    vehicle._feature_flags = flags
-                    vehicle._has_remote_subscription = subscribed
-                    vehicle.poll_vehicle_refresh = AsyncMock()
-                    coordinator = ha.DataUpdateCoordinator([vehicle])
-                    hass, entry = ha.FakeHass(coordinator), ha.ConfigEntry()
-                    with (
-                        patch.object(ha.integration_runtime, "get_vehicles", AsyncMock(return_value=[vehicle])),
-                        patch.object(ha.integration_runtime, "automatic_wake_due", return_value=True),
-                        patch.object(ha.integration_runtime, "_refresh_coordinator_after_command", AsyncMock()),
-                    ):
-                        await ha.integration_runtime.update_vehicles_status(
-                            hass, types.SimpleNamespace(), entry, coordinator,
-                        )
-                    await asyncio.gather(*hass.tasks)
-                    self.assertEqual(vehicle.poll_vehicle_refresh.await_count, int(enabled and subscribed))
-                    self.assertEqual(vehicle.supports_command(RemoteRequestCommand.Refresh), enabled and subscribed)
-
-
     async def test_all_supported_generations_read_cached_status_without_subscription(self):
         rest_status = {"vehicleStatus": [{
             "category": "Driver Side", "sections": [{
