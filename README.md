@@ -137,6 +137,10 @@ Requires Home Assistant 2024.11 or newer.
 
 If you already use the upstream integration, follow [Switching from upstream](#switching-from-upstream) first.
 
+[![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=orienw&repository=ha-toyota-na&category=integration)
+
+Use the button above, or add the repository manually:
+
 1. Open HACS, select the three-dot menu, then **Custom repositories**.
 2. Add `https://github.com/orienw/ha-toyota-na` with type **Integration**.
 3. Open this fork's entry and select **Download**. Choose the latest version on
