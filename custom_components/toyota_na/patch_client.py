@@ -4,7 +4,7 @@ import json
 import logging
 import time
 import uuid
-from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.parse import urlencode, urljoin
 
 import aiohttp
 from toyota_na.exceptions import AuthError, TokenExpired
@@ -16,7 +16,8 @@ GRAPHQL_WS_ENDPOINT = "wss://oa-api.telematicsct.com/graphql/realtime"
 GRAPHQL_HOST = "oa-api.telematicsct.com"
 APPSYNC_API_KEY = "da2-zgeayo2qh5eo7cj6pmdwhwugze"
 RESOLVER_API_KEY = "pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG"
-USER_AGENT = "ToyotaOneApp/3.10.0 (com.toyota.oneapp; build:3100; Android 14) okhttp/4.12.0"
+APP_VERSION = "3.5.0"
+USER_AGENT = "okhttp/5.3.2"
 TRANSPORT_BRAND = "T"
 ELECTRIC_COMMAND_TIMEOUT = 90
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=30)
@@ -279,6 +280,21 @@ GRAPHQL_POWER_SUPPLY_LIMIT = """mutation PostPowerSupplyModeLimit(
 }"""
 
 
+def _app_headers():
+    """Headers the Toyota app's shared interceptors add to every request."""
+    return {
+        "Content-Type": "application/json",
+        "X-APPBRAND": TRANSPORT_BRAND,
+        "X-APPVERSION": APP_VERSION,
+        "X-OSNAME": "Android",
+        "X-OSVERSION": "14",
+        "X-LOCALE": "en-US",
+        "X-DEVICE-TIMEZONE": time.tzname[0],
+        "X-CORRELATIONID": str(uuid.uuid4()),
+        "User-Agent": USER_AGENT,
+    }
+
+
 def _vehicle_headers(vehicle_vin, region="US", **extra):
     """Build headers for Toyota's shared North American API transport."""
     return {
@@ -321,15 +337,13 @@ async def get_telemetry(self, vin, region="US", generation="17CYPLUS"):
 
 async def _auth_headers(self):
     return {
+        **_app_headers(),
         "AUTHORIZATION": "Bearer " + await self.auth.get_access_token(),
         "X-API-KEY": RESOLVER_API_KEY,
         "X-GUID": await self.auth.get_guid(),
         "X-CHANNEL": "ONEAPP",
         "X-BRAND": TRANSPORT_BRAND,
         "x-region": "US",
-        "X-APPVERSION": "3.4.0",
-        "X-LOCALE": "en-US",
-        "User-Agent": USER_AGENT,
         "Accept": "application/json",
     }
 
@@ -711,21 +725,15 @@ async def graphql_request(
 ):
     """Make an AppSync request, retrying only explicitly read-only operations."""
     headers = {
-        "Content-Type": "application/json",
+        **_app_headers(),
         "x-api-key": APPSYNC_API_KEY,
         "x-resolver-api-key": RESOLVER_API_KEY,
         "vin": vin or variables.get("vin", ""),
         "x-guid": await self.auth.get_guid(),
         "x-deviceid": self.auth.get_device_id(),
         "X-BRAND": TRANSPORT_BRAND,
-        "X-APPBRAND": TRANSPORT_BRAND,
         "x-region": region,
         "x-channel": "ONEAPP",
-        "X-APPVERSION": "3.4.0",
-        "X-OSNAME": "Android",
-        "X-OSVERSION": "14",
-        "X-LOCALE": "en-US",
-        "User-Agent": USER_AGENT,
     }
     if backdoor_type:
         headers["backdoorType"] = backdoor_type
@@ -1178,20 +1186,6 @@ async def api_request(self, method, endpoint, header_params=None, **kwargs):
         endpoint = endpoint[1:]
 
     url = urljoin(API_GATEWAY, endpoint)
-
-    if method == "GET" and urlsplit(url).path == "/oneapi/v3/electric/status":
-        # Toyota app 3.5.0 adds these through its shared network interceptors.
-        headers.update({
-            "Content-Type": "application/json",
-            "X-APPBRAND": TRANSPORT_BRAND,
-            "X-APPVERSION": "3.5.0",
-            "X-OSNAME": "Android",
-            "X-OSVERSION": "14",
-            "X-DEVICE-TIMEZONE": time.tzname[0],
-            "User-Agent": "okhttp/5.3.2",
-        })
-        if not any(key.lower() == "x-correlationid" for key in headers):
-            headers["X-CORRELATIONID"] = str(uuid.uuid4())
 
     async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.request(

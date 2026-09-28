@@ -54,7 +54,7 @@ class RequestTimeoutTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ElectricStatusHttpTests(unittest.IsolatedAsyncioTestCase):
-    async def test_app_headers_reach_v3_without_changing_legacy_requests(self):
+    async def test_app_headers_reach_every_electric_status_request(self):
         requests = []
         reject_v3 = False
         status = {"vehicleInfo": {"chargeInfo": {"chargeRemainingAmount": 80}}}
@@ -97,18 +97,14 @@ class ElectricStatusHttpTests(unittest.IsolatedAsyncioTestCase):
                                 "x-api-key": client_module.RESOLVER_API_KEY, "x-channel": "ONEAPP",
                                 "vin": "TESTVIN", "x-brand": "T", "x-region": "CA", "x-locale": "en-US",
                             }
-                            if version == "v3":
-                                expected.update({
-                                    "content-type": "application/json", "x-appbrand": "T",
-                                    "x-appversion": "3.5.0", "user-agent": "okhttp/5.3.2",
-                                    "x-osname": "Android", "x-osversion": "14",
-                                    "x-device-timezone": "PST", "x-generation": generation,
-                                })
-                                self.assertEqual(UUID(headers["x-correlationid"]).version, 4)
-                            else:
-                                expected.update({"x-appversion": "3.4.0", "user-agent": client_module.USER_AGENT})
-                                self.assertEqual(headers.get("x-generation"), "17CY" if generation == "17CY" else None)
-                                self.assertTrue({"x-appbrand", "x-correlationid", "content-type", "x-device-timezone"}.isdisjoint(headers))
+                            expected.update({
+                                "content-type": "application/json", "x-appbrand": "T",
+                                "x-appversion": "3.5.0", "user-agent": "okhttp/5.3.2",
+                                "x-osname": "Android", "x-osversion": "14",
+                                "x-device-timezone": "PST",
+                                "x-generation": generation if version == "v3" or generation == "17CY" else None,
+                            })
+                            self.assertEqual(UUID(headers["x-correlationid"]).version, 4)
                             self.assertEqual({key: headers.get(key) for key in expected}, expected)
 
 
@@ -126,8 +122,14 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
 
-    async def test_v3_command_status_keeps_vehicle_and_correlation_headers(self):
-        await Client().api_get("v3/electric/status?remote-control=charge-123", {
+    async def test_endpoint_headers_override_shared_app_headers(self):
+        client = Client()
+        client.auth = types.SimpleNamespace(
+            get_access_token=AsyncMock(return_value="test-token"),
+            get_guid=AsyncMock(return_value="test-guid"),
+        )
+        client._auth_headers = types.MethodType(client_module._auth_headers, client)
+        await client.api_get("v1/global/remote/status", {
             "VIN": "TESTVIN", "X-GENERATION": "21MM", "X-BRAND": "L",
             "x-region": "CA", "X-CORRELATIONID": "existing-request",
         })
