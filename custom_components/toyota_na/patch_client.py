@@ -2,8 +2,9 @@ import asyncio
 import base64
 import json
 import logging
+import time
 import uuid
-from urllib.parse import urlencode, urljoin
+from urllib.parse import urlencode, urljoin, urlsplit
 
 import aiohttp
 from toyota_na.exceptions import AuthError, TokenExpired
@@ -1180,6 +1181,20 @@ async def api_request(self, method, endpoint, header_params=None, **kwargs):
         endpoint = endpoint[1:]
 
     url = urljoin(API_GATEWAY, endpoint)
+
+    if method == "GET" and urlsplit(url).path == "/oneapi/v3/electric/status":
+        # Toyota app 3.5.0 adds these through its shared network interceptors.
+        headers.update({
+            "Content-Type": "application/json",
+            "X-APPBRAND": TRANSPORT_BRAND,
+            "X-APPVERSION": "3.5.0",
+            "X-OSNAME": "Android",
+            "X-OSVERSION": "14",
+            "X-DEVICE-TIMEZONE": time.tzname[0],
+            "User-Agent": "okhttp/5.3.2",
+        })
+        if not any(key.lower() == "x-correlationid" for key in headers):
+            headers["X-CORRELATIONID"] = str(uuid.uuid4())
 
     async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.request(
