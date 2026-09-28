@@ -190,7 +190,14 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_electric_status_recovers_from_unusable_v3_response(self):
         status = {"vehicleInfo": {"chargeInfo": {"chargeRemainingAmount": 80}}}
         for generation in ("17CYPLUS", "21MM"):
-            for payload in (None, [], "invalid", {}, {"vehicleInfo": None}, {"vehicleInfo": []}):
+            for payload in (
+                None, [], "invalid", {}, {"vehicleInfo": None}, {"vehicleInfo": []},
+                {"vehicleInfo": {}},
+                *({"vehicleInfo": {"chargeInfo": charge}} for charge in (
+                    None, [], "invalid", {}, {"evDistanceUnit": "km"},
+                    {"chargeRemainingAmount": None, "plugStatus": None, "connectorStatus": None},
+                )),
+            ):
                 with self.subTest(generation=generation, payload=payload):
                     self.session.request.reset_mock()
                     self.response.json.side_effect = [{"payload": payload}, {"payload": status}]
@@ -218,17 +225,31 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await Client().get_electric_status("TESTVIN"), status)
                 self.assertEqual(self.session.request.call_count, 2)
 
-    async def test_electric_status_does_not_retry_http_auth_rejections(self):
-        for status in (401, 403):
-            with self.subTest(status=status):
-                self.session.request.reset_mock()
-                self.response.status = status
-                self.response.text.return_value = "{}"
-                self.response.raise_for_status.side_effect = aiohttp.ClientResponseError(
-                    MagicMock(), (), status=status, message="Rejected",
-                )
-                self.assertIsNone(await Client().get_electric_status("TESTVIN"))
-                self.session.request.assert_called_once()
+    async def test_electric_status_does_not_retry_http_unauthorized(self):
+        self.response.status = 401
+        self.response.text.return_value = "{}"
+        self.response.raise_for_status.side_effect = aiohttp.ClientResponseError(
+            MagicMock(), (), status=401, message="Unauthorized",
+        )
+        self.assertIsNone(await Client().get_electric_status("TESTVIN"))
+        self.session.request.assert_called_once()
+
+    async def test_electric_status_falls_back_when_v3_resource_is_forbidden(self):
+        status = {"vehicleInfo": {"chargeInfo": {"chargeRemainingAmount": 80}}}
+        rejected = AsyncMock()
+        rejected.__aenter__.return_value = rejected
+        rejected.status = 403
+        rejected.text.return_value = json.dumps({"status": {"messages": [{
+            "responseCode": "RESOURCE-DENIED", "description": "Resource is forbidden",
+        }]}})
+        rejected.raise_for_status = MagicMock(side_effect=aiohttp.ClientResponseError(
+            MagicMock(), (), status=403, message="Forbidden",
+        ))
+        self.session.request.side_effect = [rejected, self.response]
+        self.response.json.return_value = {"payload": status}
+        self.assertEqual(await Client().get_electric_status("TESTVIN"), status)
+        self.assertEqual(self.session.request.call_count, 2)
+        self.assertTrue(self.session.request.call_args.args[1].endswith("/v2/electric/status"))
 
     async def test_electric_reads_propagate_auth_and_cancellation_at_either_attempt(self):
         for error in (LoginError(), asyncio.CancelledError()):
@@ -246,7 +267,10 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_electric_status_exhausts_fallback_without_retrying_17cy(self):
         for generation, count in (("17CY", 1), ("17CYPLUS", 2), ("21MM", 2)):
-            for response in ({"payload": {}}, TimeoutError()):
+            for response in (
+                {"payload": {}}, TimeoutError(),
+                aiohttp.ClientResponseError(MagicMock(), (), status=403),
+            ):
                 with self.subTest(generation=generation, response=type(response).__name__):
                     self.session.request.reset_mock()
                     self.response.json.side_effect = [response] * count
@@ -254,7 +278,12 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(self.session.request.call_count, count)
 
     async def test_electric_status_keeps_successful_partial_v3_data(self):
-        for info in ({}, {"timerChargeInfo": []}, {"chargeInfo": {"chargeRemainingAmount": 80}}):
+        for info in (
+            {"chargeInfo": {"chargeRemainingAmount": 80}},
+            {"chargeInfo": {"chargeRemainingAmount": 0, "evDistance": None}},
+            {"chargeInfo": {"plugStatus": 0}},
+            {"chargeInfo": {"gasolineTravelableDistance": 20}},
+        ):
             with self.subTest(info=info):
                 self.session.request.reset_mock()
                 status = {"vehicleInfo": info}

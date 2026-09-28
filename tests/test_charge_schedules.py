@@ -1,6 +1,7 @@
 """Schedule writes preserve unrelated data and confirm reported state."""
 
 from copy import deepcopy
+from datetime import datetime
 import types
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -21,6 +22,45 @@ SCHEDULE = {
 
 
 class ScheduleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ev_fallback_preserves_primary_schedules_and_source_times(self):
+        legacy_time = "2026-09-27T11:00:00+00:00"
+        for primary_time in ("2026-09-27T12:00:00+00:00", None):
+            with self.subTest(primary_time=primary_time):
+                vehicle = self.make_vehicle(ApiVehicleGeneration.MM21)
+                primary = {"vehicleInfo": {
+                    "timerChargeInfo": [], "maxNoOfChargeSchedules": 0,
+                    "acquisitionDatetime": primary_time,
+                }}
+                legacy = {"vehicleInfo": {
+                    "chargeInfo": {"chargeRemainingAmount": 80},
+                    "acquisitionDatetime": legacy_time, "timerChargeInfo": [deepcopy(SCHEDULE)],
+                }}
+                before = deepcopy((primary, legacy))
+                self.client.api_get = AsyncMock(side_effect=[primary, legacy])
+                self.client.get_electric_status = types.MethodType(transport.patch_client.get_electric_status, self.client)
+                self.assertEqual(await vehicle._read_charge_schedules(), [])
+                self.assertEqual(vehicle.charge_settings["schedules"], [])
+                self.assertEqual(vehicle.charge_settings["maxNoOfChargeSchedules"], 0)
+                self.assertEqual(
+                    vehicle.charge_settings["_schedules_updated_at"],
+                    datetime.fromisoformat(primary_time) if primary_time else None,
+                )
+                feature = behavior.VehicleFeatures.ChargeLevel
+                self.assertEqual(vehicle.features[feature].value, 80)
+                self.assertEqual(vehicle._feature_timestamps[(feature, "value")], datetime.fromisoformat(legacy_time))
+                self.assertEqual((primary, legacy), before)
+
+    async def test_ev_fallback_failure_keeps_valid_primary_schedules(self):
+        for fallback in ({}, TimeoutError()):
+            with self.subTest(fallback=type(fallback).__name__):
+                vehicle = self.make_vehicle(ApiVehicleGeneration.MM21)
+                primary = {"vehicleInfo": {"timerChargeInfo": [deepcopy(SCHEDULE)], "maxNoOfChargeSchedules": 3}}
+                self.client.api_get = AsyncMock(side_effect=[primary, fallback])
+                self.client.get_electric_status = types.MethodType(transport.patch_client.get_electric_status, self.client)
+                self.assertEqual(await vehicle._read_charge_schedules(), [SCHEDULE])
+                self.assertEqual(vehicle.charge_settings["maxNoOfChargeSchedules"], 3)
+                self.assertEqual(self.client.api_get.await_count, 2)
+
     def make_vehicle(self, generation=ApiVehicleGeneration.MM24):
         self.schedules = [deepcopy(SCHEDULE)]
 
