@@ -590,8 +590,9 @@ async def get_electric_realtime_status(
         return None
 
 async def get_electric_status(self, vin, realtime_status=None, region="US", generation="17CYPLUS"):
-    """Read EV status, retrying the legacy request if v3 is unavailable."""
+    """Read EV status, retrying the legacy request if v3 has no readings."""
     versions = ("v2",) if generation == "17CY" else ("v3", "v2")
+    primary = None
     for version in versions:
         try:
             url = f"{version}/electric/status"
@@ -601,15 +602,36 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
             if version == "v3" or generation == "17CY":
                 headers["X-GENERATION"] = generation
             electric_status = await self.api_get(url, headers)
-            if isinstance(electric_status, dict) and isinstance(electric_status.get("vehicleInfo"), dict):
+            vehicle_info = electric_status.get("vehicleInfo") if isinstance(electric_status, dict) else None
+            if not isinstance(vehicle_info, dict):
+                continue
+            charge_info = vehicle_info.get("chargeInfo")
+            if version == "v2" or (
+                isinstance(charge_info, dict)
+                and any(charge_info.get(key) is not None for key in (
+                    "evDistance", "evDistanceAC", "chargeRemainingAmount", "plugStatus",
+                    "remainingChargeTime", "evTravelableDistance", "chargeType", "connectorStatus",
+                    "gasolineTravelableDistance",
+                ))
+            ):
+                if primary is not None:
+                    primary_info = primary["vehicleInfo"]
+                    vehicle_info = dict(vehicle_info)
+                    if isinstance(primary_info.get("timerChargeInfo"), list):
+                        vehicle_info["timerChargeInfo"] = primary_info["timerChargeInfo"]
+                        vehicle_info["_schedule_acquisition_datetime"] = primary_info.get("acquisitionDatetime")
+                    if isinstance(primary_info.get("maxNoOfChargeSchedules"), int):
+                        vehicle_info["maxNoOfChargeSchedules"] = primary_info["maxNoOfChargeSchedules"]
+                    return {**electric_status, "vehicleInfo": vehicle_info}
                 return electric_status
+            primary = electric_status
         except AuthError:
             raise
         except Exception as e:
             _LOGGER.debug("Electric status %s failed: %s", version, e)
-            if isinstance(e, aiohttp.ClientResponseError) and e.status in (401, 403):
-                return None
-    return None
+            if isinstance(e, aiohttp.ClientResponseError) and e.status == 401:
+                break
+    return primary
 
 def graphql_schema_errors(errors):
     """Recognize rejected query fields separately from auth and resolver errors."""
