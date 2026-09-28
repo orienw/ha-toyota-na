@@ -583,23 +583,26 @@ async def get_electric_realtime_status(
         return None
 
 async def get_electric_status(self, vin, realtime_status=None, region="US", generation="17CYPLUS"):
-    try:
-        version = "v2" if generation == "17CY" else "v3"
-        url = f"{version}/electric/status"
-        if realtime_status:
-            query_params = {"realtime-status": realtime_status}
-            url += "?" + urlencode(query_params)
-
-        electric_status = await self.api_get(
-            url, {**_vehicle_headers(vin, region), "X-GENERATION": generation}
-        )
-        if "vehicleInfo" in electric_status:
-            return electric_status
-    except AuthError:
-        raise
-    except Exception as e:
-        _LOGGER.debug("Electric status failed: %s", e)
-        return None
+    """Read EV status, retrying the legacy request if v3 is unavailable."""
+    versions = ("v2",) if generation == "17CY" else ("v3", "v2")
+    for version in versions:
+        try:
+            url = f"{version}/electric/status"
+            if realtime_status:
+                url += "?" + urlencode({"realtime-status": realtime_status})
+            headers = _vehicle_headers(vin, region)
+            if version == "v3" or generation == "17CY":
+                headers["X-GENERATION"] = generation
+            electric_status = await self.api_get(url, headers)
+            if isinstance(electric_status, dict) and isinstance(electric_status.get("vehicleInfo"), dict):
+                return electric_status
+        except AuthError:
+            raise
+        except Exception as e:
+            _LOGGER.debug("Electric status %s failed: %s", version, e)
+            if isinstance(e, aiohttp.ClientResponseError) and e.status in (401, 403):
+                return None
+    return None
 
 def graphql_schema_errors(errors):
     """Recognize rejected query fields separately from auth and resolver errors."""
