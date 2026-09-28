@@ -161,7 +161,12 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                     self.apply_graphql_status(
                         ws_handler.get_cached_status(self._vin)
                     )
+            except AuthError:
+                raise
+            except Exception as e:
+                _LOGGER.debug("Error parsing cached vehicle status: %s", e)
 
+            try:
                 if self.uses_appsync:
                     vehicle_status = (
                         await self._client.graphql_get_vehicle_status(
