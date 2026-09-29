@@ -22,11 +22,20 @@ def _shift_days(days, offset):
     return [WEEKDAYS[(WEEKDAYS.index(day) + offset) % 7] for day in days]
 
 
-def _current_offset(zone, now=None):
-    # Repeating reservations are a UTC time and weekdays, so they convert with
-    # the offset in effect now. A fixed offset keeps display and edits exact
-    # inverses and has no clock-change gaps.
-    return timezone((now or datetime.now(zone)).astimezone(zone).utcoffset())
+def _reservation_start(schedule, zone, now=None):
+    # Like Toyota's app, convert on the date saved with the reservation, even a
+    # repeating one, so both show the same time after a clock change. The app
+    # uses today when a repeating reservation has no date. Within a day of a
+    # clock change the app reads the UTC time on the local date and can show an
+    # hour off; this converts the saved instant.
+    try:
+        utc = _reservation_datetime(schedule)
+    except ValueError:
+        if schedule.get("reservationType") != "REPETITION":
+            raise
+        today = (now or datetime.now(zone)).astimezone(zone).strftime("%m-%d-%Y")
+        utc = _reservation_datetime(schedule, today)
+    return utc, utc.astimezone(zone)
 
 
 def local_climate_schedule(schedule, zone, *, now=None):
@@ -34,8 +43,7 @@ def local_climate_schedule(schedule, zone, *, now=None):
     result["time_zone"] = str(zone)
     repeating = schedule.get("reservationType") == "REPETITION"
     try:
-        utc = _reservation_datetime(schedule, "01-01-2000" if repeating else None)
-        local = utc.astimezone(_current_offset(zone, now) if repeating else zone)
+        utc, local = _reservation_start(schedule, zone, now)
         result["date"] = None if repeating else local.date().isoformat()
         result["time"] = local.strftime("%H:%M")
         result["days"] = _shift_days(schedule.get("days") or [], (local.date() - utc.date()).days)
@@ -64,6 +72,13 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
             body["status"] = "active" if changes["enabled"] else "inactive"
     if not existing or changes.keys() & {"time", "date", "days"}:
         local = local_climate_schedule(existing, zone, now=now) if existing else {}
+        saved_start = None
+        if existing and existing.get("reservationType") == "REPETITION" and not changes.keys() & {"time", "date"}:
+            # Changing only the days keeps the saved start, even in a repeated hour.
+            try:
+                saved_start = _reservation_datetime(existing).astimezone(zone)
+            except ValueError:
+                pass
         try:
             selected_time = schedule_time(changes.get("time", local.get("time")))
         except ValueError as err:
@@ -78,24 +93,26 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
             body["reservationType"] = "ONE_TIME"
             selected_date = changes["date"]
             days = []
-        elif "days" in changes:
-            body["reservationType"] = "REPETITION"
-            selected_date = now.date().isoformat()
-            days = changes["days"]
         else:
+            if "days" in changes:
+                body["reservationType"] = "REPETITION"
+            days = changes.get("days", local.get("days"))
+            # A repeating time set now is saved on today's date, so setting it
+            # again after a clock change moves it to the current offset.
             selected_date = now.date().isoformat() if body.get("reservationType") == "REPETITION" else local.get("date")
-            days = local.get("days")
         if body.get("reservationType") not in ("ONE_TIME", "REPETITION"):
             raise RuntimeError("Toyota did not return a valid climate reservation type.")
-        conversion = _current_offset(zone, now) if body["reservationType"] == "REPETITION" else zone
-        try:
-            local_time = datetime.combine(date.fromisoformat(selected_date), time.fromisoformat(selected_time), conversion)
-        except (TypeError, ValueError) as err:
-            if "date" in changes:
-                raise ValueError("Climate schedule date must use YYYY-MM-DD.") from err
-            raise RuntimeError("Toyota did not return a valid climate schedule date.") from err
+        if saved_start is not None:
+            local_time = saved_start
+        else:
+            try:
+                local_time = datetime.combine(date.fromisoformat(selected_date), time.fromisoformat(selected_time), zone)
+            except (TypeError, ValueError) as err:
+                if "date" in changes:
+                    raise ValueError("Climate schedule date must use YYYY-MM-DD.") from err
+                raise RuntimeError("Toyota did not return a valid climate schedule date.") from err
         utc = local_time.astimezone(timezone.utc)
-        if utc.astimezone(conversion).replace(tzinfo=None) != local_time.replace(tzinfo=None):
+        if utc.astimezone(zone).replace(tzinfo=None) != local_time.replace(tzinfo=None):
             raise ValueError("This local time does not exist because the clocks move forward. Choose another time.")
         body["date"] = utc.strftime("%m-%d-%Y")
         body["time"] = utc.strftime("%H:%M")

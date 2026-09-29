@@ -57,7 +57,7 @@ class ClimateScheduleFormatTests(unittest.TestCase):
                 self.assertEqual(local_time, local["time"])
                 self.assertEqual(["Monday", "Wednesday"], local["days"])
 
-    def test_repeating_schedules_follow_the_current_offset_after_a_clock_change(self):
+    def test_repeating_schedules_keep_the_saved_date_offset_after_a_clock_change(self):
         january = datetime(2026, 1, 12, 9, tzinfo=ZONE)
         july = datetime(2026, 7, 13, 9, tzinfo=ZONE)
         body = build_climate_schedule(SETTINGS, None, {
@@ -66,26 +66,50 @@ class ClimateScheduleFormatTests(unittest.TestCase):
         saved = {**body, "reservationNo": 2, "status": "active"}
         self.assertEqual(("15:00", "01-12-2026"), (saved["time"], saved["date"]))
         for utc_time, now, local_time, days in (
-            ("15:00", january, "07:00", ["Monday"]), ("15:00", july, "08:00", ["Monday"]),
-            ("07:30", january, "23:30", ["Sunday"]), ("07:30", july, "00:30", ["Monday"]),
+            ("15:00", january, "07:00", ["Monday"]), ("15:00", july, "07:00", ["Monday"]),
+            ("07:30", january, "23:30", ["Sunday"]), ("07:30", july, "23:30", ["Sunday"]),
         ):
             with self.subTest(utc_time=utc_time, now=now):
                 local = local_climate_schedule({**saved, "time": utc_time}, ZONE, now=now)
                 self.assertEqual((local_time, days, None), (local["time"], local["days"], local["date"]))
-        self.assertEqual("14:00", build_climate_schedule(SETTINGS, saved, {"time": "07:00"}, ZONE, now=july)["time"])
-        self.assertEqual("15:00", build_climate_schedule(SETTINGS, saved, {"days": ["Monday", "Friday"]}, ZONE, now=july)["time"])
-
-    def test_repeating_schedules_on_clock_change_days_use_the_offset_in_effect(self):
-        saved = {**SCHEDULE, "time": "15:00", "days": ["Monday"]}
-        for now, changes, expected in (
-            (datetime(2026, 3, 7, 20, tzinfo=ZONE), {"days": ["Monday", "Friday"]}, "15:00"),
-            (datetime(2026, 3, 8, 12, tzinfo=ZONE), {"time": "02:30"}, "09:30"),
-            (datetime(2026, 11, 1, 12, tzinfo=ZONE), {"time": "01:30"}, "09:30"),
+        # Setting the time again saves it at the current offset; changing only the days keeps it.
+        for changes, expected in (
+            ({"time": "07:00"}, ("14:00", "07-13-2026")), ({"time": "06:00"}, ("13:00", "07-13-2026")),
+            ({"days": ["Monday", "Friday"]}, ("15:00", "01-12-2026")),
         ):
-            with self.subTest(now=now, changes=changes):
-                self.assertEqual(expected, build_climate_schedule(SETTINGS, saved, changes, ZONE, now=now)["time"])
-        local = local_climate_schedule({**saved, "time": "07:30"}, ZONE, now=datetime(2026, 11, 1, 12, tzinfo=ZONE))
-        self.assertEqual(("23:30", ["Sunday"]), (local["time"], local["days"]))
+            with self.subTest(changes=changes):
+                edited = build_climate_schedule(SETTINGS, saved, changes, ZONE, now=july)
+                self.assertEqual(expected, (edited["time"], edited["date"]))
+        one_time = {**saved, "reservationType": "ONE_TIME", "date": "01-01-2020", "days": None}
+        for changes, expected in (
+            ({"days": ["Monday"]}, ("REPETITION", "07-13-2026", "14:00", ["Monday"])),
+            ({"date": "2026-12-01"}, ("ONE_TIME", "12-01-2026", "15:00", None)),
+        ):
+            with self.subTest(changes=changes):
+                edited = build_climate_schedule(SETTINGS, one_time if "days" in changes else saved, changes, ZONE, now=july)
+                self.assertEqual(expected, tuple(edited.get(key) for key in ("reservationType", "date", "time", "days")))
+        # Toyota's app converts a repeating schedule without a date on today's date.
+        undated = {**saved, "date": None}
+        for now, local_time in ((january, "07:00"), (july, "08:00")):
+            with self.subTest(undated=now):
+                self.assertEqual(local_time, local_climate_schedule(undated, ZONE, now=now)["time"])
+        edited = build_climate_schedule(SETTINGS, undated, {"time": "07:00"}, ZONE, now=july)
+        self.assertEqual(("14:00", "07-13-2026"), (edited["time"], edited["date"]))
+
+    def test_repeating_schedules_saved_on_clock_change_days(self):
+        with self.assertRaisesRegex(ValueError, "clocks move forward"):
+            build_climate_schedule(SETTINGS, None, {
+                "time": "02:30", "days": ["Monday"], "temperature": 22,
+            }, ZONE, now=datetime(2026, 3, 8, 12, tzinfo=ZONE))
+        # 09:30 UTC is the second 01:30 on the day the clocks move back.
+        saved = {**SCHEDULE, "date": "11-01-2026", "time": "09:30", "days": ["Sunday"]}
+        local = local_climate_schedule(saved, ZONE, now=NOW)
+        self.assertEqual(("01:30", ["Sunday"]), (local["time"], local["days"]))
+        body = build_climate_schedule(SETTINGS, saved, {"days": ["Sunday", "Monday"]}, ZONE, now=NOW)
+        self.assertEqual(("09:30", "11-01-2026", ["Sunday", "Monday"]), (body["time"], body["date"], body["days"]))
+        # Entering the repeated time uses its first occurrence, as the app does.
+        fall_back = datetime(2026, 11, 1, 12, tzinfo=ZONE)
+        self.assertEqual("08:30", build_climate_schedule(SETTINGS, saved, {"time": "01:30"}, ZONE, now=fall_back)["time"])
 
     def test_one_time_dates_use_the_offset_on_the_selected_date(self):
         for selected_date, expected_date, expected_time in (
