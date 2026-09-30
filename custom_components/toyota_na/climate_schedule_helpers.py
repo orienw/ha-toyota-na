@@ -152,7 +152,14 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
 def climate_schedule_matches(schedule, desired):
     try:
         if desired.get("reservationType") == "REPETITION":
-            if _reservation_datetime(schedule, "01-01-2000").time() != _reservation_datetime(desired, "01-01-2000").time():
+            # The saved date decides the displayed offset, so a reported date
+            # must match too. Without one the time alone decides, as the
+            # reservation is converted on today's date.
+            try:
+                matched = _reservation_datetime(schedule) == _reservation_datetime(desired)
+            except ValueError:
+                matched = _reservation_datetime(schedule, "01-01-2000").time() == _reservation_datetime(desired, "01-01-2000").time()
+            if not matched:
                 return False
         elif _reservation_datetime(schedule) != _reservation_datetime(desired):
             return False

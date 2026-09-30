@@ -107,6 +107,24 @@ class ClimateScheduleFormatTests(unittest.TestCase):
         edited = build_climate_schedule(SETTINGS, undated, {"time": "07:00"}, ZONE, now=july)
         self.assertEqual(("14:00", "07-13-2026"), (edited["time"], edited["date"]))
 
+    def test_repeating_schedule_confirms_only_on_its_saved_date(self):
+        july = datetime(2026, 7, 13, 9, tzinfo=ZONE)
+        # Saved in January, 14:00 UTC shows 06:00; set to 07:00 in July it is 14:00 UTC on a new date.
+        saved = {**SCHEDULE, "date": "01-12-2026", "time": "14:00", "days": ["Monday"]}
+        self.assertEqual("06:00", local_climate_schedule(saved, ZONE, now=july)["time"])
+        body = build_climate_schedule(SETTINGS, saved, {"time": "07:00"}, ZONE, now=july)
+        self.assertEqual(("14:00", "07-13-2026"), (body["time"], body["date"]))
+        self.assertFalse(climate_schedule_matches(saved, body))
+        self.assertTrue(climate_schedule_matches({**saved, **body}, body))
+        # Without a reported date the time alone confirms, as the reservation converts on today's date.
+        self.assertTrue(climate_schedule_matches({**saved, "date": None}, body))
+        self.assertFalse(climate_schedule_matches({**saved, "date": None, "time": "15:00"}, body))
+        # Changing only the days keeps the saved start, which still confirms.
+        edited = build_climate_schedule(SETTINGS, saved, {"days": ["Monday", "Friday"]}, ZONE, now=july)
+        self.assertEqual(("14:00", "01-12-2026"), (edited["time"], edited["date"]))
+        self.assertTrue(climate_schedule_matches({**saved, **edited}, edited))
+        self.assertFalse(climate_schedule_matches(saved, edited))
+
     def test_repeating_schedules_saved_on_clock_change_days(self):
         with self.assertRaisesRegex(ValueError, "clocks move forward"):
             build_climate_schedule(SETTINGS, None, {
@@ -305,6 +323,29 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         ):
             await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
         self.assertEqual("active", self.vehicle.climate_schedules["airConditioningReservation"][0]["status"])
+
+    async def test_unapplied_time_change_is_not_confirmed_by_the_same_utc_time_on_the_old_date(self):
+        # Saved in January, 14:00 UTC shows 06:00; setting 07:00 in September sends 14:00 UTC on today's date.
+        self.server["airConditioningReservation"][0].update(date="01-12-2026", time="14:00")
+        await self.vehicle.update_climate_schedules()
+        self.client.save_climate_schedule.side_effect = None
+        self.client.save_climate_schedule.return_value = {"returnCode": "ONE-RES-10000", "reservationNo": 1}
+        elapsed = 0
+
+        async def sleep(delay):
+            nonlocal elapsed
+            elapsed += delay
+
+        with (
+            patch.object(patch_base_vehicle.asyncio, "get_running_loop", return_value=types.SimpleNamespace(time=lambda: elapsed)),
+            patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+            self.assertRaisesRegex(RuntimeError, "accepted.*did not return"),
+        ):
+            await self.vehicle.update_climate_schedule(1, zone=ZONE, time="07:00")
+        body = self.client.save_climate_schedule.call_args.args[2]
+        self.assertEqual(("14:00", "09-21-2026"), (body["time"], body["date"]))
+        schedule = self.vehicle.climate_schedules["airConditioningReservation"][0]
+        self.assertEqual("06:00", local_climate_schedule(schedule, ZONE, now=NOW)["time"])
 
     async def test_switch_reads_fresh_options_and_preserves_them(self):
         self.server["airConditioningReservation"][0]["acOptions"]["steeringHeater"] = "on"
