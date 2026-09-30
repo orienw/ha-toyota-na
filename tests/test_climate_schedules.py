@@ -336,6 +336,8 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
             None, {}, {"airConditioningReservation": None}, {**SETTINGS, "airConditioningReservation": {}},
             {**SETTINGS, "airConditioningReservation": [None]},
             {**SETTINGS, "returnCode": "FAILED", "airConditioningReservation": None},
+            {**SETTINGS, "returnCode": "FAILED", "airConditioningReservation": []},
+            {**SETTINGS, "returnCode": "FAILED"},
         ):
             with self.subTest(result=result):
                 self.client.get_climate_schedules.side_effect = None
@@ -364,11 +366,18 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         await self.vehicle.update_climate_schedules()
         self.assertEqual([], self.vehicle.climate_schedules["airConditioningReservation"])
 
-    async def test_reported_schedules_are_read_whatever_the_return_code(self):
-        # Toyota's app never reads the returnCode on this endpoint.
-        self.server["returnCode"] = "OTHER"
-        await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
-        self.assertEqual("inactive", self.vehicle.climate_schedules["airConditioningReservation"][0]["status"])
+    async def test_failed_read_back_does_not_confirm_a_delete(self):
+        save = self.client.save_climate_schedule.side_effect
+
+        async def save_then_fail_reads(*args, **kwargs):
+            await save(*args, **kwargs)
+            self.server.update(returnCode="FAILED", airConditioningReservation=[])
+            return {"returnCode": "ONE-RES-10000"}
+
+        self.client.save_climate_schedule.side_effect = save_then_fail_reads
+        with self.assertRaisesRegex(RuntimeError, "current climate schedules"):
+            await self.vehicle.update_climate_schedule(1, zone=ZONE, delete=True)
+        self.assertEqual([SCHEDULE], self.vehicle.climate_schedules["airConditioningReservation"])
 
     async def test_day_names_are_read_in_any_case(self):
         self.server["airConditioningReservation"][0]["days"] = ["TUESDAY", "thursday"]

@@ -432,7 +432,8 @@ class ToyotaVehicle(ABC):
             self.vin, self.api_generation, self.region, self.brand,
         )
         # Like Toyota's app, a successful response without a list has no
-        # schedules, and reservations without an ID are skipped.
+        # schedules, and reservations without an ID are skipped. A failure
+        # code is rejected so it can't clear schedules and remove switches.
         if (
             isinstance(settings, dict) and settings.get("returnCode") == "ONE-RES-10000"
             and settings.get("airConditioningReservation") is None
@@ -440,6 +441,7 @@ class ToyotaVehicle(ABC):
             settings["airConditioningReservation"] = []
         if (
             not isinstance(settings, dict)
+            or settings.get("returnCode") not in (None, "ONE-RES-10000")
             or not isinstance(settings.get("airConditioningReservation"), list)
             or any(not isinstance(item, dict) for item in settings["airConditioningReservation"])
         ):
