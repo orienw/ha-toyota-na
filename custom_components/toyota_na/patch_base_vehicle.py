@@ -618,7 +618,9 @@ class ToyotaVehicle(ABC):
             schedules = ((status or {}).get("vehicleInfo") or {}).get("timerChargeInfo")
         if not isinstance(schedules, list) or any(not isinstance(item, dict) for item in schedules):
             raise RuntimeError("Toyota did not return current charge schedules.")
-        return schedules
+        # A response older than the last observation is not stored, so use
+        # what is shown rather than confirm a change from a stale one.
+        return self._charge_settings["schedules"]
 
     async def update_charge_schedule(self, identifier=None, *, delete=False, **changes):
         if not self.supports_charge_schedules:

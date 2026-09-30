@@ -238,6 +238,51 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(vehicle.charge_settings["schedules"][0]["enabled"])
         self.client.save_charge_schedule.assert_awaited_once()
 
+    def timestamped_reads(self, vehicle, timestamps):
+        async def read(*args, **kwargs):
+            timestamp = timestamps.pop(0) if len(timestamps) > 1 else timestamps[0]
+            if vehicle.uses_appsync:
+                return {"electric": {"charging": {"chargeSettings": {
+                    "lastUpdateDateTime": timestamp, "schedules": deepcopy(self.schedules),
+                }}}}
+            return {"vehicleInfo": {
+                "acquisitionDatetime": timestamp, "timerChargeInfo": deepcopy(self.schedules), "maxNoOfChargeSchedules": 3,
+            }}
+
+        request = self.client.graphql_get_vehicle_status if vehicle.uses_appsync else self.client.get_electric_status
+        request.side_effect = read
+
+    async def test_stale_read_back_does_not_confirm_a_change_on_each_transport(self):
+        for generation in (ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24):
+            for stale in ("2026-09-14T14:00:00Z", None):
+                with self.subTest(generation=generation, stale=stale):
+                    vehicle = self.make_vehicle(generation)
+                    self.timestamped_reads(vehicle, ["2026-09-14T15:00:00Z", stale, "2026-09-14T16:00:00Z"])
+                    with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep:
+                        await vehicle.update_charge_schedule(1, enabled=False)
+                    sleep.assert_awaited_once_with(5)
+                    self.assertFalse(vehicle.charge_settings["schedules"][0]["enabled"])
+                    self.assertEqual("2026-09-14T16:00:00+00:00", vehicle.charge_settings["_schedules_updated_at"].isoformat())
+
+    async def test_stale_empty_list_does_not_confirm_a_delete(self):
+        vehicle = self.make_vehicle()
+        self.timestamped_reads(vehicle, ["2026-09-14T15:00:00Z", "2026-09-14T14:00:00Z"])
+        elapsed = 0
+
+        async def sleep(delay):
+            nonlocal elapsed
+            elapsed += delay
+
+        with (
+            patch.object(patch_base_vehicle.asyncio, "get_running_loop", return_value=types.SimpleNamespace(time=lambda: elapsed)),
+            patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+            self.assertRaisesRegex(RuntimeError, "accepted.*did not return"),
+        ):
+            await vehicle.update_charge_schedule(1, delete=True)
+        self.assertEqual([], self.schedules)
+        self.assertEqual([SCHEDULE], vehicle.charge_settings["schedules"])
+        self.assertEqual(1, vehicle.features[behavior.VehicleFeatures.ChargeScheduleCount].value)
+
     async def test_unconfirmed_change_does_not_set_state_optimistically(self):
         vehicle = self.make_vehicle()
         self.client.save_charge_schedule.side_effect = None
