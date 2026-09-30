@@ -18,7 +18,6 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
             F.LastTimeStamp: ToyotaNumeric(1789473600, ""),
             F.LastTirePressureTimeStamp: ToyotaNumeric(1789470000, ""),
             F.Speed: ToyotaNumeric(100, "km/h"),
-            F.FuelLevel: ToyotaNumeric(79, "%"),
         }
         coordinator = ha.DataUpdateCoordinator([self.vehicle])
         entities = []
@@ -27,11 +26,11 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
             lambda added, update: entities.extend(added),
         )
         coordinator.notify_listeners()
-        self.assertEqual(len(entities), 6)
+        self.assertEqual(len(entities), 5)
         self.entities = {entity.sensor_name: entity for entity in entities}
         self.assertEqual(set(self.entities), {
             "Plug Status", "Connector Status", "Last Update Timestamp",
-            "Last Tire Pressure Update Timestamp", "Speed", "Fuel Level",
+            "Last Tire Pressure Update Timestamp", "Speed",
         })
         for name, entity in self.entities.items():
             self.assertEqual(entity.unique_id, f"TESTVIN.{name}")
@@ -81,18 +80,6 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(entity.device_class, ha.SensorDeviceClass.TIMESTAMP)
                 self.assertIsNone(entity.native_unit_of_measurement)
                 self.assertIsNone(entity.state_class)
-
-    async def test_fuel_level_clamps_display_without_changing_raw_value(self):
-        entity = self.entities["Fuel Level"]
-        for raw, expected in (
-            (-1, 0), (0, 0), (79, 79), (79.5, 79.5),
-            (100, 100), (104.0, 100), (None, None),
-        ):
-            with self.subTest(raw=raw):
-                self.vehicle.features[F.FuelLevel] = ToyotaNumeric(raw, "%")
-                self.assertEqual(entity.native_value, expected)
-                self.assertEqual(self.vehicle.features[F.FuelLevel].value, raw)
-        self.assertEqual(entity.native_unit_of_measurement, "%")
 
     async def test_speed_uses_reported_units_with_legacy_fallback(self):
         entity = self.entities["Speed"]

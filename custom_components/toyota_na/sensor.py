@@ -108,8 +108,6 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         feature = self.feature(self._vehicle_feature)
         if not isinstance(feature, ToyotaNumeric) or feature.value is None:
             return None
-        if self._vehicle_feature == VehicleFeatures.FuelLevel:
-            return min(100, max(0, feature.value))
         if self._states:
             return self._states.get(str(feature.value).lower())
         if self.device_class == SensorDeviceClass.TIMESTAMP:
