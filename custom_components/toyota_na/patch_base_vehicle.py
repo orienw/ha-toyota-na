@@ -445,6 +445,10 @@ class ToyotaVehicle(ABC):
         ):
             raise RuntimeError("Toyota did not return current climate schedules.")
         reservations = [item for item in settings["airConditioningReservation"] if item.get("reservationNo") is not None]
+        for item in reservations:
+            # Toyota's app matches day names in any case.
+            if isinstance(item.get("days"), list):
+                item["days"] = [day.capitalize() if isinstance(day, str) else day for day in item["days"]]
         self._climate_schedules.clear()
         self._climate_schedules.update(settings, airConditioningReservation=reservations)
         return reservations

@@ -370,6 +370,14 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
         self.assertEqual("inactive", self.vehicle.climate_schedules["airConditioningReservation"][0]["status"])
 
+    async def test_day_names_are_read_in_any_case(self):
+        self.server["airConditioningReservation"][0]["days"] = ["TUESDAY", "thursday"]
+        await self.vehicle.update_climate_schedules()
+        schedule = self.vehicle.climate_schedules["airConditioningReservation"][0]
+        self.assertEqual(["Monday", "Wednesday"], local_climate_schedule(schedule, ZONE)["days"])
+        await self.vehicle.update_climate_schedule(1, zone=ZONE, time="07:00")
+        self.assertEqual(["Monday", "Wednesday"], self.client.save_climate_schedule.call_args.args[2]["days"])
+
     async def test_reservations_without_an_id_are_skipped(self):
         self.server["airConditioningReservation"].insert(0, {"reservationNo": None, "status": "active"})
         await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
