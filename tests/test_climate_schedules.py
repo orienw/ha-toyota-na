@@ -392,9 +392,48 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
             return {"returnCode": "ONE-RES-10000"}
 
         self.client.save_climate_schedule.side_effect = save_then_fail_reads
-        with self.assertRaisesRegex(RuntimeError, "current climate schedules"):
+        elapsed = 0
+
+        async def sleep(delay):
+            nonlocal elapsed
+            elapsed += delay
+
+        with (
+            patch.object(patch_base_vehicle.asyncio, "get_running_loop", return_value=types.SimpleNamespace(time=lambda: elapsed)),
+            patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+            self.assertRaisesRegex(RuntimeError, "current climate schedules"),
+        ):
             await self.vehicle.update_climate_schedule(1, zone=ZONE, delete=True)
         self.assertEqual([SCHEDULE], self.vehicle.climate_schedules["airConditioningReservation"])
+
+    async def test_failed_read_back_is_retried_until_the_change_appears(self):
+        read = self.client.get_climate_schedules.side_effect
+        failures = [{"returnCode": "FAILED"}]
+
+        async def fail_once_after_save(*args):
+            if self.client.save_climate_schedule.await_count and failures:
+                return failures.pop()
+            return await read(*args)
+
+        self.client.get_climate_schedules.side_effect = fail_once_after_save
+        with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep:
+            await self.vehicle.update_climate_schedule(zone=ZONE, time="08:00", days=["Monday"], temperature=22)
+        sleep.assert_awaited_once_with(5)
+        self.assertEqual(2, len(self.vehicle.climate_schedules["airConditioningReservation"]))
+        self.client.save_climate_schedule.assert_awaited_once()
+
+    async def test_expired_login_during_read_back_is_not_retried(self):
+        read = self.client.get_climate_schedules.side_effect
+
+        async def expire_after_save(*args):
+            if self.client.save_climate_schedule.await_count:
+                raise LoginError()
+            return await read(*args)
+
+        self.client.get_climate_schedules.side_effect = expire_after_save
+        with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep, self.assertRaises(LoginError):
+            await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
+        sleep.assert_not_awaited()
 
     async def test_day_names_are_read_in_any_case(self):
         self.server["airConditioningReservation"][0]["days"] = ["TUESDAY", "thursday"]

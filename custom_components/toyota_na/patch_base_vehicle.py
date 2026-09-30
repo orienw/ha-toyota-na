@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from enum import Enum, auto, unique
 from typing import Optional, Union
 
+import aiohttp
 from toyota_na.client import ToyotaOneClient
 from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
@@ -493,14 +494,8 @@ class ToyotaVehicle(ABC):
                 identifier=identifier, delete=delete,
             )
             saved_id = result.get("reservationNo")
-            loop = asyncio.get_running_loop()
-            deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT
-            delay = 5
-            while loop.time() < deadline:
-                try:
-                    schedules = await asyncio.wait_for(self._read_climate_schedules(), deadline - loop.time())
-                except asyncio.TimeoutError:
-                    break
+
+            def confirmed(schedules):
                 if identifier is not None:
                     candidates = [item for item in schedules if str(item["reservationNo"]) == str(identifier)]
                 elif saved_id is not None:
@@ -508,13 +503,12 @@ class ToyotaVehicle(ABC):
                                   and str(item["reservationNo"]) not in previous_ids]
                 else:
                     candidates = [item for item in schedules if str(item["reservationNo"]) not in previous_ids]
-                if (delete and not candidates) or (not delete and any(climate_schedule_matches(item, body) for item in candidates)):
-                    return
-                await asyncio.sleep(min(delay, max(0, deadline - loop.time())))
-                delay = min(30, delay * 2)
+                return (delete and not candidates) or (not delete and any(climate_schedule_matches(item, body) for item in candidates))
+
+            message = "Toyota accepted the climate schedule change but did not return the updated schedule."
             if result.get("returnCode") not in (None, "ONE-RES-10000") and result.get("message"):
-                raise RuntimeError(result["message"])
-            raise RuntimeError("Toyota accepted the climate schedule change but did not return the updated schedule.")
+                message = result["message"]
+            await self._wait_for_schedules(self._read_climate_schedules, confirmed, message)
 
     async def update_tire_pressure(self) -> None:
         # Toyota's app reads this endpoint only when tire pressure is enabled.
@@ -654,22 +648,34 @@ class ToyotaVehicle(ABC):
                     candidates = [item for item in candidates if str(item.get("settingId")) == str(identifier)]
                 return (delete and not candidates) or (not delete and any(schedule_matches(item, body) for item in candidates))
 
-            await self._wait_for_charge_schedules(confirmed)
+            await self._wait_for_schedules(
+                self._read_charge_schedules, confirmed,
+                "Toyota accepted the schedule change but did not return the updated schedule.",
+            )
 
-    async def _wait_for_charge_schedules(self, confirmed):
+    async def _wait_for_schedules(self, read, confirmed, message):
         loop = asyncio.get_running_loop()
         deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT
         readback_delay = 5
+        error = None
         while loop.time() < deadline:
             try:
-                schedules = await asyncio.wait_for(self._read_charge_schedules(), deadline - loop.time())
+                schedules = await asyncio.wait_for(read(), deadline - loop.time())
             except asyncio.TimeoutError:
                 break
-            if confirmed(schedules):
-                return
+            except (RuntimeError, aiohttp.ClientError) as err:
+                # A failed read can hide a saved change, so keep reading rather
+                # than report a failure that invites a duplicate.
+                error = err
+            else:
+                if confirmed(schedules):
+                    return
+                error = None
             await asyncio.sleep(min(readback_delay, max(0, deadline - loop.time())))
             readback_delay = min(30, readback_delay * 2)
-        raise RuntimeError("Toyota accepted the schedule change but did not return the updated schedule.")
+        if error is not None:
+            raise error
+        raise RuntimeError(message)
 
     async def set_charge_setting(self, field, option):
         if not self.supports_charge_setting(field):

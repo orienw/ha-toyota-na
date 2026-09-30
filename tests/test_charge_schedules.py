@@ -192,6 +192,23 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
             await vehicle.update_charge_schedule(1, enabled=False)
         self.client.save_charge_schedule.assert_not_awaited()
 
+    async def test_failed_read_back_is_retried_until_the_change_appears(self):
+        vehicle = self.make_vehicle()
+        graphql = self.client.graphql_get_vehicle_status.side_effect
+        failures = [{}]
+
+        async def fail_once_after_save(*args):
+            if self.client.save_charge_schedule.await_count and failures:
+                return failures.pop()
+            return await graphql(*args)
+
+        self.client.graphql_get_vehicle_status.side_effect = fail_once_after_save
+        with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep:
+            await vehicle.update_charge_schedule(1, enabled=False)
+        sleep.assert_awaited_once_with(5)
+        self.assertFalse(vehicle.charge_settings["schedules"][0]["enabled"])
+        self.client.save_charge_schedule.assert_awaited_once()
+
     async def test_unconfirmed_change_does_not_set_state_optimistically(self):
         vehicle = self.make_vehicle()
         self.client.save_charge_schedule.side_effect = None
