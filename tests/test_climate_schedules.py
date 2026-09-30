@@ -2,12 +2,14 @@
 
 import asyncio
 from copy import deepcopy
+import json
 from datetime import datetime
 import types
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 from zoneinfo import ZoneInfo
 
+import aiohttp
 from toyota_na.exceptions import LoginError
 
 import test_button as ha
@@ -421,6 +423,63 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         sleep.assert_awaited_once_with(5)
         self.assertEqual(2, len(self.vehicle.climate_schedules["airConditioningReservation"]))
         self.client.save_climate_schedule.assert_awaited_once()
+
+    async def test_any_failed_read_back_is_retried(self):
+        read = self.client.get_climate_schedules.side_effect
+        for failure in (
+            asyncio.TimeoutError(), json.JSONDecodeError("Expecting value", "", 0),
+            aiohttp.ClientResponseError(None, (), status=503), aiohttp.ClientConnectionError(),
+        ):
+            with self.subTest(failure=type(failure).__name__):
+                failures = [failure]
+
+                async def fail_once_after_save(*args):
+                    if self.client.save_climate_schedule.await_count and failures:
+                        raise failures.pop()
+                    return await read(*args)
+
+                self.client.save_climate_schedule.reset_mock()
+                self.client.get_climate_schedules.side_effect = fail_once_after_save
+                with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep:
+                    await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=self.server["airConditioningReservation"][0]["status"] != "active")
+                sleep.assert_awaited_once_with(5)
+                self.client.save_climate_schedule.assert_awaited_once()
+
+    async def test_read_back_timeouts_until_the_deadline_report_an_unconfirmed_change(self):
+        self.client.save_climate_schedule.side_effect = None
+        self.client.save_climate_schedule.return_value = {}
+        read = self.client.get_climate_schedules.side_effect
+        elapsed = 0
+
+        async def time_out_after_save(*args):
+            if self.client.save_climate_schedule.await_count:
+                raise asyncio.TimeoutError()
+            return await read(*args)
+
+        async def sleep(delay):
+            nonlocal elapsed
+            elapsed += delay
+
+        self.client.get_climate_schedules.side_effect = time_out_after_save
+        with (
+            patch.object(patch_base_vehicle.asyncio, "get_running_loop", return_value=types.SimpleNamespace(time=lambda: elapsed)),
+            patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+            self.assertRaisesRegex(RuntimeError, "accepted.*did not return"),
+        ):
+            await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
+
+    async def test_rejected_authorization_during_read_back_is_not_retried(self):
+        read = self.client.get_climate_schedules.side_effect
+
+        async def reject_after_save(*args):
+            if self.client.save_climate_schedule.await_count:
+                raise aiohttp.ClientResponseError(None, (), status=401)
+            return await read(*args)
+
+        self.client.get_climate_schedules.side_effect = reject_after_save
+        with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep, self.assertRaises(aiohttp.ClientResponseError):
+            await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
+        sleep.assert_not_awaited()
 
     async def test_expired_login_during_read_back_is_not_retried(self):
         read = self.client.get_climate_schedules.side_effect

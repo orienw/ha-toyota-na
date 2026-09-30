@@ -6,6 +6,7 @@ from typing import Optional, Union
 
 import aiohttp
 from toyota_na.client import ToyotaOneClient
+from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
 from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
@@ -661,9 +662,13 @@ class ToyotaVehicle(ABC):
         while loop.time() < deadline:
             try:
                 schedules = await asyncio.wait_for(read(), deadline - loop.time())
-            except asyncio.TimeoutError:
-                break
-            except (RuntimeError, aiohttp.ClientError) as err:
+            except AuthError:
+                raise
+            except aiohttp.ClientResponseError as err:
+                if err.status in (401, 403):
+                    raise
+                error = err
+            except Exception as err:
                 # A failed read can hide a saved change, so keep reading rather
                 # than report a failure that invites a duplicate.
                 error = err
@@ -673,7 +678,7 @@ class ToyotaVehicle(ABC):
                 error = None
             await asyncio.sleep(min(readback_delay, max(0, deadline - loop.time())))
             readback_delay = min(30, readback_delay * 2)
-        if error is not None:
+        if error is not None and not isinstance(error, asyncio.TimeoutError):
             raise error
         raise RuntimeError(message)
 
