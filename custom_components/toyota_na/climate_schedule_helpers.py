@@ -64,7 +64,8 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
             raise ValueError("A new climate schedule needs a time, temperature, and date or repeating days.")
         if changes.get("enabled") is False:
             raise ValueError("Create the climate schedule before disabling it.")
-        body["settingType"] = "CUSTOM"
+        # Toyota's app always sends the defoggers, off for a new schedule.
+        body.update(settingType="CUSTOM", acOptions={"frontDefogger": "off", "rearDefogger": "off"}, ventilationOptions={})
     if "enabled" in changes:
         if not isinstance(changes["enabled"], bool):
             raise ValueError("Schedule enabled must be true or false.")
@@ -171,7 +172,10 @@ def climate_schedule_matches(schedule, desired):
                     return False
             elif isinstance(value, dict):
                 reported = schedule.get(key) or {}
-                if not isinstance(reported, dict) or any(reported.get(name) != setting for name, setting in value.items()):
+                # Like Toyota's app, an option is on only when reported as "on".
+                if not isinstance(reported, dict) or any(
+                    (reported.get(name) == "on") != (setting == "on") for name, setting in value.items()
+                ):
                     return False
             elif schedule.get(key) != value:
                 return False

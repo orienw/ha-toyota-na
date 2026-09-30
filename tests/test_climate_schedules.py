@@ -60,6 +60,8 @@ class ClimateScheduleFormatTests(unittest.TestCase):
                 self.assertEqual(expected_days, body["days"])
                 self.assertEqual("22.5", body["temperature"])
                 self.assertNotIn("status", body)
+                self.assertEqual({"frontDefogger": "off", "rearDefogger": "off"}, body["acOptions"])
+                self.assertEqual({}, body["ventilationOptions"])
                 local = local_climate_schedule(body, zone, now=NOW)
                 self.assertEqual(local_time, local["time"])
                 self.assertEqual(["Monday", "Wednesday"], local["days"])
@@ -240,6 +242,19 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
             return None
 
         self.client.save_climate_schedule.side_effect = save_without_id
+        await self.vehicle.update_climate_schedule(zone=ZONE, time="08:00", days=["Monday"], temperature=22)
+        self.assertEqual(2, len(self.vehicle.climate_schedules["airConditioningReservation"]))
+
+    async def test_create_confirms_when_toyota_omits_options_that_are_off(self):
+        save = self.client.save_climate_schedule.side_effect
+
+        async def save_without_off_options(vin, generation, body, *args, **kwargs):
+            identifier = await save(vin, generation, body, *args, **kwargs)
+            created = self.server["airConditioningReservation"][-1]
+            created.update(acOptions={}, ventilationOptions=None)
+            return identifier
+
+        self.client.save_climate_schedule.side_effect = save_without_off_options
         await self.vehicle.update_climate_schedule(zone=ZONE, time="08:00", days=["Monday"], temperature=22)
         self.assertEqual(2, len(self.vehicle.climate_schedules["airConditioningReservation"]))
 
