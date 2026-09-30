@@ -7,6 +7,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +57,7 @@ from custom_components.toyota_na.wake_policy import (
     record_vehicle_wake,
 )
 from custom_components.toyota_na.websocket_handler import ToyotaWebSocketHandler
+from custom_components.toyota_na import websocket_handler as websocket_module
 
 import toyota_na.vehicle.vehicle_generations.seventeen_cy as upstream_17cy
 import toyota_na.vehicle.vehicle_generations.seventeen_cy_plus as upstream_17cyplus
@@ -973,6 +975,96 @@ class VehicleStateTests(unittest.TestCase):
 
 
 class WebSocketTests(unittest.IsolatedAsyncioTestCase):
+    def make_connecting_handler(self, frames):
+        websocket = AsyncMock()
+        websocket.closed = False
+        websocket.receive.side_effect = [
+            types.SimpleNamespace(
+                type=websocket_module.aiohttp.WSMsgType.TEXT,
+                data=json.dumps(frame),
+            )
+            for frame in frames
+        ]
+        session = MagicMock()
+        session.closed = False
+        session.ws_connect = AsyncMock(return_value=websocket)
+        session.close = AsyncMock()
+        auth = types.SimpleNamespace(
+            get_access_token=AsyncMock(return_value="token"),
+            get_guid=AsyncMock(return_value="guid"),
+            get_device_id=lambda: "device",
+        )
+        handler = ToyotaWebSocketHandler(types.SimpleNamespace(auth=auth))
+        handler._running = True
+        return handler, websocket, session
+
+    async def test_appsync_keepalive_deadline_ignores_other_traffic(self):
+        handler = ToyotaWebSocketHandler(object())
+        with patch.object(websocket_module, "monotonic", return_value=100):
+            await handler._handle_message(
+                {"type": "connection_ack", "payload": {"connectionTimeoutMs": 120_000}},
+                "token", "guid",
+            )
+        self.assertEqual(handler._keepalive_deadline, 220)
+
+        with patch.object(websocket_module, "monotonic", return_value=150):
+            await handler._handle_message({"type": "data", "payload": {}}, "token", "guid")
+            self.assertEqual(handler._keepalive_deadline, 220)
+            await handler._handle_message({"type": "ka"}, "token", "guid")
+        self.assertEqual(handler._keepalive_deadline, 270)
+
+    async def test_missing_appsync_keepalive_closes_socket_and_session(self):
+        handler, websocket, session = self.make_connecting_handler([
+            {"type": "connection_ack", "payload": {"connectionTimeoutMs": 1000}},
+        ])
+        frames = iter(websocket.receive.side_effect)
+
+        async def receive():
+            try:
+                return next(frames)
+            except StopIteration:
+                await asyncio.Event().wait()
+
+        websocket.receive = receive
+        with (
+            patch.object(websocket_module.aiohttp, "ClientSession", return_value=session),
+            patch.object(websocket_module, "monotonic", side_effect=[0, 0, 0, 2]),
+            self.assertRaises(asyncio.TimeoutError),
+        ):
+            await handler._connect_and_listen()
+
+        websocket.close.assert_awaited_once()
+        session.close.assert_awaited_once()
+        self.assertFalse(handler.is_connected)
+
+    async def test_connection_scoped_errors_close_and_retire_the_connection(self):
+        for error in (
+            {"type": "error"},
+            {"type": "error", "id": None},
+            {"type": "connection_error", "payload": {"message": "rejected"}},
+        ):
+            with self.subTest(error=error):
+                handler, websocket, session = self.make_connecting_handler(
+                    [{"type": "connection_ack"}, error]
+                )
+                with (
+                    patch.object(websocket_module.aiohttp, "ClientSession", return_value=session),
+                    self.assertLogs(websocket_module.__name__, level="WARNING"),
+                    self.assertRaises(ConnectionError),
+                ):
+                    await handler._connect_and_listen()
+                self.assertFalse(handler.is_connected)
+                self.assertEqual({}, handler._subscriptions)
+                websocket.close.assert_awaited_once()
+                session.close.assert_awaited_once()
+
+    async def test_subscription_errors_keep_the_connection(self):
+        handler = ToyotaWebSocketHandler(object())
+        await handler._handle_message(
+            {"type": "error", "id": "subscription", "payload": {"message": "denied"}},
+            "token", "guid",
+        )
+
     async def test_push_is_forwarded_immediately(self):
         received = []
         handler = ToyotaWebSocketHandler(
