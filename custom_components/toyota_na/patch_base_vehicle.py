@@ -515,7 +515,8 @@ class ToyotaVehicle(ABC):
             raise RuntimeError("Toyota accepted the climate schedule change but did not return the updated schedule.")
 
     async def update_tire_pressure(self) -> None:
-        if self.uses_appsync or not self.can_receive_status:
+        # Toyota's app reads this endpoint only when tire pressure is enabled.
+        if self.uses_appsync or not self.can_receive_status or not self.feature_enabled("tirePressure"):
             return
         status = await self._client.get_tire_pressure(
             self.vin, self.api_generation, self.region, self.brand,

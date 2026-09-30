@@ -57,6 +57,15 @@ class TirePressureTests(unittest.IsolatedAsyncioTestCase):
             await vehicle.update_tire_pressure()
             client.get_tire_pressure.assert_not_awaited()
 
+    async def test_rest_request_follows_the_tire_pressure_feature_like_toyotas_app(self):
+        for flags, requested in ((None, True), ({"tirePressure": 1}, True), ({"tirePressure": 0}, False), ({}, False)):
+            with self.subTest(flags=flags):
+                client = types.SimpleNamespace(get_tire_pressure=AsyncMock(return_value=None))
+                vehicle = behavior.make_vehicle(client)
+                vehicle._feature_flags = flags
+                await vehicle.update_tire_pressure()
+                self.assertEqual(requested, client.get_tire_pressure.await_count == 1)
+
     def test_missing_malformed_or_older_readings_preserve_known_warnings(self):
         for factory in (behavior.make_17cy_vehicle, behavior.make_vehicle):
             with self.subTest(factory=factory.__name__):

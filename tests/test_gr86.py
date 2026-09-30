@@ -16,7 +16,7 @@ class GR86Tests(unittest.IsolatedAsyncioTestCase):
             "modelName": "GR86", "modelYear": "2025", "fuelType": "G",
             "remoteSubscriptionStatus": "ACTIVE",
             "remoteServiceCapabilities": {"dlockUnlockCapable": True, "estartStopCapable": False},
-            "features": {"remoteCommands": 1, "vehicleState": 1},
+            "features": {"remoteCommands": 1, "vehicleState": 1, "tirePressure": 1},
         }
         self.client = types.SimpleNamespace(
             get_user_vehicle_list=AsyncMock(return_value=[self.metadata]),
