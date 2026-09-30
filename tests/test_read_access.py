@@ -131,7 +131,7 @@ class StatusRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_recovery_creates_battery_and_charging_entities_after_vehicle_update(self):
         healthy = {**self.status, "electric": self.electric}
         for response, calls in (
-            ({"errors": [{"errorType": "ValidationError"}]}, 2),
+            ({"errors": [{"message": "Validation error of type FieldUndefined: actualChargingRate"}]}, 2),
             ({"data": {"getVehicleStatus": self.status}, "errors": [self.error]}, 2),
             ({"data": {"getVehicleStatus": healthy}, "errors": [self.error]}, 1),
         ):

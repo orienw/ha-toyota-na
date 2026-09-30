@@ -649,9 +649,10 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
 
 def graphql_schema_errors(errors):
     """Recognize rejected query fields separately from auth and resolver errors."""
+    # AppSync reports schema errors in the message; a resolver can use a
+    # ValidationError type for bad input, which must not drop fields.
     return isinstance(errors, list) and any(
-        err.get("errorType") == "ValidationError"
-        or (isinstance(err.get("extensions"), dict)
+        (isinstance(err.get("extensions"), dict)
             and err["extensions"].get("code") == "GRAPHQL_VALIDATION_FAILED")
         or str(err.get("message", "")).lower().startswith(("validation error", "cannot query field"))
         for err in errors if isinstance(err, dict)

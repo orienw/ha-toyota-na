@@ -11,6 +11,8 @@ from test_vehicle_behavior import (
     websocket_module,
 )
 
+SCHEMA_ERROR = {"message": "Validation error of type FieldUndefined: actualChargingRate"}
+
 
 class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -114,7 +116,7 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("actualChargingRate", json.loads(second["payload"]["data"])["query"])
 
     async def test_readded_vehicle_retries_full_fields_and_ignores_retired_schema_errors(self):
-        rejection = {"type": "error", "id": "first", "payload": {"errors": [{"errorType": "ValidationError"}]}}
+        rejection = {"type": "error", "id": "first", "payload": {"errors": [SCHEMA_ERROR]}}
         with self.assertLogs(websocket_module.__name__, level="WARNING"):
             await self.handler._handle_message(rejection, "token", "guid")
         retry = self.handler._retry_tasks["FIRSTVIN"]
@@ -135,7 +137,7 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs(websocket_module.__name__, level="WARNING"):
             await self.handler._handle_message({
                 "type": "error", "id": "first",
-                "payload": {"errors": [{"errorType": "ValidationError"}]},
+                "payload": {"errors": [SCHEMA_ERROR]},
             }, "token", "guid")
         retry = self.handler._retry_tasks["FIRSTVIN"]
         await self.next_sleep(5)
@@ -182,7 +184,7 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
             for delay in (5, 10, 20, 40, 80, 160, 300, 300):
                 await self.handler._handle_message({
                     "type": "error", "id": self.handler._subscriptions["FIRSTVIN"],
-                    "payload": {"errors": [{"errorType": "ValidationError"}]},
+                    "payload": {"errors": [SCHEMA_ERROR]},
                 }, "token", "guid")
                 retry = self.handler._retry_tasks["FIRSTVIN"]
                 resume = await self.next_sleep(delay)

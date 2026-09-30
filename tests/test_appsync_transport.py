@@ -18,6 +18,9 @@ SPEC = importlib.util.spec_from_file_location("appsync_patch_client", MODULE_PAT
 patch_client = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(patch_client)
 
+# AppSync reports a field missing from the schema as a validation error message.
+SCHEMA_ERROR = {"message": "Validation error of type FieldUndefined: actualChargingRate"}
+
 
 class _Auth:
     async def get_access_token(self):
@@ -335,7 +338,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_malformed_status_responses_do_not_retry(self):
         for body in (
             [], "invalid", {"data": ["invalid"]},
-            {"data": ["invalid"], "errors": [{"errorType": "ValidationError"}]},
+            {"data": ["invalid"], "errors": [SCHEMA_ERROR]},
             {"data": {"getVehicleStatus": ["invalid"]}},
         ):
             with self.subTest(body=body):
@@ -458,7 +461,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_transient_retry_budget_is_shared_with_fallback(self):
         self.session.post.side_effect = [
             _Response(503, {}),
-            _Response(200, {"errors": [{"errorType": "ValidationError"}]}),
+            _Response(200, {"errors": [SCHEMA_ERROR]}),
             _Response(503, {}), _Response(503, {}),
         ]
         with patch.object(patch_client.asyncio, "sleep", AsyncMock()) as sleep:
@@ -466,14 +469,18 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([1, 2], [call.args[0] for call in sleep.await_args_list])
         self.assertEqual(4, self.session.post.call_count)
 
+    def test_resolver_validation_errors_are_not_schema_errors(self):
+        self.assertTrue(patch_client.graphql_schema_errors([SCHEMA_ERROR]))
+        self.assertFalse(patch_client.graphql_schema_errors([{"errorType": "ValidationError", "message": "Invalid VIN"}]))
+
     async def test_status_schema_rejection_retries_with_compatible_fields(self):
         state = {"vin": "TESTVIN24", "electric": {
             "battery": {"stateOfChargeDisplay": {"value": 85, "unit": "%"}},
             "charging": {"chargingStatus": "charging"},
         }}
         for status, error, data in (
-            (200, {"message": "Validation error of type FieldUndefined: actualChargingRate"}, None),
-            (400, {"errorType": "ValidationError"}, {"getVehicleStatus": None}),
+            (200, SCHEMA_ERROR, None),
+            (400, SCHEMA_ERROR, {"getVehicleStatus": None}),
             (200, {"extensions": {"code": "GRAPHQL_VALIDATION_FAILED"}}, None),
         ):
             with self.subTest(status=status, error=error):
@@ -497,7 +504,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.auth.check_tokens.assert_not_awaited()
 
     async def test_status_fallback_is_bounded_and_does_not_replay_mutations(self):
-        self.session.post.return_value = _Response(200, {"errors": [{"errorType": "ValidationError"}]})
+        self.session.post.return_value = _Response(200, {"errors": [SCHEMA_ERROR]})
         self.assertIsNone(await patch_client.graphql_get_vehicle_status(self.client, "TESTVIN24"))
         self.assertEqual(2, self.session.post.call_count)
         self.session.post.reset_mock()
@@ -511,7 +518,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_status_fallback_retains_token_recovery(self):
         self.auth.get_access_token.side_effect = ["old-token", "old-token", "fresh-token"]
         self.session.post.side_effect = [
-            _Response(200, {"errors": [{"errorType": "ValidationError"}]}),
+            _Response(200, {"errors": [SCHEMA_ERROR]}),
             _Response(401, {}),
             _Response(),
         ]
@@ -525,12 +532,12 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_status_fallback_preserves_partial_data_and_ignores_permission_errors(self):
         state = {"vin": "TESTVIN24", "electric": {"battery": {"stateOfChargeDisplay": {"value": 0}}}}
         for status, data, errors, expected_calls in (
-            (200, {"getVehicleStatus": state}, [{"errorType": "ValidationError"}], 1),
+            (200, {"getVehicleStatus": state}, [SCHEMA_ERROR], 1),
             (200, {"getVehicleStatus": state}, [{"message": "Feature unavailable"}], 1),
             (200, {"getVehicleStatus": {"vin": "TESTVIN24", "electric": None}}, [], 1),
             (403, None, [{"message": "Feature unavailable"}], 1),
-            (429, None, [{"errorType": "ValidationError"}], 3),
-            (503, None, [{"errorType": "ValidationError"}], 3),
+            (429, None, [SCHEMA_ERROR], 3),
+            (503, None, [SCHEMA_ERROR], 3),
         ):
             with self.subTest(status=status, data=data):
                 self.session.post.reset_mock()
