@@ -1,6 +1,7 @@
 # ruff: noqa: I001
 
 import asyncio
+from copy import deepcopy
 import json
 import sys
 import types
@@ -918,6 +919,57 @@ class VehicleStateTests(unittest.TestCase):
         location = vehicle.features[VehicleFeatures.ParkingLocation]
         self.assertEqual(location.lat, 0.0)
         self.assertEqual(location.value, 0.0)
+
+    def test_malformed_graphql_sections_do_not_drop_other_readings(self):
+        status = {
+            "lastUpdateDateTime": "2026-09-15T12:00:00Z",
+            "vehicleState": {"doors": {"driverSide": {"position": {"status": "close"}}}},
+            "location": {"latitude": 1, "longitude": 2},
+            "telemetry": {"odo": {"value": 123}},
+            "electric": {"battery": {"stateOfChargeDisplay": {"value": 80}}},
+            "tripdetails": {"tripA": {"value": 3}},
+        }
+        readings = {
+            "vehicleState": (VehicleFeatures.FrontDriverDoor, "closed", True),
+            "location": (VehicleFeatures.ParkingLocation, "lat", 1),
+            "telemetry": (VehicleFeatures.Odometer, "value", 123),
+            "electric": (VehicleFeatures.ChargeLevel, "value", 80),
+            "tripdetails": (VehicleFeatures.TripDetailsA, "value", 3),
+        }
+        for section in readings:
+            for malformed in (["invalid"], "invalid", 7, True, None, [], {}):
+                with self.subTest(section=section, malformed=malformed):
+                    vehicle = make_24mm_vehicle()
+                    update = {**deepcopy(status), section: malformed}
+                    original = deepcopy(update)
+
+                    self.assertTrue(vehicle.apply_graphql_status(update))
+
+                    for key, (feature, attribute, expected) in readings.items():
+                        if key == section:
+                            self.assertNotIn(feature, vehicle.features)
+                        else:
+                            self.assertEqual(expected, getattr(vehicle.features[feature], attribute))
+                    self.assertEqual(original, update)
+                    vehicle._parse_graphql_vehicle_status(vehicle._last_graphql_status)
+
+    def test_unusable_graphql_updates_preserve_cached_state(self):
+        vehicle = make_24mm_vehicle()
+        vehicle.apply_graphql_status({"telemetry": {"odo": {"value": 123}}})
+        cached = vehicle._last_graphql_status
+        features = vehicle.features.copy()
+        for malformed in (None, [], {}, False, True, 7, "invalid", ["invalid"]):
+            for update in (malformed, {"telemetry": malformed}):
+                with self.subTest(update=update):
+                    self.assertFalse(vehicle.apply_graphql_status(update))
+                    self.assertIs(cached, vehicle._last_graphql_status)
+                    self.assertEqual(features, vehicle.features)
+
+        self.assertTrue(vehicle.apply_graphql_status({
+            "telemetry": ["invalid"], "location": {"latitude": 1, "longitude": 2},
+        }))
+        self.assertEqual(123, vehicle.features[VehicleFeatures.Odometer].value)
+        self.assertEqual(1, vehicle.features[VehicleFeatures.ParkingLocation].lat)
 
 
 class WebSocketTests(unittest.IsolatedAsyncioTestCase):
