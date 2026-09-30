@@ -1324,6 +1324,26 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
         self.assertFalse(vehicle.features[VehicleFeatures.FrontPassengerWindow].closed)
 
+    async def test_push_received_during_engine_poll_wins(self):
+        async def get_engine_status(*args):
+            vehicle.apply_graphql_status({
+                "vehicleState": {
+                    "engine": {"running": True, "lastUpdateDateTime": "2026-09-14T07:01:00Z"},
+                },
+            })
+            return {"status": "0", "date": "2026-09-14T07:00:00Z", "timer": 20}
+
+        client = types.SimpleNamespace(
+            get_telemetry=AsyncMock(return_value={}),
+            get_vehicle_status_17cyplus=AsyncMock(return_value={}),
+            get_engine_status_17cyplus=get_engine_status,
+        )
+        vehicle = make_vehicle(client)
+
+        await vehicle.update()
+
+        self.assertTrue(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
+
     async def test_discovery_preserves_metadata_for_common_vehicle_class(self):
         calls = []
         payload = dict(LEXUS_21MM_COUPE, vin="TESTVIN")

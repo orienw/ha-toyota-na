@@ -178,12 +178,14 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
             if self._generation != ApiVehicleGeneration.MM24:
                 try:
+                    previous_engine = self._features.get(VehicleFeatures.RemoteStartStatus)
                     engine_status = (
                         await self._client.get_engine_status_17cyplus(
                             self._vin, self._region
                         )
                     )
-                    if engine_status:
+                    # A push received during this request is newer.
+                    if engine_status and self._features.get(VehicleFeatures.RemoteStartStatus) is previous_engine:
                         self._parse_engine_status(engine_status)
                 except Exception as e:
                     _LOGGER.debug("Error fetching engine status: %s", e)
