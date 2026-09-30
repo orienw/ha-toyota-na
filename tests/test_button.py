@@ -70,6 +70,8 @@ class SourceType(Enum):
 
 class UnitOfPressure:
     PSI = "psi"
+    KPA = "kPa"
+    BAR = "bar"
 
 
 class Subscriptable:
@@ -534,7 +536,9 @@ class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
     async def test_pressure_sensor_converts_reported_units_to_psi(self):
         for value, unit, expected in (
             (240, "kPa", 34.809058),
+            (240, "kpa", 34.809058),
             (2.4, "bar", 34.809058),
+            (2.4, "BAR", 34.809058),
             (0, "kPa", 0),
         ):
             with self.subTest(value=value, unit=unit):
@@ -553,7 +557,7 @@ class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
                 ) as convert:
                     self.assertEqual(pressure.state, expected)
                     self.assertEqual(pressure.unit_of_measurement, "psi")
-                    convert.assert_called_once_with(value, unit, "psi")
+                    convert.assert_called_once_with(value, {"kpa": "kPa"}.get(unit.lower(), unit.lower()), "psi")
 
     async def test_native_and_missing_pressure_values_do_not_need_conversion(self):
         vehicle = FakeVehicle(set())
@@ -567,12 +571,14 @@ class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
             "Spare Tire Pressure",
             vehicle.vin,
         )
-        for value, unit in ((35, "psi"), (35, ""), (35, None), (None, "kPa")):
+        for value, unit in ((35, "psi"), (35, "PSI"), (35, ""), (35, None), (None, "kPa")):
             with self.subTest(value=value, unit=unit):
                 vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(value, unit)
                 with mock.patch.object(unit_conversion.PressureConverter, "convert") as convert:
                     self.assertEqual(pressure.state, value)
                     convert.assert_not_called()
+        vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(35, "atm")
+        self.assertIsNone(pressure.native_value)
 
 
 class DeviceTrackerTests(unittest.IsolatedAsyncioTestCase):

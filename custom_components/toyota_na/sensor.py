@@ -18,6 +18,9 @@ from .const import DOMAIN, SENSORS
 from .entity_discovery import setup_entity_discovery
 from .climate_schedule_helpers import local_climate_schedule
 
+# Toyota reports tire pressure units in varying case, such as "kpa".
+_PRESSURE_UNITS = {"psi": UnitOfPressure.PSI, "kpa": UnitOfPressure.KPA, "bar": UnitOfPressure.BAR}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -109,12 +112,12 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
             return self._states.get(str(feature.value).lower())
         if self.device_class == SensorDeviceClass.TIMESTAMP:
             return datetime.fromtimestamp(feature.value, timezone.utc)
-        if (
-            self._unit_of_measurement == UnitOfPressure.PSI
-            and feature.unit
-            and feature.unit != UnitOfPressure.PSI
-        ):
-            return PressureConverter.convert(feature.value, feature.unit, UnitOfPressure.PSI)
+        if self._unit_of_measurement == UnitOfPressure.PSI and feature.unit:
+            unit = _PRESSURE_UNITS.get(str(feature.unit).lower())
+            if unit is None:
+                return None
+            if unit != UnitOfPressure.PSI:
+                return PressureConverter.convert(feature.value, unit, UnitOfPressure.PSI)
         return feature.value
 
     @property
