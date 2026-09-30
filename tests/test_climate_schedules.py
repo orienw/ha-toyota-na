@@ -273,6 +273,20 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(entity.available)
         self.assertFalse(entity.is_on)
 
+    async def test_disabling_confirms_when_toyota_omits_the_status(self):
+        save = self.client.save_climate_schedule.side_effect
+
+        async def save_without_status(*args, **kwargs):
+            result = await save(*args, **kwargs)
+            self.server["airConditioningReservation"][0].pop("status")
+            return result
+
+        self.client.save_climate_schedule.side_effect = save_without_status
+        entity = switch.ToyotaClimateScheduleSwitch("1", self.coordinator, "Climate Schedule 1", self.vehicle.vin)
+        entity.hass = self.hass
+        await entity.async_turn_off()
+        self.assertFalse(entity.is_on)
+
     async def test_rejected_change_reports_toyotas_message_after_read_back(self):
         self.client.save_climate_schedule.side_effect = None
         self.client.save_climate_schedule.return_value = {"returnCode": "FAILED", "message": "Request failed"}
