@@ -193,7 +193,7 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
             schedules = self.server["airConditioningReservation"]
             if delete:
                 schedules[:] = [item for item in schedules if item["reservationNo"] != identifier]
-                return identifier
+                return {"returnCode": "ONE-RES-10000"}
             saved = {"status": "active", **deepcopy(body)}
             if "temperature" in saved:
                 saved["temperature"] = float(saved["temperature"])
@@ -202,7 +202,7 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
                 schedules.append({**saved, "reservationNo": identifier})
             else:
                 next(item for item in schedules if item["reservationNo"] == identifier).update(saved)
-            return identifier
+            return {"returnCode": "ONE-RES-10000", "reservationNo": identifier}
 
         self.client = types.SimpleNamespace(
             get_climate_schedules=AsyncMock(side_effect=read), save_climate_schedule=AsyncMock(side_effect=save),
@@ -239,7 +239,7 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
 
         async def save_without_id(*args, **kwargs):
             await save(*args, **kwargs)
-            return None
+            return {}
 
         self.client.save_climate_schedule.side_effect = save_without_id
         await self.vehicle.update_climate_schedule(zone=ZONE, time="08:00", days=["Monday"], temperature=22)
@@ -249,14 +249,43 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         save = self.client.save_climate_schedule.side_effect
 
         async def save_without_off_options(vin, generation, body, *args, **kwargs):
-            identifier = await save(vin, generation, body, *args, **kwargs)
+            result = await save(vin, generation, body, *args, **kwargs)
             created = self.server["airConditioningReservation"][-1]
             created.update(acOptions={}, ventilationOptions=None)
-            return identifier
+            return result
 
         self.client.save_climate_schedule.side_effect = save_without_off_options
         await self.vehicle.update_climate_schedule(zone=ZONE, time="08:00", days=["Monday"], temperature=22)
         self.assertEqual(2, len(self.vehicle.climate_schedules["airConditioningReservation"]))
+
+    async def test_create_confirms_without_a_reported_status_or_success_code(self):
+        save = self.client.save_climate_schedule.side_effect
+
+        async def save_without_status(*args, **kwargs):
+            result = await save(*args, **kwargs)
+            self.server["airConditioningReservation"][-1].pop("status")
+            return {"reservationNo": result["reservationNo"]}
+
+        self.client.save_climate_schedule.side_effect = save_without_status
+        await self.vehicle.update_climate_schedule(zone=ZONE, time="08:00", days=["Monday"], temperature=22)
+        self.assertEqual(2, len(self.vehicle.climate_schedules["airConditioningReservation"]))
+
+    async def test_rejected_change_reports_toyotas_message_after_read_back(self):
+        self.client.save_climate_schedule.side_effect = None
+        self.client.save_climate_schedule.return_value = {"returnCode": "FAILED", "message": "Request failed"}
+        elapsed = 0
+
+        async def sleep(delay):
+            nonlocal elapsed
+            elapsed += delay
+
+        with (
+            patch.object(patch_base_vehicle.asyncio, "get_running_loop", return_value=types.SimpleNamespace(time=lambda: elapsed)),
+            patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+            self.assertRaisesRegex(RuntimeError, "^Request failed$"),
+        ):
+            await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
+        self.assertEqual("active", self.vehicle.climate_schedules["airConditioningReservation"][0]["status"])
 
     async def test_switch_reads_fresh_options_and_preserves_them(self):
         self.server["airConditioningReservation"][0]["acOptions"]["steeringHeater"] = "on"
@@ -305,7 +334,8 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_or_malformed_responses_preserve_cached_schedules_and_block_writes(self):
         for result in (
             None, {}, {"airConditioningReservation": None}, {**SETTINGS, "airConditioningReservation": {}},
-            {**SETTINGS, "airConditioningReservation": [None]}, {**SETTINGS, "returnCode": "FAILED"},
+            {**SETTINGS, "airConditioningReservation": [None]},
+            {**SETTINGS, "returnCode": "FAILED", "airConditioningReservation": None},
         ):
             with self.subTest(result=result):
                 self.client.get_climate_schedules.side_effect = None
@@ -334,6 +364,12 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         await self.vehicle.update_climate_schedules()
         self.assertEqual([], self.vehicle.climate_schedules["airConditioningReservation"])
 
+    async def test_reported_schedules_are_read_whatever_the_return_code(self):
+        # Toyota's app never reads the returnCode on this endpoint.
+        self.server["returnCode"] = "OTHER"
+        await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
+        self.assertEqual("inactive", self.vehicle.climate_schedules["airConditioningReservation"][0]["status"])
+
     async def test_reservations_without_an_id_are_skipped(self):
         self.server["airConditioningReservation"].insert(0, {"reservationNo": None, "status": "active"})
         await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
@@ -348,6 +384,7 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unconfirmed_write_times_out_without_inventing_state_or_replaying_the_write(self):
         self.client.save_climate_schedule.side_effect = None
+        self.client.save_climate_schedule.return_value = {}
         elapsed = 0
         delays = []
 

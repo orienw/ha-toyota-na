@@ -440,7 +440,6 @@ class ToyotaVehicle(ABC):
             settings["airConditioningReservation"] = []
         if (
             not isinstance(settings, dict)
-            or settings.get("returnCode") not in (None, "ONE-RES-10000")
             or not isinstance(settings.get("airConditioningReservation"), list)
             or any(not isinstance(item, dict) for item in settings["airConditioningReservation"])
         ):
@@ -483,10 +482,11 @@ class ToyotaVehicle(ABC):
                 raise ValueError("Choose a climate schedule to delete.")
             previous_ids = {str(item["reservationNo"]) for item in schedules}
             body = {} if delete else build_climate_schedule(self.climate_schedules, existing, changes, zone)
-            saved_id = await self._client.save_climate_schedule(
+            result = await self._client.save_climate_schedule(
                 self.vin, self.api_generation, body, self.region, self.brand,
                 identifier=identifier, delete=delete,
             )
+            saved_id = result.get("reservationNo")
             loop = asyncio.get_running_loop()
             deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT
             delay = 5
@@ -506,6 +506,8 @@ class ToyotaVehicle(ABC):
                     return
                 await asyncio.sleep(min(delay, max(0, deadline - loop.time())))
                 delay = min(30, delay * 2)
+            if result.get("returnCode") not in (None, "ONE-RES-10000") and result.get("message"):
+                raise RuntimeError(result["message"])
             raise RuntimeError("Toyota accepted the climate schedule change but did not return the updated schedule.")
 
     async def update_tire_pressure(self) -> None:

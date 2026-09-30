@@ -209,9 +209,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             for result in ({"returnCode": "ONE-RES-10000", "reservationNo": 1}, {"payload": {"returnCode": "ONE-RES-10000", "reservationNo": 1}}):
                 with self.subTest(method=method, result=result):
                     self.response.json.return_value = {"payload": result}
-                    self.assertEqual(1, await client_module.save_climate_schedule(
+                    self.assertEqual(1, (await client_module.save_climate_schedule(
                         Client(), "TESTVIN", "21MM", {"temperature": "22.5"}, "CA", "L", identifier=identifier, delete=delete,
-                    ))
+                    ))["reservationNo"])
                     call = self.session.request.call_args
                     self.assertEqual((method, "https://onecdn.telematicsct.com/v1/remote/route/ac-reservation"), call.args)
                     self.assertEqual("device", call.kwargs["headers"]["device-id"])
@@ -227,10 +227,15 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                     else:
                         self.assertEqual({"temperature": "22.5"}, call.kwargs["json"])
 
-    async def test_climate_schedule_rejection_preserves_toyota_message(self):
-        self.response.json.return_value = {"payload": {"returnCode": "FAILED", "message": "Schedule limit reached"}}
-        with self.assertRaisesRegex(RuntimeError, "Schedule limit reached"):
-            await client_module.save_climate_schedule(Client(), "TESTVIN", "21MM", {})
+    async def test_climate_schedule_response_keeps_toyotas_message_for_read_back(self):
+        for response in (
+            {"returnCode": "FAILED", "message": "Request failed"},
+            {"message": "Request failed", "payload": {"returnCode": "FAILED"}},
+        ):
+            with self.subTest(response=response):
+                self.response.json.return_value = {"payload": response}
+                result = await client_module.save_climate_schedule(Client(), "TESTVIN", "21MM", {})
+                self.assertEqual({"returnCode": "FAILED", "message": "Request failed"}, result)
 
     async def test_extended_commands_keep_generation_brand_and_buzzer_parameters(self):
         for generation in ("17CY", "17CYPLUS", "21MM", "NG86", "GR86"):

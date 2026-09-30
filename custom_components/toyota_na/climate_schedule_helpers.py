@@ -156,7 +156,8 @@ def climate_schedule_matches(schedule, desired):
                 return False
         elif _reservation_datetime(schedule) != _reservation_datetime(desired):
             return False
-        if schedule.get("status") != desired.get("status", "active"):
+        # A new schedule is sent without a status, as Toyota's app does.
+        if "status" in desired and schedule.get("status") != desired["status"]:
             return False
         for key, value in desired.items():
             if key in ("date", "time", "status"):

@@ -1133,12 +1133,11 @@ async def save_climate_schedule(self, vin, generation, schedule, region="US", br
         method, REMOTE_ROUTE + "ac-reservation", headers,
         **({} if delete else {"json": schedule}),
     )
+    # Toyota's app treats any successful response as accepted and never reads
+    # its returnCode, so the caller confirms the change by reading it back.
     if isinstance(result, dict) and isinstance(result.get("payload"), dict):
-        result = result["payload"]
-    if not isinstance(result, dict) or result.get("returnCode") != "ONE-RES-10000":
-        message = result.get("message") if isinstance(result, dict) else None
-        raise RuntimeError(message or "Toyota did not accept the climate schedule change.")
-    return result.get("reservationNo")
+        result = {"message": result.get("message"), **result["payload"]}
+    return result if isinstance(result, dict) else {}
 
 
 async def _run_appsync_operation(self, vin, submit, region, *, fail_on_unknown=False):
