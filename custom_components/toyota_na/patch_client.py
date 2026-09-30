@@ -15,6 +15,7 @@ APPSYNC_API_KEY = "da2-zgeayo2qh5eo7cj6pmdwhwugze"
 RESOLVER_API_KEY = "pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG"
 USER_AGENT = "ToyotaOneApp/3.10.0 (com.toyota.oneapp; build:3100; Android 14) okhttp/4.12.0"
 TRANSPORT_BRAND = "T"
+HTTP_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=30)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -359,7 +360,7 @@ async def graphql_request(
         "query": query,
         "variables": variables,
     })
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.post(GRAPHQL_ENDPOINT, headers=headers, data=payload) as resp:
             body = await resp.text()
             if resp.status >= 400:
@@ -606,7 +607,7 @@ async def remote_request_24mm(self, vin, command, region="US"):
     )
     websocket_url = f"{GRAPHQL_WS_ENDPOINT}?{query}"
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.ws_connect(
             websocket_url, protocols=["graphql-ws"], heartbeat=30
         ) as ws:
@@ -653,7 +654,7 @@ async def api_request(self, method, endpoint, header_params=None, **kwargs):
 
     url = urljoin(API_GATEWAY, endpoint)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
         async with session.request(
                 method, url, headers=headers, **kwargs
         ) as resp:

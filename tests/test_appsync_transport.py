@@ -1,5 +1,6 @@
 """Protocol tests for AppSync status and 24MM remote commands."""
 
+import asyncio
 import base64
 import importlib.util
 import json
@@ -9,6 +10,8 @@ import unittest
 from unittest.mock import patch
 
 import aiohttp
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "custom_components/toyota_na/patch_client.py"
@@ -150,6 +153,36 @@ class _HttpSession:
 class _HttpClient:
     auth = _Auth()
     graphql_request = patch_client.graphql_request
+
+
+class RequestTimeoutTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stalled_requests_time_out_without_replaying(self):
+        calls = []
+
+        async def stall(request):
+            calls.append(request.path)
+            await asyncio.sleep(0.1)
+            return web.json_response({})
+
+        class Client(_HttpClient):
+            api_request = patch_client.api_request
+
+            async def _auth_headers(self):
+                return {}
+
+        app = web.Application()
+        app.router.add_post("/command", stall)
+        app.router.add_post("/graphql", stall)
+        async with TestServer(app) as server:
+            with (
+                patch.object(patch_client, "HTTP_TIMEOUT", aiohttp.ClientTimeout(total=0.02)),
+                patch.object(patch_client, "GRAPHQL_ENDPOINT", str(server.make_url("/graphql"))),
+            ):
+                with self.assertRaises(TimeoutError):
+                    await Client().api_request("POST", str(server.make_url("/command")), json={})
+                with self.assertRaises(TimeoutError):
+                    await Client().graphql_request("Status", "query", {"vin": "TESTVIN"})
+        self.assertEqual(["/command", "/graphql"], calls)
 
 
 class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
