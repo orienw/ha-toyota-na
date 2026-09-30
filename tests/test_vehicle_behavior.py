@@ -763,6 +763,41 @@ class VehicleStateTests(unittest.TestCase):
         self.assertIsNone(door.closed)
         self.assertTrue(door.locked)
 
+    def test_legacy_lock_flags_override_inactive_and_unflagged_values(self):
+        def make_legacy_vehicle():
+            return SeventeenCYToyotaVehicle(
+                client=object(),
+                has_remote_subscription=True,
+                has_electric=False,
+                model_name="CAMRY",
+                model_year="2018",
+                vin="LEGACYVIN",
+                region="US",
+            )
+
+        for make in (make_legacy_vehicle, make_vehicle):
+            for values, expected in (
+                ([{"value": "locked", "status": 0}], True),
+                ([{"value": "locked", "status": None}], True),
+                ([{"value": "locked", "status": "0"}], True),
+                ([{"value": "locked", "status": 0}, {"value": "unlocked", "status": 0}], True),
+                ([{"value": "unlocked", "status": 0}, {"value": "locked", "status": 1}], True),
+                ([{"value": "locked", "status": 0}, {"value": "unlocked", "status": 1}], False),
+                ([{"value": "locked"}, {"value": "unlocked", "status": 1}], False),
+                ([{"value": "unlocked", "status": 0}], None),
+                ([{"value": "locked", "status": 1}, {"value": "unlocked", "status": 1}], None),
+                ([{"value": "unknown", "status": 0}], None),
+            ):
+                for ordered in (values, list(reversed(values))):
+                    with self.subTest(make=make.__name__, values=ordered):
+                        vehicle = make()
+                        vehicle._parse_vehicle_status({"vehicleStatus": [{
+                            "category": "Driver Side",
+                            "sections": [{"section": "Door", "values": ordered}],
+                        }]})
+                        door = vehicle.features.get(VehicleFeatures.FrontDriverDoor)
+                        self.assertIs(door.locked if door else None, expected)
+
     def test_older_telemetry_cannot_overwrite_newer_window_state(self):
         vehicle = make_vehicle()
         vehicle.apply_graphql_status(
