@@ -149,8 +149,10 @@ Native controls:
 * Stop Power Supply button, while external power is active
 * Enable/disable switches for saved multi-day charge schedules
 
-The main lock reports the vehicle's door locks. Check cargo sensors separately
-in automations that monitor whether the whole vehicle is secured.
+The main lock reports the vehicle's door locks, like the Doors tile in Toyota's
+app. Check cargo sensors separately in automations that monitor whether the
+whole vehicle is secured. Vehicles with a tailgate don't have a cargo lock
+sensor yet.
 
 Climate preferences for Remote Start appear under device configuration.
 Remote Start runs the engine or climate system the vehicle supports.
@@ -162,7 +164,8 @@ The Charge Schedules sensor lists saved schedules in its attributes.
 `toyota_na.set_charge_schedule` creates a schedule (start, end, days of the
 week) or updates named fields when you pass a schedule ID. Times are the
 vehicle's local time. `toyota_na.delete_charge_schedule` removes a schedule by
-ID.
+ID. While eco charging is on, Toyota's app locks manual schedules, so enabling
+one here with its switch or `set_charge_schedule` can conflict with eco charging.
 
 Like Toyota's app, climate schedules are available on climate-capable 24MM and
 newer vehicles and on electric vehicles other than 17CY and NG86. The Climate
