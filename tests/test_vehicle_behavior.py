@@ -164,6 +164,18 @@ def make_24mm_vehicle(client=None):
     )
 
 
+def make_17cy_vehicle(client=None):
+    return SeventeenCYToyotaVehicle(
+        client=client or object(),
+        has_remote_subscription=True,
+        has_electric=False,
+        model_name="CAMRY",
+        model_year="2018",
+        vin="LEGACYVIN",
+        region="US",
+    )
+
+
 class VehicleMetadataTests(unittest.TestCase):
     def test_commands_use_reported_capabilities(self):
         vehicle = make_vehicle()
@@ -767,18 +779,7 @@ class VehicleStateTests(unittest.TestCase):
         self.assertTrue(door.locked)
 
     def test_legacy_lock_flags_override_inactive_and_unflagged_values(self):
-        def make_legacy_vehicle():
-            return SeventeenCYToyotaVehicle(
-                client=object(),
-                has_remote_subscription=True,
-                has_electric=False,
-                model_name="CAMRY",
-                model_year="2018",
-                vin="LEGACYVIN",
-                region="US",
-            )
-
-        for make in (make_legacy_vehicle, make_vehicle):
+        for make in (make_17cy_vehicle, make_vehicle):
             for values, expected in (
                 ([{"value": "locked", "status": 0}], True),
                 ([{"value": "locked", "status": None}], True),
@@ -800,6 +801,46 @@ class VehicleStateTests(unittest.TestCase):
                         }]})
                         door = vehicle.features.get(VehicleFeatures.FrontDriverDoor)
                         self.assertIs(door.locked if door else None, expected)
+
+    def test_unknown_engine_status_does_not_report_stopped(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            with self.subTest(make=make.__name__):
+                vehicle = make()
+                vehicle._parse_engine_status({"status": "unknown"})
+                self.assertNotIn(VehicleFeatures.RemoteStartStatus, vehicle.features)
+                vehicle._parse_engine_status({"status": "started"})
+                for status in (None, "unknown", "", "unavailable"):
+                    with self.subTest(status=status):
+                        vehicle._parse_engine_status({"status": status})
+                        self.assertTrue(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
+                vehicle._parse_engine_status({"status": "0"})
+                self.assertFalse(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
+
+    def test_rest_charging_state_distinguishes_waiting_and_completion(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            for plug_status, charging in ((40, True), (56, True), (12, False), (36, False), (45, False), (60, False)):
+                with self.subTest(make=make.__name__, plug_status=plug_status):
+                    vehicle = make()
+                    vehicle._parse_electric_status({
+                        "vehicleInfo": {"chargeInfo": {"plugStatus": plug_status, "connectorStatus": 5}},
+                    })
+                    self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
+
+    def test_unknown_charging_state_does_not_create_or_clear_state(self):
+        def rest(vehicle, value):
+            vehicle._parse_electric_status({"vehicleInfo": {"chargeInfo": {"plugStatus": value}}})
+
+        def graphql(vehicle, value):
+            vehicle._parse_graphql_electric_status({"charging": {"chargingState": value}})
+
+        for make, apply in ((make_17cy_vehicle, rest), (make_vehicle, rest), (make_24mm_vehicle, graphql)):
+            with self.subTest(make=make.__name__):
+                vehicle = make()
+                apply(vehicle, "unknown")
+                self.assertNotIn(VehicleFeatures.ChargingStatus, vehicle.features)
+                apply(vehicle, "40")
+                apply(vehicle, "unknown")
+                self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
 
     def test_older_telemetry_cannot_overwrite_newer_window_state(self):
         vehicle = make_vehicle()

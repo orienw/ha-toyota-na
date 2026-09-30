@@ -14,7 +14,12 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
-from .vehicle_helpers import opening_state_from_values, parse_api_timestamp
+from .vehicle_helpers import (
+    normalize_charging_state,
+    normalize_engine_state,
+    opening_state_from_values,
+    parse_api_timestamp,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -205,9 +210,12 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         if not engine_status or "status" not in engine_status:
             return
 
+        running = normalize_engine_state(engine_status["status"])
+        if running is None:
+            return
         self._features[VehicleFeatures.RemoteStartStatus] = ToyotaRemoteStart(
             date=engine_status.get("date"),
-            on=engine_status["status"] == "1",
+            on=running,
             timer=engine_status.get("timer"),
         )
 
@@ -231,7 +239,9 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         self._features[VehicleFeatures.EvTravelableDistance] = ToyotaNumeric(chargeInfo.get("evTravelableDistance"), "")
         self._features[VehicleFeatures.ChargeType] = ToyotaNumeric(chargeInfo.get("chargeType"), "")
         self._features[VehicleFeatures.ConnectorStatus] = ToyotaNumeric(chargeInfo.get("connectorStatus"), "")
-        self._features[VehicleFeatures.ChargingStatus] = ToyotaOpening(chargeInfo.get("connectorStatus") != 5)
+        charging = normalize_charging_state(chargeInfo.get("plugStatus"))
+        if charging is not None:
+            self._features[VehicleFeatures.ChargingStatus] = ToyotaOpening(not charging)
 
     #
     # vehicle_health_status

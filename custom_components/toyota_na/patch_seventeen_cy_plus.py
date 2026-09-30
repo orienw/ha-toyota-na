@@ -16,6 +16,8 @@ from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .vehicle_helpers import (
     backdoor_candidates,
+    normalize_charging_state,
+    normalize_engine_state,
     opening_state_from_graphql,
     opening_state_from_values,
     parse_api_timestamp,
@@ -293,9 +295,12 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         if not engine_status or "status" not in engine_status:
             return
 
+        running = normalize_engine_state(engine_status["status"])
+        if running is None:
+            return
         self._features[VehicleFeatures.RemoteStartStatus] = ToyotaRemoteStart(
             date=engine_status.get("date"),
-            on=engine_status["status"] == "1",
+            on=running,
             timer=engine_status.get("timer"),
         )
     
@@ -319,7 +324,9 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         self._features[VehicleFeatures.EvTravelableDistance] = ToyotaNumeric(chargeInfo.get("evTravelableDistance"), "")
         self._features[VehicleFeatures.ChargeType] = ToyotaNumeric(chargeInfo.get("chargeType"), "")
         self._features[VehicleFeatures.ConnectorStatus] = ToyotaNumeric(chargeInfo.get("connectorStatus"), "")
-        self._features[VehicleFeatures.ChargingStatus] = ToyotaOpening(chargeInfo.get("connectorStatus") != 5)
+        charging = normalize_charging_state(chargeInfo.get("plugStatus"))
+        if charging is not None:
+            self._features[VehicleFeatures.ChargingStatus] = ToyotaOpening(not charging)
 
     def _store_opening(self, feature, closed, locked, observed_at=None) -> bool:
         """Merge known opening state without converting missing values to false."""
@@ -388,15 +395,8 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
 
     def _store_remote_start(self, running, observed_at=None) -> bool:
         """Store engine state unless a newer observation already exists."""
-        if isinstance(running, str):
-            normalized = running.lower()
-            if normalized in ("on", "running", "started", "true", "1"):
-                running = True
-            elif normalized in ("off", "stopped", "false", "0"):
-                running = False
-            else:
-                return False
-        if not isinstance(running, bool):
+        running = normalize_engine_state(running)
+        if running is None:
             return False
         feature = VehicleFeatures.RemoteStartStatus
         timestamp = self._feature_timestamps.get((feature, "running"))
@@ -741,20 +741,9 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             observed_at=charging_observed_at,
         )
 
-        charging_state = str(charging.get("chargingState") or "").lower()
-        charging_status = str(charging.get("chargingStatus") or "").lower()
-        is_charging = None
-        if charging_state in ("charging", "40", "56"):
-            is_charging = True
-        elif charging_state:
-            is_charging = False
-        elif charging_status:
-            is_charging = charging_status in (
-                "charging",
-                "active",
-                "in_progress",
-                "in-progress",
-            )
+        is_charging = normalize_charging_state(charging.get("chargingState"))
+        if is_charging is None and not charging.get("chargingState"):
+            is_charging = normalize_charging_state(charging.get("chargingStatus"))
         if is_charging is not None:
             self._store_opening(
                 VehicleFeatures.ChargingStatus,
