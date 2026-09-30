@@ -410,9 +410,20 @@ class ToyotaVehicle(ABC):
         return self._climate_schedules
 
     @property
+    def _offers_climate_schedules(self):
+        # Toyota's app shows schedules for climate-capable 24MM and newer
+        # vehicles, and for electric vehicles other than 17CY and NG86.
+        return self._extended_capabilities.get("climateCapable") is True and (
+            self.uses_appsync or (
+                self.electric
+                and self.generation not in (ApiVehicleGeneration.CY17, ApiVehicleGeneration.NG86)
+            )
+        )
+
+    @property
     def supports_climate_schedules(self):
         return (
-            self._extended_capabilities.get("scheduleReservation") is True
+            self._offers_climate_schedules
             and self.subscribed and self.feature_enabled("remoteClimate")
         )
 
@@ -442,10 +453,7 @@ class ToyotaVehicle(ABC):
     async def update_climate_schedules(self):
         # A pending change reloads the schedules itself, so skip the read
         # rather than hold up the poll while it confirms.
-        if (
-            self._extended_capabilities.get("scheduleReservation") is True
-            and not self._climate_schedule_writes
-        ):
+        if self._offers_climate_schedules and not self._climate_schedule_writes:
             async with self._climate_schedule_lock:
                 await self._read_climate_schedules()
 

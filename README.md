@@ -164,10 +164,11 @@ week) or updates named fields when you pass a schedule ID. Times are the
 vehicle's local time. `toyota_na.delete_charge_schedule` removes a schedule by
 ID.
 
-On vehicles that report climate schedule support, the Climate Schedules sensor
-lists saved preconditioning reservations and their temperature range. Use
-`toyota_na.set_climate_schedule` with a start time, temperature, and either a date
-or repeating days to create one. Pass a schedule ID to edit selected fields;
+Like Toyota's app, climate schedules are available on climate-capable 24MM and
+newer vehicles and on electric vehicles other than 17CY and NG86. The Climate
+Schedules sensor lists saved preconditioning reservations and their temperature
+range. Use `toyota_na.set_climate_schedule` with a start time, temperature, and
+either a date or repeating days to create one. Pass a schedule ID to edit selected fields;
 existing seat and defroster options are preserved. Each schedule has an on/off
 switch, and `toyota_na.delete_climate_schedule` removes it.
 

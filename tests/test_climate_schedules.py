@@ -33,6 +33,13 @@ SETTINGS = {
 }
 
 
+def make_schedule_vehicle(client):
+    vehicle = behavior.make_vehicle(client)
+    vehicle._has_electric = True
+    vehicle._extended_capabilities = {**vehicle.extended_capabilities, "climateCapable": True}
+    return vehicle
+
+
 class FrozenDateTime(datetime):
     @classmethod
     def now(cls, tz=None):
@@ -198,15 +205,14 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.client = types.SimpleNamespace(
             get_climate_schedules=AsyncMock(side_effect=read), save_climate_schedule=AsyncMock(side_effect=save),
         )
-        self.vehicle = behavior.make_vehicle(self.client)
-        self.vehicle._extended_capabilities["scheduleReservation"] = True
+        self.vehicle = make_schedule_vehicle(self.client)
         self.coordinator = ha.DataUpdateCoordinator([self.vehicle])
         self.hass = ha.FakeHass(self.coordinator)
         self.hass.config = types.SimpleNamespace(time_zone=str(ZONE))
         await self.vehicle.update_climate_schedules()
 
     async def test_create_edit_and_delete_confirm_reported_state_on_each_generation(self):
-        for generation in ("17CY", "17CYPLUS", "21MM", "24MM", "26BEV"):
+        for generation in ("17CYPLUS", "21MM", "24MM", "26BEV"):
             with self.subTest(generation=generation):
                 self.vehicle._generation = patch_base_vehicle.ApiVehicleGeneration(generation)
                 await self.vehicle.update_climate_schedule(zone=ZONE, time="08:00", days=["Monday"], temperature=22)
@@ -260,11 +266,26 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.vehicle._feature_flags = {"remoteClimate": 2}
         with self.assertRaisesRegex(ValueError, "unavailable"):
             await self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False)
-        self.vehicle._extended_capabilities["scheduleReservation"] = False
+        self.vehicle._extended_capabilities = {"climateCapable": False}
         self.client.get_climate_schedules.reset_mock()
         await self.vehicle.update_climate_schedules()
         self.client.get_climate_schedules.assert_not_awaited()
         self.client.save_climate_schedule.assert_not_awaited()
+
+    async def test_schedules_follow_the_vehicles_toyotas_app_offers_them_to(self):
+        self.vehicle._feature_flags = None
+        for generation, electric, offered in (
+            ("24MM", False, True), ("26BEV", True, True), ("21MM", True, True), ("17CYPLUS", True, True),
+            ("21MM", False, False), ("17CYPLUS", False, False), ("17CY", True, False), ("NG86", True, False),
+        ):
+            with self.subTest(generation=generation, electric=electric):
+                self.vehicle._generation = patch_base_vehicle.ApiVehicleGeneration(generation)
+                self.vehicle._has_electric = electric
+                self.vehicle._extended_capabilities = {"climateCapable": True, "scheduleReservation": True}
+                self.client.get_climate_schedules.reset_mock()
+                await self.vehicle.update_climate_schedules()
+                self.assertEqual(offered, self.client.get_climate_schedules.await_count == 1)
+                self.assertEqual(offered, self.vehicle.supports_climate_schedules)
 
     async def test_missing_or_malformed_responses_preserve_cached_schedules_and_block_writes(self):
         for result in (
@@ -340,8 +361,7 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
             return await save(*args, **kwargs)
 
         self.client.save_climate_schedule.side_effect = delayed_save
-        replacement = behavior.make_vehicle(self.client)
-        replacement._extended_capabilities["scheduleReservation"] = True
+        replacement = make_schedule_vehicle(self.client)
         replacement.inherit_state(self.vehicle)
         write = asyncio.create_task(self.vehicle.update_climate_schedule(1, zone=ZONE, enabled=False))
         await started.wait()
