@@ -639,21 +639,6 @@ class ToyotaVehicle(ABC):
 
             await self._wait_for_charge_schedules(confirmed)
 
-    async def disable_charge_schedules(self) -> bool:
-        if not self.supports_charge_schedules:
-            raise ValueError("Multi-day charge schedules are unavailable for this vehicle.")
-        async with self._schedule_lock:
-            def all_disabled(schedules):
-                return all(isinstance(item, dict) and item.get("enabled") is False for item in schedules)
-
-            if all_disabled(await self._read_charge_schedules()):
-                return False
-            await self._client.disable_charge_schedules(
-                self.vin, self.api_generation, self.region, self.brand,
-            )
-            await self._wait_for_charge_schedules(all_disabled)
-            return True
-
     async def _wait_for_charge_schedules(self, confirmed):
         loop = asyncio.get_running_loop()
         deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT

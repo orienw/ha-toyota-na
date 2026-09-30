@@ -158,9 +158,6 @@ Charging settings and buttons follow the vehicle's reported options and state.
 The charge limit remains selectable when Toyota explicitly reports support but
 omits the current target; its current value stays Unknown until reported.
 
-`toyota_na.disable_charge_schedules` turns off all saved charge schedules while
-keeping their times and days. Individual schedules can be re-enabled with their switches.
-
 The Charge Schedules sensor lists saved schedules in its attributes.
 `toyota_na.set_charge_schedule` creates a schedule (start, end, days of the
 week) or updates named fields when you pass a schedule ID. Times are the

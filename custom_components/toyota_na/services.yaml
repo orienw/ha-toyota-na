@@ -266,16 +266,6 @@ delete_charge_schedule:
           step: 1
           mode: box
 
-disable_charge_schedules:
-  name: Disable all charge schedules
-  description: Turn off all saved charge schedules without deleting their times or days.
-  fields:
-    vehicle:
-      required: true
-      selector:
-        device:
-          integration: toyota_na
-
 set_climate_schedule:
   name: Set climate schedule
   description: Create or update a preconditioning schedule. Dates and times use Home Assistant's timezone.
