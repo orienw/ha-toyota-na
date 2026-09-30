@@ -269,6 +269,9 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.client.save_climate_schedule.side_effect = save_without_status
         await self.vehicle.update_climate_schedule(zone=ZONE, time="08:00", days=["Monday"], temperature=22)
         self.assertEqual(2, len(self.vehicle.climate_schedules["airConditioningReservation"]))
+        entity = switch.ToyotaClimateScheduleSwitch("2", self.coordinator, "Climate Schedule 2", self.vehicle.vin)
+        self.assertTrue(entity.available)
+        self.assertFalse(entity.is_on)
 
     async def test_rejected_change_reports_toyotas_message_after_read_back(self):
         self.client.save_climate_schedule.side_effect = None

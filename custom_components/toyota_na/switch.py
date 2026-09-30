@@ -170,7 +170,8 @@ class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
 
     @property
     def is_on(self):
-        return {"active": True, "inactive": False}.get(self.schedule.get("status"))
+        # Like Toyota's app, a schedule is on only when reported as "active".
+        return self.schedule.get("status") == "active" if self.schedule else None
 
     @property
     def extra_state_attributes(self):
