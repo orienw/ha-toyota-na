@@ -184,13 +184,42 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ha.exceptions.ServiceValidationError, "unavailable"):
             await entity.async_turn_off()
 
-    async def test_missing_schedule_response_is_an_operational_error(self):
+    async def test_missing_or_partial_schedule_response_is_an_operational_error(self):
         vehicle = self.make_vehicle()
-        self.client.graphql_get_vehicle_status.side_effect = None
-        self.client.graphql_get_vehicle_status.return_value = {}
-        with self.assertRaisesRegex(RuntimeError, "Toyota did not return current charge schedules"):
-            await vehicle.update_charge_schedule(1, enabled=False)
+        for status in ({}, {"electric": {"charging": {"chargeSettings": {"schedules": [None]}}}}):
+            with self.subTest(status=status):
+                self.client.graphql_get_vehicle_status.side_effect = None
+                self.client.graphql_get_vehicle_status.return_value = status
+                with self.assertRaisesRegex(RuntimeError, "Toyota did not return current charge schedules"):
+                    await vehicle.update_charge_schedule(1, enabled=False)
+                self.assertEqual([SCHEDULE], vehicle.charge_settings["schedules"])
         self.client.save_charge_schedule.assert_not_awaited()
+
+    async def test_partial_schedule_list_does_not_confirm_a_delete(self):
+        vehicle = self.make_vehicle()
+        self.client.save_charge_schedule.side_effect = None
+        graphql = self.client.graphql_get_vehicle_status.side_effect
+
+        async def partial_after_save(*args):
+            if self.client.save_charge_schedule.await_count:
+                return {"electric": {"charging": {"chargeSettings": {"schedules": [None]}}}}
+            return await graphql(*args)
+
+        self.client.graphql_get_vehicle_status.side_effect = partial_after_save
+        elapsed = 0
+
+        async def sleep(delay):
+            nonlocal elapsed
+            elapsed += delay
+
+        with (
+            patch.object(patch_base_vehicle.asyncio, "get_running_loop", return_value=types.SimpleNamespace(time=lambda: elapsed)),
+            patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+            self.assertRaisesRegex(RuntimeError, "current charge schedules"),
+        ):
+            await vehicle.update_charge_schedule(1, delete=True)
+        self.client.save_charge_schedule.assert_awaited_once()
+        self.assertEqual([SCHEDULE], vehicle.charge_settings["schedules"])
 
     async def test_failed_read_back_is_retried_until_the_change_appears(self):
         vehicle = self.make_vehicle()
@@ -275,6 +304,8 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
             ("2026-09-14T15:00:00Z", [SCHEDULE]),
             ("2026-09-14T14:00:00Z", []),
             ("2026-09-14T16:00:00Z", None),
+            ("2026-09-14T17:00:00Z", [None]),
+            ("2026-09-14T18:00:00Z", [SCHEDULE, None]),
         ):
             vehicle.apply_graphql_status({
                 "electric": {"charging": {"chargeSettings": {
@@ -282,6 +313,14 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
                 }}},
             })
         self.assertEqual([SCHEDULE], vehicle.charge_settings["schedules"])
+        self.assertEqual(1, vehicle.features[behavior.VehicleFeatures.ChargeScheduleCount].value)
+        for generation in (ApiVehicleGeneration.CY17, ApiVehicleGeneration.MM21):
+            with self.subTest(generation=generation):
+                vehicle = self.make_vehicle(generation)
+                vehicle._parse_electric_status({"vehicleInfo": {
+                    "acquisitionDatetime": "2026-09-14T15:00:00Z", "timerChargeInfo": [None],
+                }})
+                self.assertEqual([SCHEDULE], vehicle.charge_settings["schedules"])
 
 
 class ScheduleDiscoveryTests(unittest.IsolatedAsyncioTestCase):

@@ -594,7 +594,9 @@ class ToyotaVehicle(ABC):
         )
 
     def _store_charge_schedules(self, schedules, observed_at):
-        if not isinstance(schedules, list):
+        # A partial GraphQL result lists null schedules; it must not replace
+        # the ones last read or pass as an empty list.
+        if not isinstance(schedules, list) or any(not isinstance(item, dict) for item in schedules):
             return
         previous = self._charge_settings.get("_schedules_updated_at")
         if previous is not None and (observed_at is None or observed_at < previous):
@@ -614,7 +616,7 @@ class ToyotaVehicle(ABC):
             status = await self._client.get_electric_status(self.vin, region=self.region, generation=self.api_generation)
             self._parse_electric_status(status)
             schedules = ((status or {}).get("vehicleInfo") or {}).get("timerChargeInfo")
-        if not isinstance(schedules, list):
+        if not isinstance(schedules, list) or any(not isinstance(item, dict) for item in schedules):
             raise RuntimeError("Toyota did not return current charge schedules.")
         return schedules
 
