@@ -7,6 +7,23 @@ North America, maintained by [@orienw](https://github.com/orienw). It is a fork 
 
 Report problems and request features in [this fork's issue tracker](https://github.com/orienw/ha-toyota-na/issues).
 
+## Vehicle support
+
+Supported generations: `17CY`, `17CYPLUS`, `21MM`, `24MM`, `26BEV`, and `NG86`.
+`GR86` support is experimental and needs owner testing.
+
+This fork adds:
+
+* 24MM and 26BEV status and remote commands through Toyota's AppSync service
+* 21MM remote commands through Toyota's newer command route
+* NG86 vehicles, plus experimental GR86 support
+* More remote controls, charging and climate settings, and schedules, offered
+  only where the vehicle reports support
+
+To check a vehicle's generation, download diagnostics from the Toyota
+integration under **Settings > Devices & services**. Each vehicle's
+`generation` is listed under `vehicle_list`.
+
 ## Releases
 
 [![Latest stable release](https://img.shields.io/github/v/release/orienw/ha-toyota-na?sort=date&style=for-the-badge&label=stable)](https://github.com/orienw/ha-toyota-na/releases/latest)
@@ -25,11 +42,14 @@ Use the button above, or add the repository manually:
 
 1. Open HACS, select the three-dot menu, then **Custom repositories**.
 2. Add `https://github.com/orienw/ha-toyota-na` with type **Integration**.
-3. Open this fork's entry and select **Download**. Choose the latest version on
-   the [releases page](https://github.com/orienw/ha-toyota-na/releases).
-   If that release is a prerelease, enable beta versions in HACS.
+3. Open this fork's entry and select **Download**. HACS installs the latest
+   stable release.
 4. Restart Home Assistant, then add **Toyota (North America)** under
    **Settings > Devices & services**.
+
+To get beta releases, open this repository's device under the HACS
+integration, enable its **Pre-release** switch, and turn it on. HACS then
+offers beta updates.
 
 ### Switching from upstream
 
@@ -42,8 +62,8 @@ services** so configuration and automations stay put.
    leaves the Home Assistant data.
 2. Add `https://github.com/orienw/ha-toyota-na` as a custom repository with type
    **Integration**.
-3. Download this fork's latest release, enabling beta versions if needed.
-   Finish the download before you restart Home Assistant.
+3. Download this fork's latest stable release. Finish the download before you
+   restart Home Assistant.
 4. Restart Home Assistant, then open the Toyota integration and confirm
    vehicles and entities are still there.
 
@@ -56,7 +76,7 @@ Update any automations that still reference those entities.
 
 ### Manual installation
 
-1. Download `ha_toyota_na.zip` from the latest release on the [releases page](https://github.com/orienw/ha-toyota-na/releases).
+1. Download `ha_toyota_na.zip` from the [latest stable release](https://github.com/orienw/ha-toyota-na/releases/latest).
 2. Extract its contents into `custom_components/toyota_na` in your Home Assistant
    configuration directory.
 3. Restart Home Assistant. For a new install, add **Toyota (North America)**
@@ -79,8 +99,6 @@ vehicle contacts Toyota. Choose **Cloud updates only** to skip scheduled
 wakes. Refresh Status and remote commands stay available. Pick an interval
 to wake the vehicle.
 
-![image](https://user-images.githubusercontent.com/4755389/147372481-4d280b6e-6f61-434c-a768-f4a089f009c3.png)
-
 ## Current features
 
 Available sensors and controls depend on the vehicle and Toyota account.
@@ -96,7 +114,7 @@ Sensors:
 * Trunk Status
 * Vehicle Location
 * Last Parked Location
-* Tire Pressure, including reported low-pressure warnings on older vehicles
+* Tire Pressure and Tire Pressure Warnings
 * Fuel Level
 * Odometer
 * Oil Status
@@ -112,24 +130,28 @@ Sensors:
 * EV Charge End Time
 * EV Connector Status
 * EV Charging Status
-* Charging rate, glass-hatch state, and tire-pressure warnings
-* Charge target and remaining time to 80%
-* Battery and gasoline power supply time
-* Average and trip fuel consumption, trip count, and gasoline range
-* Charge schedule count and saved schedules
+* Charging Rate and Glass Hatch
+* Charge Target and Remaining Charge Time to 80%
+* Battery and Gasoline Power Supply Time
+* Average and Trip Fuel Consumption, Trip Count, and Gasoline Range
+* Charge Schedules and Climate Schedules
 
 Lock, remote start, hazards, and find-vehicle commands need a remote
 subscription.
 
-Services:
+Actions:
 
-* Lock/Unlock Doors
-* Remote Start/Stop Engine
+* Lock/Unlock Doors and Lock/Unlock Cargo Door
+* Remote Start/Stop Engine and Extend Remote Runtime
 * Hazards On/Off
 * Find Vehicle
+* Sound Horn, Turn On Headlights, and Sound Buzzer
+* Open/Close Windows and Close Sunroof
 * Charge Now, Resume Charging, and Stop Charging
+* Stop Power Supply
 * Refresh Data
 * Create, update, or delete multi-day charge schedules
+* Create, update, or delete climate schedules
 
 Native controls:
 
@@ -182,9 +204,6 @@ last set, so it keeps the same displayed time after daylight saving time
 changes. Check that the first run after a change starts when expected. If it
 runs an hour off, set its time again. Charge schedule times continue to use the
 vehicle's local time.
-
-Supported generations: `17CY`, `17CYPLUS`, `21MM`, `24MM`, `26BEV`, and `NG86`.
-`GR86` generation support is experimental and needs owner testing.
 
 ### Sensor display
 
