@@ -1,0 +1,38 @@
+name: CI
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -r requirements-test.txt
+      - run: python -m unittest discover -s tests
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: home-assistant/actions/hassfest@master
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      # The repository has no license or topics yet.
+      - uses: hacs/action@main
+        with:
+          category: integration
+          comment: false
+          ignore: license topics

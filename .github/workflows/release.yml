@@ -1,27 +1,42 @@
 name: Release
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
 jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
   release:
     name: Prepare release
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v1
-      # Build
-      - name: Build the file
+      - uses: actions/checkout@v7
+      - name: Check manifest version
         run: |
-          ls /home/runner/work/
-          cd /home/runner/work/ha-toyota-na/ha-toyota-na/custom_components/toyota_na
-          zip -r ha_toyota_na.zip *
-      # Upload build file to the release as an asset
+          version=$(jq -r .version custom_components/toyota_na/manifest.json)
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::manifest version $version does not match tag $TAG"
+            exit 1
+          fi
+      # HACS extracts the zip into custom_components/toyota_na, so the
+      # integration files must sit at the root of the archive.
+      - name: Build the zip
+        run: git archive --format=zip -o ha_toyota_na.zip HEAD:custom_components/toyota_na
+      # A new tag gets a draft release for the notes. A moved tag replaces
+      # the zip on its existing release.
       - name: Upload zip to release
-        uses: svenstaro/upload-release-action@v1-release
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: /home/runner/work/ha-toyota-na/ha-toyota-na/custom_components/toyota_na/ha_toyota_na.zip
-          asset_name: ha_toyota_na.zip
-          tag: ${{ github.ref }}
-          overwrite: true
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" ha_toyota_na.zip --clobber
+          else
+            flags=(--draft --verify-tag --title "$TAG" --notes "")
+            if [[ "$TAG" == *b* ]]; then
+              flags+=(--prerelease)
+            fi
+            gh release create "$TAG" ha_toyota_na.zip "${flags[@]}"
+          fi
