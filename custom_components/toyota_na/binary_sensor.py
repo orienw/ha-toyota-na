@@ -22,8 +22,10 @@ from .entity_discovery import setup_entity_discovery
 
 _LOGGER = logging.getLogger(__name__)
 
-_STRUCTURALLY_UNSUPPORTED_BACKDOOR_TYPES = {
-    VehicleFeatures.Trunk: {"tailgate"},
+# Tailgate state arrives in the Trunk feature. Name its sensors after the
+# tailgate, like Toyota's app, and replace the trunk-named entities.
+_BACKDOOR_SENSOR_NAMES = {
+    "tailgate": {"Trunk": "Tailgate", "Trunk Door Lock": "Tailgate Lock"},
 }
 
 
@@ -40,37 +42,33 @@ async def async_setup_entry(
 
     def discover_binary_sensors():
         for vehicle in coordinator.data or []:
+            backdoor_type = getattr(vehicle, "backdoor_type", None)
+            sensor_names = _BACKDOOR_SENSOR_NAMES.get(
+                backdoor_type.lower() if isinstance(backdoor_type, str) else None,
+                {},
+            )
             for entity_config in BINARY_SENSORS:
                 if vehicle.electric is False and cast(
                     bool, entity_config["electric"]
                 ):
                     continue
                 feature = cast(VehicleFeatures, entity_config["feature"])
-                unsupported_backdoor_types = (
-                    _STRUCTURALLY_UNSUPPORTED_BACKDOOR_TYPES.get(feature)
-                )
-                if (
-                    unsupported_backdoor_types
-                    and getattr(vehicle, "backdoor_type", None)
-                    in unsupported_backdoor_types
-                ):
+                name = cast(str, entity_config["name"])
+                if name in sensor_names:
                     stale_entity_id = registry.async_get_entity_id(
                         "binary_sensor",
                         DOMAIN,
-                        vehicle_entity_unique_id(
-                            vehicle.vin,
-                            cast(str, entity_config["name"]),
-                        ),
+                        vehicle_entity_unique_id(vehicle.vin, name),
                     )
                     if stale_entity_id is not None:
                         _LOGGER.info(
-                            "Removing %s because it does not apply to "
-                            "backdoor type %s",
+                            "Replacing %s with %s for backdoor type %s",
                             stale_entity_id,
-                            vehicle.backdoor_type,
+                            sensor_names[name],
+                            backdoor_type,
                         )
                         registry.async_remove(stale_entity_id)
-                    continue
+                    name = sensor_names[name]
                 if vehicle.features.get(feature) is None:
                     continue
                 yield ToyotaBinarySensor(
@@ -78,7 +76,7 @@ async def async_setup_entry(
                     cast(str, entity_config["icon"]),
                     cast(BinarySensorDeviceClass, entity_config["device_class"]),
                     coordinator,
-                    entity_config["name"],
+                    name,
                     vehicle.vin,
                 )
 

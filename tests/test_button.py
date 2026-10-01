@@ -530,6 +530,70 @@ class BinarySensorCleanupTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_tailgate_replaces_trunk_entities_with_tailgate(self):
+        for backdoor_type in ("tailgate", "Tailgate"):
+            with self.subTest(backdoor_type=backdoor_type):
+                vehicle = FakeVehicle(set())
+                vehicle.backdoor_type = backdoor_type
+                vehicle.features[VehicleFeatures.Trunk] = ToyotaLockableOpening(
+                    closed=False, locked=False
+                )
+                hass = FakeHass(DataUpdateCoordinator([vehicle]))
+                hass.entity_registry.entities = {
+                    ("binary_sensor", DOMAIN, "TESTVIN.Trunk"): "binary_sensor.testvin_trunk",
+                    (
+                        "binary_sensor", DOMAIN, "TESTVIN.Trunk Door Lock",
+                    ): "binary_sensor.testvin_trunk_door_lock",
+                    ("binary_sensor", DOMAIN, "TESTVIN.Tailgate"): "binary_sensor.testvin_tailgate",
+                }
+                entities = []
+                await binary_sensor_platform.async_setup_entry(
+                    hass,
+                    ConfigEntry(),
+                    lambda added, update: entities.extend(added),
+                )
+
+                self.assertEqual(
+                    hass.entity_registry.removed,
+                    [
+                        "binary_sensor.testvin_trunk",
+                        "binary_sensor.testvin_trunk_door_lock",
+                    ],
+                )
+                by_name = {entity.name: entity for entity in entities}
+                self.assertEqual(set(by_name), {"Tailgate", "Tailgate Lock"})
+                self.assertEqual(by_name["Tailgate"].unique_id, "TESTVIN.Tailgate")
+                self.assertEqual(
+                    by_name["Tailgate Lock"].unique_id, "TESTVIN.Tailgate Lock"
+                )
+                self.assertTrue(by_name["Tailgate"].is_on)
+                self.assertTrue(by_name["Tailgate Lock"].is_on)
+
+    async def test_other_backdoors_keep_trunk_entities(self):
+        for backdoor_type in ("trunk", "hatch", None):
+            with self.subTest(backdoor_type=backdoor_type):
+                vehicle = FakeVehicle(set())
+                vehicle.backdoor_type = backdoor_type
+                vehicle.features[VehicleFeatures.Trunk] = ToyotaLockableOpening(
+                    closed=True, locked=True
+                )
+                hass = FakeHass(DataUpdateCoordinator([vehicle]))
+                hass.entity_registry.entities = {
+                    ("binary_sensor", DOMAIN, "TESTVIN.Trunk"): "binary_sensor.testvin_trunk",
+                }
+                entities = []
+                await binary_sensor_platform.async_setup_entry(
+                    hass,
+                    ConfigEntry(),
+                    lambda added, update: entities.extend(added),
+                )
+
+                self.assertEqual(hass.entity_registry.removed, [])
+                self.assertEqual(
+                    {entity.unique_id for entity in entities},
+                    {"TESTVIN.Trunk", "TESTVIN.Trunk Door Lock"},
+                )
+
 
 class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
 

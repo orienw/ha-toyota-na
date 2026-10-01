@@ -22,6 +22,7 @@ from .vehicle_helpers import (
     normalize_charging_state,
     normalize_engine_state,
     opening_state_from_graphql,
+    merge_opening_states,
     opening_state_from_values,
     parse_api_timestamp,
 )
@@ -57,6 +58,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         "Passenger Side Rear Window": VehicleFeatures.RearPassengerWindow,
         "Other Hatch": VehicleFeatures.Trunk,
         "Other Trunk": VehicleFeatures.Trunk,
+        "Other Tailgate": VehicleFeatures.Trunk,
         "Other Moonroof": VehicleFeatures.Moonroof,
         "Other Hood": VehicleFeatures.Hood,
         "Other Back window": VehicleFeatures.GlassHatch,
@@ -555,6 +557,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         if not categories:
             return
 
+        openings = {}
         for category in categories:
             if not category or "sections" not in category:
                 continue
@@ -575,7 +578,14 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 )
                 if feature == VehicleFeatures.GlassHatch:
                     locked = None
-                self._store_opening(feature, closed, locked, observed_at)
+                if feature in openings:
+                    closed, locked = merge_opening_states(
+                        openings[feature], (closed, locked)
+                    )
+                openings[feature] = (closed, locked)
+
+        for feature, (closed, locked) in openings.items():
+            self._store_opening(feature, closed, locked, observed_at)
 
     #
     # GraphQL vehicle status parser

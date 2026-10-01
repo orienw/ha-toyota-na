@@ -980,6 +980,48 @@ class VehicleStateTests(unittest.TestCase):
                         door = vehicle.features.get(VehicleFeatures.FrontDriverDoor)
                         self.assertIs(door.locked if door else None, expected)
 
+    def test_rest_tailgate_section_reports_trunk_feature(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            with self.subTest(make=make.__name__):
+                vehicle = make()
+                vehicle._parse_vehicle_status({"vehicleStatus": [{
+                    "category": "Other",
+                    "sections": [{"section": "Tailgate", "values": [
+                        {"value": "open", "status": 0},
+                        {"value": "unlocked", "status": 1},
+                    ]}],
+                }]})
+                tailgate = vehicle.features.get(VehicleFeatures.Trunk)
+                self.assertIsNotNone(tailgate)
+                self.assertFalse(tailgate.closed)
+                self.assertFalse(tailgate.locked)
+
+    def test_rest_backdoor_sections_combine_like_toyota_app(self):
+        closed_locked = {"section": "Trunk", "values": [
+            {"value": "closed", "status": 0},
+            {"value": "locked", "status": 1},
+        ]}
+        open_unlocked = {"section": "Tailgate", "values": [
+            {"value": "open", "status": 0},
+            {"value": "unlocked", "status": 1},
+        ]}
+        position_only = {"section": "Hatch", "values": [{"value": "closed"}]}
+        for make in (make_17cy_vehicle, make_vehicle):
+            for sections, expected in (
+                ([closed_locked, open_unlocked], (False, False)),
+                ([open_unlocked, closed_locked], (False, False)),
+                ([closed_locked, position_only], (True, True)),
+                ([position_only, closed_locked], (True, True)),
+            ):
+                with self.subTest(make=make.__name__, sections=[s["section"] for s in sections]):
+                    vehicle = make()
+                    vehicle._parse_vehicle_status({"vehicleStatus": [{
+                        "category": "Other",
+                        "sections": sections,
+                    }]})
+                    backdoor = vehicle.features[VehicleFeatures.Trunk]
+                    self.assertEqual((backdoor.closed, backdoor.locked), expected)
+
     def test_24mm_status_parses_state_tires_and_electric_data(self):
         status = json.loads(
             (ROOT / "tests/fixtures/vehicle_24mm.json").read_text()

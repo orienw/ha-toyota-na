@@ -140,6 +140,22 @@ def opening_state_from_values(
     return closed, next(iter(locks)) if len(locks) == 1 else None
 
 
+def merge_opening_states(
+    first: tuple[bool | None, bool | None],
+    second: tuple[bool | None, bool | None],
+) -> tuple[bool | None, bool | None]:
+    """Combine sections for one opening: open or unlocked if either says so."""
+
+    def either(a: bool | None, b: bool | None) -> bool | None:
+        if a is False or b is False:
+            return False
+        if a is True or b is True:
+            return True
+        return None
+
+    return either(first[0], second[0]), either(first[1], second[1])
+
+
 def opening_state_from_graphql(
     opening: Mapping[str, Any],
 ) -> tuple[bool | None, bool | None]:

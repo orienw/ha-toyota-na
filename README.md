@@ -71,8 +71,9 @@ Confirm HACS lists `orienw/ha-toyota-na` as downloaded. Both repositories
 install to `custom_components/toyota_na`, so only one can be installed at a
 time.
 
-This integration removes obsolete trunk entities on vehicles with a tailgate.
-Update any automations that still reference those entities.
+On vehicles with a tailgate, this integration replaces the trunk entities with
+Tailgate and Tailgate Lock. Update any automations that still reference the
+trunk entities.
 
 ### Manual installation
 
@@ -111,7 +112,7 @@ Sensors:
 
 * Door Lock Status
 * Window/Moonroof Status
-* Trunk Status
+* Trunk or Tailgate Status
 * Vehicle Location
 * Last Parked Location
 * Tire Pressure and Tire Pressure Warnings
@@ -173,8 +174,7 @@ Native controls:
 
 The main lock reports the vehicle's door locks, like the Doors tile in Toyota's
 app. Check cargo sensors separately in automations that monitor whether the
-whole vehicle is secured. Vehicles with a tailgate don't have a cargo lock
-sensor yet.
+whole vehicle is secured; on vehicles with a tailgate, use Tailgate Lock.
 
 Climate preferences for Remote Start appear under device configuration.
 Remote Start runs the engine or climate system the vehicle supports.

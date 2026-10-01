@@ -18,6 +18,7 @@ from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 from .vehicle_helpers import (
     normalize_charging_state,
     normalize_engine_state,
+    merge_opening_states,
     opening_state_from_values,
     parse_api_timestamp,
 )
@@ -60,6 +61,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         "Passenger Side Rear Window": VehicleFeatures.RearPassengerWindow,
         "Other Hatch": VehicleFeatures.Trunk,
         "Other Trunk": VehicleFeatures.Trunk,
+        "Other Tailgate": VehicleFeatures.Trunk,
         "Other Moonroof": VehicleFeatures.Moonroof,
         "Other Hood": VehicleFeatures.Hood,
         "Other Back window": VehicleFeatures.GlassHatch,
@@ -399,6 +401,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         if "vehicleStatus" not in vehicle_status or vehicle_status["vehicleStatus"] is None:
             return
 
+        openings = {}
         for category in vehicle_status["vehicleStatus"]:
             if not category or "sections" not in category:
                 continue
@@ -419,7 +422,14 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
                 )
                 if feature == VehicleFeatures.GlassHatch:
                     locked = None
-                self._store_opening(feature, closed, locked, observed_at)
+                if feature in openings:
+                    closed, locked = merge_opening_states(
+                        openings[feature], (closed, locked)
+                    )
+                openings[feature] = (closed, locked)
+
+        for feature, (closed, locked) in openings.items():
+            self._store_opening(feature, closed, locked, observed_at)
 
     #
     # get_telemetry
