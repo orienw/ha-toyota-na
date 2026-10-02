@@ -53,7 +53,7 @@ def local_climate_schedule(schedule, zone, *, now=None):
         result["date"] = None if repeating else local.date().isoformat()
         result["time"] = local.strftime("%H:%M")
         result["days"] = _shift_days(schedule.get("days") or [], (local.date() - utc.date()).days)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         result.update(date=None, time=None, days=None)
     return result
 
@@ -84,7 +84,7 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
             # Changing only the days keeps the saved start, even in a repeated hour.
             try:
                 saved_start = _reservation_datetime(existing).astimezone(zone)
-            except ValueError:
+            except (ValueError, OverflowError):
                 pass
         try:
             selected_time = schedule_time(changes.get("time", local.get("time")))
@@ -155,17 +155,12 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
     return body
 
 
-def climate_schedule_matches(schedule, desired, zone):
+def climate_schedule_matches(schedule, desired, zone, *, now=None):
     try:
         if desired.get("reservationType") == "REPETITION":
             # Toyota may report another date than the one sent, which matters
-            # only where it changes the time or days the schedule shows. A
-            # reservation without a reported date is shown on the date sent.
-            try:
-                _reservation_datetime(schedule)
-            except ValueError:
-                schedule = {**schedule, "date": desired.get("date")}
-            shown, wanted = (local_climate_schedule(item, zone) for item in (schedule, desired))
+            # only where it changes the time or days the schedule shows.
+            shown, wanted = (local_climate_schedule(item, zone, now=now) for item in (schedule, desired))
             if shown["time"] is None or (shown["time"], set(shown["days"])) != (wanted["time"], set(wanted["days"])):
                 return False
         elif _reservation_datetime(schedule) != _reservation_datetime(desired):

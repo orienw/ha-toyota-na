@@ -117,8 +117,8 @@ class ClimateScheduleFormatTests(unittest.TestCase):
         self.assertFalse(climate_schedule_matches(saved, body, ZONE))
         self.assertTrue(climate_schedule_matches({**saved, **body}, body, ZONE))
         # Without a reported date the time alone confirms, as the reservation converts on today's date.
-        self.assertTrue(climate_schedule_matches({**saved, "date": None}, body, ZONE))
-        self.assertFalse(climate_schedule_matches({**saved, "date": None, "time": "15:00"}, body, ZONE))
+        self.assertTrue(climate_schedule_matches({**saved, "date": None}, body, ZONE, now=july))
+        self.assertFalse(climate_schedule_matches({**saved, "date": None, "time": "15:00"}, body, ZONE, now=july))
         # Changing only the days keeps the saved start, which still confirms.
         edited = build_climate_schedule(SETTINGS, saved, {"days": ["Monday", "Friday"]}, ZONE, now=july)
         self.assertEqual(("14:00", "01-12-2026"), (edited["time"], edited["date"]))
@@ -145,7 +145,7 @@ class ClimateScheduleFormatTests(unittest.TestCase):
             ("created on another date", {**created, "reservationNo": 2, "status": "active", "date": "07-20-2026"}, created),
         ):
             with self.subTest(name):
-                self.assertTrue(climate_schedule_matches(reported, desired, ZONE))
+                self.assertTrue(climate_schedule_matches(reported, desired, ZONE, now=july))
         self.assertFalse(climate_schedule_matches({**saved, **body, "time": "15:00:00"}, body, ZONE))
         self.assertFalse(climate_schedule_matches({**saved, "date": "02-02-2026"}, warmer, ZONE))
         # A date that would show another time does not confirm, whatever else changed.
@@ -153,6 +153,25 @@ class ClimateScheduleFormatTests(unittest.TestCase):
         self.assertFalse(climate_schedule_matches({**saved, "temperature": 23.0}, both, ZONE))
         self.assertFalse(climate_schedule_matches({**created, "reservationNo": 2, "status": "active", "date": "12-07-2026"}, created, ZONE))
         self.assertFalse(climate_schedule_matches({key: value for key, value in saved.items() if key != "ventilationOptions"}, body, ZONE))
+
+    def test_repeating_schedule_without_a_date_confirms_the_time_it_shows_today(self):
+        # On the day clocks move back, 07:30 UTC on Monday shows as Monday 00:30
+        # today, while Sunday 23:30 is 07:30 UTC on Monday after the change.
+        november = datetime(2026, 11, 1, 12, tzinfo=ZONE)
+        undated = {**SCHEDULE, "date": None, "time": "07:30", "days": ["Monday"]}
+        self.assertEqual(("00:30", ["Monday"]), tuple(local_climate_schedule(undated, ZONE, now=november)[key] for key in ("time", "days")))
+        body = build_climate_schedule(SETTINGS, undated, {"time": "23:30", "days": ["Sunday"]}, ZONE, now=november)
+        self.assertEqual(("11-02-2026", "07:30", ["Monday"]), (body["date"], body["time"], body["days"]))
+        self.assertFalse(climate_schedule_matches(undated, body, ZONE, now=november))
+        self.assertTrue(climate_schedule_matches({**undated, "date": body["date"]}, body, ZONE, now=november))
+
+    def test_out_of_range_reservation_dates_do_not_raise(self):
+        july = datetime(2026, 7, 13, 9, tzinfo=ZONE)
+        saved = {**SCHEDULE, "date": "07-13-2026", "time": "07:30", "days": ["Monday"]}
+        body = build_climate_schedule(SETTINGS, saved, {"enabled": False}, ZONE, now=july)
+        ancient = {**body, "reservationNo": 1, "date": "01-01-0001", "time": "00:00"}
+        self.assertFalse(climate_schedule_matches(ancient, body, ZONE, now=july))
+        self.assertIsNone(local_climate_schedule(ancient, ZONE, now=july)["time"])
         self.assertEqual("07:00", local_climate_schedule({**saved, **body, "time": "14:00:00"}, ZONE, now=july)["time"])
 
     def test_repeating_schedules_saved_on_clock_change_days(self):
