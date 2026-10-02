@@ -15,7 +15,17 @@ SCHEDULE_FIELDS = (
 
 def _reservation_datetime(schedule, selected_date=None):
     selected_date = selected_date or schedule.get("date")
-    return datetime.strptime(f"{selected_date} {schedule.get('time')}", "%m-%d-%Y %H:%M").replace(tzinfo=timezone.utc)
+    value = f"{selected_date} {schedule.get('time')}"
+    try:
+        result = datetime.strptime(value, "%m-%d-%Y %H:%M")
+    except ValueError:
+        # Toyota's app sends minutes; accept a time reported with seconds too.
+        result = datetime.strptime(value, "%m-%d-%Y %H:%M:%S")
+    return result.replace(tzinfo=timezone.utc)
+
+
+def _reservation_time(schedule):
+    return _reservation_datetime(schedule, "01-01-2000").time()
 
 
 def _shift_days(days, offset):
@@ -149,17 +159,42 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
     return body
 
 
-def climate_schedule_matches(schedule, desired):
+def _options_on(options):
+    return frozenset(name for name, setting in options.items() if setting == "on") if isinstance(options, dict) else None
+
+
+def _saved_settings(schedule):
+    temperature = schedule.get("temperature")
+    return (
+        schedule.get("reservationType"), schedule.get("date"), _reservation_time(schedule),
+        frozenset(schedule.get("days") or []), schedule.get("status") == "active",
+        None if temperature is None else float(temperature),
+        str(schedule.get("temperatureUnit")).lower(), str(schedule.get("settingType")).lower(),
+        _options_on(schedule.get("acOptions")), _options_on(schedule.get("ventilationOptions")),
+    )
+
+
+def _unchanged_read(schedule, desired, existing):
+    # Setting a repeating schedule's time after a clock change can send the
+    # same UTC time on a new date, so a read that still reports the schedule
+    # as it was before the change does not confirm it. Without a reported date
+    # the time alone decides, as the reservation is converted on today's date.
+    if existing is None or schedule.get("date") is None:
+        return False
+    try:
+        before = _saved_settings(existing)
+    except (TypeError, ValueError):
+        # An unreadable schedule before the change can't be the one read back.
+        return False
+    return _saved_settings(schedule) == before != _saved_settings(desired)
+
+
+def climate_schedule_matches(schedule, desired, existing=None):
     try:
         if desired.get("reservationType") == "REPETITION":
-            # The saved date decides the displayed offset, so a reported date
-            # must match too. Without one the time alone decides, as the
-            # reservation is converted on today's date.
-            try:
-                matched = _reservation_datetime(schedule) == _reservation_datetime(desired)
-            except ValueError:
-                matched = _reservation_datetime(schedule, "01-01-2000").time() == _reservation_datetime(desired, "01-01-2000").time()
-            if not matched:
+            # Toyota may report another date for a repeating schedule than the
+            # one sent, so the time decides unless the read is unchanged.
+            if _reservation_time(schedule) != _reservation_time(desired) or _unchanged_read(schedule, desired, existing):
                 return False
         elif _reservation_datetime(schedule) != _reservation_datetime(desired):
             return False
@@ -176,8 +211,9 @@ def climate_schedule_matches(schedule, desired):
             elif key == "temperature":
                 if float(schedule.get(key)) != float(value):
                     return False
-            elif key == "temperatureUnit":
-                if str(schedule.get(key)).lower() != str(value).lower():
+            elif key in ("temperatureUnit", "settingType"):
+                # Checked in any case, and only when Toyota reports it.
+                if schedule.get(key) is not None and str(schedule[key]).lower() != str(value).lower():
                     return False
             elif isinstance(value, dict):
                 reported = schedule.get(key) or {}
