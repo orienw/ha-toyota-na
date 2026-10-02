@@ -221,6 +221,45 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.client.save_charge_schedule.assert_awaited_once()
         self.assertEqual([SCHEDULE], vehicle.charge_settings["schedules"])
 
+    async def test_schedule_read_back_without_its_id_does_not_confirm_a_delete(self):
+        for generation in (ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24):
+            with self.subTest(generation=generation):
+                vehicle = self.make_vehicle(generation)
+                self.client.save_charge_schedule.side_effect = None
+                save = self.client.save_charge_schedule
+
+                async def unidentified_after_save(*args, **kwargs):
+                    schedules = [{**deepcopy(SCHEDULE), "settingId": None}] if save.await_count else deepcopy(self.schedules)
+                    if vehicle.uses_appsync:
+                        return {"electric": {"charging": {"chargeSettings": {"schedules": schedules}}}}
+                    return {"vehicleInfo": {"timerChargeInfo": schedules, "maxNoOfChargeSchedules": 3}}
+
+                request = self.client.graphql_get_vehicle_status if vehicle.uses_appsync else self.client.get_electric_status
+                request.side_effect = unidentified_after_save
+                elapsed = 0
+
+                async def sleep(delay):
+                    nonlocal elapsed
+                    elapsed += delay
+
+                with (
+                    patch.object(patch_base_vehicle.asyncio, "get_running_loop", return_value=types.SimpleNamespace(time=lambda: elapsed)),
+                    patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+                    self.assertRaisesRegex(RuntimeError, "accepted.*did not return"),
+                ):
+                    await vehicle.update_charge_schedule(1, delete=True)
+                save.assert_awaited_once()
+
+    async def test_schedule_already_without_an_id_does_not_block_a_delete(self):
+        for generation in (ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24):
+            with self.subTest(generation=generation):
+                vehicle = self.make_vehicle(generation)
+                self.schedules.append({**deepcopy(SCHEDULE), "settingId": None})
+                with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep:
+                    await vehicle.update_charge_schedule(1, delete=True)
+                sleep.assert_not_awaited()
+                self.assertEqual([None], [item["settingId"] for item in vehicle.charge_settings["schedules"]])
+
     async def test_failed_read_back_is_retried_until_the_change_appears(self):
         vehicle = self.make_vehicle()
         graphql = self.client.graphql_get_vehicle_status.side_effect

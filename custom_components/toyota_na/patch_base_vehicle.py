@@ -455,7 +455,7 @@ class ToyotaVehicle(ABC):
                 item["days"] = [day.capitalize() if isinstance(day, str) else day for day in item["days"]]
         self._climate_schedules.clear()
         self._climate_schedules.update(settings, airConditioningReservation=reservations)
-        return reservations
+        return reservations, len(settings["airConditioningReservation"]) - len(reservations)
 
     async def update_climate_schedules(self):
         # A pending change reloads the schedules itself, so skip the read
@@ -479,7 +479,7 @@ class ToyotaVehicle(ABC):
         if not self.supports_climate_schedules:
             raise ValueError("Climate schedules are unavailable for this vehicle.")
         async with self._climate_schedule_write():
-            schedules = await self._read_climate_schedules()
+            schedules, unidentified = await self._read_climate_schedules()
             existing = None
             if identifier is not None:
                 identifier = schedule_identifier(identifier)
@@ -496,7 +496,8 @@ class ToyotaVehicle(ABC):
             )
             saved_id = result.get("reservationNo")
 
-            def confirmed(schedules):
+            def confirmed(reading):
+                schedules, now_unidentified = reading
                 if identifier is not None:
                     candidates = [item for item in schedules if str(item["reservationNo"]) == str(identifier)]
                 elif saved_id is not None:
@@ -504,7 +505,10 @@ class ToyotaVehicle(ABC):
                                   and str(item["reservationNo"]) not in previous_ids]
                 else:
                     candidates = [item for item in schedules if str(item["reservationNo"]) not in previous_ids]
-                return (delete and not candidates) or (not delete and any(climate_schedule_matches(item, body, zone) for item in candidates))
+                # A reservation that newly lacks an ID may be the deleted one.
+                if delete:
+                    return not candidates and now_unidentified <= unidentified
+                return any(climate_schedule_matches(item, body, zone) for item in candidates)
 
             message = "Toyota accepted the climate schedule change but did not return the updated schedule."
             if result.get("returnCode") not in (None, "ONE-RES-10000") and result.get("message"):
@@ -632,6 +636,7 @@ class ToyotaVehicle(ABC):
             previous_ids = {
                 str(item.get("settingId")) for item in schedules if isinstance(item, dict)
             }
+            unidentified = sum(isinstance(item, dict) and item.get("settingId") is None for item in schedules)
             if delete:
                 if identifier is None or str(identifier) not in previous_ids:
                     raise ValueError("This charge schedule no longer exists.")
@@ -651,7 +656,12 @@ class ToyotaVehicle(ABC):
                     candidates = [item for item in candidates if str(item.get("settingId")) not in previous_ids]
                 else:
                     candidates = [item for item in candidates if str(item.get("settingId")) == str(identifier)]
-                return (delete and not candidates) or (not delete and any(schedule_matches(item, body) for item in candidates))
+                # A schedule that newly lacks an ID may be the deleted one.
+                if delete:
+                    return not candidates and sum(
+                        isinstance(item, dict) and item.get("settingId") is None for item in schedules
+                    ) <= unidentified
+                return any(schedule_matches(item, body) for item in candidates)
 
             await self._wait_for_schedules(
                 self._read_charge_schedules, confirmed,

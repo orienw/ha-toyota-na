@@ -603,6 +603,32 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         schedules = self.vehicle.climate_schedules["airConditioningReservation"]
         self.assertEqual([(1, "inactive")], [(item["reservationNo"], item["status"]) for item in schedules])
 
+    async def test_reservation_without_an_id_does_not_block_a_delete_unless_it_is_new(self):
+        self.server["airConditioningReservation"].insert(0, {"reservationNo": None, "status": "active"})
+        await self.vehicle.update_climate_schedule(1, zone=ZONE, delete=True)
+        self.assertEqual([], self.vehicle.climate_schedules["airConditioningReservation"])
+        self.server["airConditioningReservation"][:] = [deepcopy(SCHEDULE)]
+        self.client.save_climate_schedule.reset_mock()
+
+        async def save_without_applying(*args, **kwargs):
+            self.server["airConditioningReservation"][0].pop("reservationNo")
+            return {"returnCode": "ONE-RES-10000"}
+
+        self.client.save_climate_schedule.side_effect = save_without_applying
+        elapsed = 0
+
+        async def sleep(delay):
+            nonlocal elapsed
+            elapsed += delay
+
+        with (
+            patch.object(patch_base_vehicle.asyncio, "get_running_loop", return_value=types.SimpleNamespace(time=lambda: elapsed)),
+            patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+            self.assertRaisesRegex(RuntimeError, "accepted.*did not return"),
+        ):
+            await self.vehicle.update_climate_schedule(1, zone=ZONE, delete=True)
+        self.client.save_climate_schedule.assert_awaited_once()
+
     async def test_deleted_schedule_cannot_be_edited(self):
         self.server["airConditioningReservation"].clear()
         with self.assertRaisesRegex(ValueError, "no longer exists"):
