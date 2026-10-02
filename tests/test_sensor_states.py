@@ -86,7 +86,7 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
         entity = self.entities["Fuel Level"]
         for raw, expected in (
             (-1, 0), (0, 0), (79, 79), (79.5, 79.5),
-            (100, 100), (104.0, 100), (None, None),
+            (100, 100), (104.0, 100), (None, None), ("75", "75"),
         ):
             with self.subTest(raw=raw):
                 self.vehicle.features[F.FuelLevel] = ToyotaNumeric(raw, "%")
