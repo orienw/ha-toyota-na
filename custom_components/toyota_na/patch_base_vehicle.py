@@ -504,7 +504,7 @@ class ToyotaVehicle(ABC):
                                   and str(item["reservationNo"]) not in previous_ids]
                 else:
                     candidates = [item for item in schedules if str(item["reservationNo"]) not in previous_ids]
-                return (delete and not candidates) or (not delete and any(climate_schedule_matches(item, body, existing) for item in candidates))
+                return (delete and not candidates) or (not delete and any(climate_schedule_matches(item, body, zone) for item in candidates))
 
             message = "Toyota accepted the climate schedule change but did not return the updated schedule."
             if result.get("returnCode") not in (None, "ONE-RES-10000") and result.get("message"):

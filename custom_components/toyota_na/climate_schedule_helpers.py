@@ -24,10 +24,6 @@ def _reservation_datetime(schedule, selected_date=None):
     return result.replace(tzinfo=timezone.utc)
 
 
-def _reservation_time(schedule):
-    return _reservation_datetime(schedule, "01-01-2000").time()
-
-
 def _shift_days(days, offset):
     return [WEEKDAYS[(WEEKDAYS.index(day) + offset) % 7] for day in days]
 
@@ -159,42 +155,18 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
     return body
 
 
-def _options_on(options):
-    return frozenset(name for name, setting in options.items() if setting == "on") if isinstance(options, dict) else None
-
-
-def _saved_settings(schedule):
-    temperature = schedule.get("temperature")
-    return (
-        schedule.get("reservationType"), schedule.get("date"), _reservation_time(schedule),
-        frozenset(schedule.get("days") or []), schedule.get("status") == "active",
-        None if temperature is None else float(temperature),
-        str(schedule.get("temperatureUnit")).lower(), str(schedule.get("settingType")).lower(),
-        _options_on(schedule.get("acOptions")), _options_on(schedule.get("ventilationOptions")),
-    )
-
-
-def _unchanged_read(schedule, desired, existing):
-    # Setting a repeating schedule's time after a clock change can send the
-    # same UTC time on a new date, so a read that still reports the schedule
-    # as it was before the change does not confirm it. Without a reported date
-    # the time alone decides, as the reservation is converted on today's date.
-    if existing is None or schedule.get("date") is None:
-        return False
-    try:
-        before = _saved_settings(existing)
-    except (TypeError, ValueError):
-        # An unreadable schedule before the change can't be the one read back.
-        return False
-    return _saved_settings(schedule) == before != _saved_settings(desired)
-
-
-def climate_schedule_matches(schedule, desired, existing=None):
+def climate_schedule_matches(schedule, desired, zone):
     try:
         if desired.get("reservationType") == "REPETITION":
-            # Toyota may report another date for a repeating schedule than the
-            # one sent, so the time decides unless the read is unchanged.
-            if _reservation_time(schedule) != _reservation_time(desired) or _unchanged_read(schedule, desired, existing):
+            # Toyota may report another date than the one sent, which matters
+            # only where it changes the time or days the schedule shows. A
+            # reservation without a reported date is shown on the date sent.
+            try:
+                _reservation_datetime(schedule)
+            except ValueError:
+                schedule = {**schedule, "date": desired.get("date")}
+            shown, wanted = (local_climate_schedule(item, zone) for item in (schedule, desired))
+            if shown["time"] is None or (shown["time"], set(shown["days"])) != (wanted["time"], set(wanted["days"])):
                 return False
         elif _reservation_datetime(schedule) != _reservation_datetime(desired):
             return False
