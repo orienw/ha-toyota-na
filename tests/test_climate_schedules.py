@@ -127,6 +127,11 @@ class ClimateScheduleFormatTests(unittest.TestCase):
         # Unchanged settings confirm even though the read is the schedule before the change.
         same = build_climate_schedule(SETTINGS, saved, {"days": ["Monday"]}, ZONE, now=july)
         self.assertTrue(climate_schedule_matches(saved, same, ZONE))
+        # Setting the 06:00 it shows again saves 13:00 UTC, which the schedule before does not confirm.
+        reset = build_climate_schedule(SETTINGS, saved, {"time": "06:00"}, ZONE, now=july)
+        self.assertEqual(("13:00", "07-13-2026"), (reset["time"], reset["date"]))
+        self.assertFalse(climate_schedule_matches(saved, reset, ZONE))
+        self.assertTrue(climate_schedule_matches({**saved, **reset}, reset, ZONE))
 
     def test_repeating_schedule_confirms_when_toyota_reports_it_differently(self):
         july = datetime(2026, 7, 13, 9, tzinfo=ZONE)

@@ -159,7 +159,11 @@ def climate_schedule_matches(schedule, desired, zone, *, now=None):
     try:
         if desired.get("reservationType") == "REPETITION":
             # Toyota may report another date than the one sent, which matters
-            # only where it changes the time or days the schedule shows.
+            # only where it changes the time or days the schedule shows. The
+            # UTC time must match too, as setting the same time again after a
+            # clock change saves it at the current offset.
+            if _reservation_datetime(schedule, "01-01-2000").time() != _reservation_datetime(desired, "01-01-2000").time():
+                return False
             shown, wanted = (local_climate_schedule(item, zone, now=now) for item in (schedule, desired))
             if shown["time"] is None or (shown["time"], set(shown["days"])) != (wanted["time"], set(wanted["days"])):
                 return False
