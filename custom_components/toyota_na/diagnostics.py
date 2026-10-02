@@ -49,11 +49,15 @@ async def async_get_config_entry_diagnostics(
 
     # We don't directly expose this from the vehicle api abstraction, but it's critical to dump this in diagnostics for debugging
     user_vehicle_list = await client.get_user_vehicle_list()
+    # Climate schedules as the last poll read them, to see what Toyota reports.
+    coordinator = hass.data[DOMAIN][config_entry.entry_id].get("coordinator")
+    vehicles = {vehicle.vin: vehicle for vehicle in getattr(coordinator, "data", None) or []}
     
     vehicle_status = []
     telemetry = []
     engine_status = []
     electric_status = []
+    climate_schedules = []
 
     for vehicle in user_vehicle_list:
         user_vehicle_status = None
@@ -144,6 +148,7 @@ async def async_get_config_entry_diagnostics(
         telemetry.append(user_telemetry)
         engine_status.append(user_engine_status)
         electric_status.append(user_electric_status)
+        climate_schedules.append(getattr(vehicles.get(vin), "climate_schedules", None) or None)
 
     return async_redact_data(
         {
@@ -153,6 +158,7 @@ async def async_get_config_entry_diagnostics(
             "telemetry": {"data": telemetry},
             "engine_status": {"data": engine_status},
             "electric_status": {"data": electric_status},
+            "climate_schedules": {"data": climate_schedules},
         },
         TO_REDACT,
     )

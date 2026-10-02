@@ -62,3 +62,24 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([vehicle], payload["vehicle_list"]["data"])
         for keys in (config_keys, payload_keys):
             self.assertTrue({"remoteUserGuid", "subscriberGuid", "accountInfoId", "guid", "vin", "email", "password"} <= keys)
+
+    async def test_climate_schedules_come_from_the_last_poll(self):
+        schedules = {
+            "returnCode": "ONE-RES-10000",
+            "airConditioningReservation": [{"reservationNo": 1, "date": "09-22-2026", "time": "06:30"}],
+        }
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(return_value=[{"vin": vin, "generation": "24MM"} for vin in ("SCHEDULED", "OTHER")]),
+            graphql_get_vehicle_status=AsyncMock(return_value={}),
+            get_telemetry=AsyncMock(return_value={}),
+        )
+        coordinator = types.SimpleNamespace(data=[
+            types.SimpleNamespace(vin="SCHEDULED", climate_schedules=schedules),
+            types.SimpleNamespace(vin="OTHER", climate_schedules={}),
+        ])
+        entry = ha.ConfigEntry()
+        hass = ha.FakeHass(coordinator)
+        hass.data[ha.DOMAIN][entry.entry_id]["toyota_na_client"] = client
+        with patch.object(diagnostics, "async_redact_data", side_effect=lambda data, keys: data):
+            result = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
+        self.assertEqual([schedules, None], result["climate_schedules"]["data"])
