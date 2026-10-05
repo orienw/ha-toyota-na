@@ -737,6 +737,7 @@ class VehicleStateTests(unittest.TestCase):
                 ("07:01:00", 20, None),
                 ("07:03:00", None, None),
                 ("07:04:00", 0, 0),
+                ("07:05:00", "65535", None),
             ):
                 vehicle._parse_electric_status({
                     "vehicleInfo": {
@@ -769,6 +770,7 @@ class VehicleStateTests(unittest.TestCase):
             ("07:01:00", 20, None),
             ("07:03:00", None, None),
             ("07:04:00", 0, 0),
+            ("07:05:00", "65535", None),
         ):
             vehicle.apply_graphql_status({
                 "electric": {"charging": {

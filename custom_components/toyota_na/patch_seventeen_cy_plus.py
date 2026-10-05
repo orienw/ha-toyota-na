@@ -493,7 +493,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             return False
         if observed_at is not None:
             self._feature_timestamps[(feature, "value")] = observed_at
-        if value == 65535 and feature in (
+        if value in (65535, "65535") and feature in (
             VehicleFeatures.RemainingChargeTime, VehicleFeatures.RemainingChargeTimeTo80,
         ):
             value = None
