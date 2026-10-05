@@ -29,6 +29,7 @@ class Client:
     api_post = ToyotaOneClient.api_post
     api_request = client_module.api_request
     get_electric_status = client_module.get_electric_status
+    get_user_vehicle_list = client_module.get_user_vehicle_list
     auth = types.SimpleNamespace(get_device_id=lambda: "device")
 
     async def _auth_headers(self):
@@ -141,6 +142,30 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(headers["x-region"], "CA")
         self.assertEqual(headers["VIN"], "TESTVIN")
         self.assertEqual(headers["X-APPVERSION"], "3.5.0")
+
+    async def test_vehicle_list_failure_code_raises_instead_of_listing_no_vehicles(self):
+        for messages, payload, error in (
+            ([{"responseCode": "ONE-VL-10002", "description": "Try again later."}], None,
+             r"^Try again later\. \[ONE-VL-10002\]$"),
+            ([{"description": "no code"}, {"responseCode": "ONE-VL-10002"}], [],
+             r"^Toyota could not return the vehicle list\. \[ONE-VL-10002\]$"),
+        ):
+            self.response.json.return_value = {"status": {"messages": messages}, "payload": payload}
+            with self.assertRaisesRegex(RuntimeError, error):
+                await Client().get_user_vehicle_list()
+        self.assertTrue(str(self.session.request.call_args.args[1]).endswith("/oneapi/v2/vehicle/guid"))
+
+    async def test_vehicle_list_success_bodies_return_payload_as_before(self):
+        vehicles = [{"vin": "TESTVIN"}]
+        for body in (
+            {"payload": vehicles},
+            {"status": {"messages": [{"responseCode": "ONE-VL-10001", "description": "Note"}]}, "payload": vehicles},
+            {"status": {"messages": "unexpected"}, "payload": vehicles},
+        ):
+            self.response.json.return_value = body
+            self.assertEqual(await Client().get_user_vehicle_list(), vehicles)
+        self.response.json.return_value = {"vehicles": vehicles}
+        self.assertEqual(await Client().get_user_vehicle_list(), {"vehicles": vehicles})
 
     async def test_legacy_schedule_body_uses_hour_minute_objects(self):
         self.response.json.return_value = {"payload": {"returnCode": "ONE-RES-10000", "appRequestNo": "123"}}

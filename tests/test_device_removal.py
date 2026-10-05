@@ -31,11 +31,12 @@ class DeviceRemovalTests(unittest.IsolatedAsyncioTestCase):
                 ), allowed)
 
     async def test_failed_lookup_does_not_authorize_removal(self):
-        self.client.get_user_vehicle_list.side_effect = TimeoutError()
-        with self.assertRaises(TimeoutError):
-            await ha.integration_runtime.async_remove_config_entry_device(
-                self.hass, self.entry, self.device,
-            )
+        for error in (TimeoutError(), RuntimeError("[ONE-VL-10002]")):
+            self.client.get_user_vehicle_list.side_effect = error
+            with self.assertRaises(type(error)):
+                await ha.integration_runtime.async_remove_config_entry_device(
+                    self.hass, self.entry, self.device,
+                )
 
     async def test_unloaded_account_and_foreign_device_cannot_be_removed(self):
         self.device.identifiers = {("other", "SOLDVIN")}

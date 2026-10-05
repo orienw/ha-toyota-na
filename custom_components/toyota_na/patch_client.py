@@ -323,6 +323,28 @@ def appsync_authorization(token, guid, vin="", region="US", device_id=None):
     return authorization
 
 
+async def get_user_vehicle_list(self):
+    """Vehicle list; Toyota reports ONE-VL-10002 failures with a 2xx status."""
+    body = await self.api_request("GET", "v2/vehicle/guid", envelope=True)
+    if not isinstance(body, dict):
+        return body
+    status = body.get("status")
+    messages = status.get("messages") if isinstance(status, dict) else None
+    message = next(
+        (
+            item for item in messages or []
+            if isinstance(item, dict) and item.get("responseCode") is not None
+        ),
+        {},
+    )
+    if message.get("responseCode") == "ONE-VL-10002":
+        detail = message.get("detailedDescription") or message.get("description")
+        if not isinstance(detail, str) or not detail:
+            detail = "Toyota could not return the vehicle list."
+        raise RuntimeError(f"{detail} [ONE-VL-10002]")
+    return body["payload"] if "payload" in body else body
+
+
 async def get_telemetry(self, vin, region="US", generation="17CYPLUS"):
     try:
         return await self.api_get(
@@ -1213,7 +1235,7 @@ async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unkno
                 ) from err
 
 
-async def api_request(self, method, endpoint, header_params=None, **kwargs):
+async def api_request(self, method, endpoint, header_params=None, *, envelope=False, **kwargs):
     headers = await self._auth_headers()
     if header_params:
         headers.update(header_params)
@@ -1250,7 +1272,7 @@ async def api_request(self, method, endpoint, header_params=None, **kwargs):
                     raise
             try:
                 resp_json = await resp.json()
-                if "payload" in resp_json:
+                if "payload" in resp_json and not envelope:
                     return resp_json["payload"]
                 return resp_json
             except:
