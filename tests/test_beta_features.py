@@ -10,6 +10,7 @@ import test_button as ha
 import test_vehicle_behavior as behavior
 
 from custom_components.toyota_na import number, switch
+from custom_components.toyota_na.charging_helpers import CHARGE_SETTINGS
 from custom_components.toyota_na.patch_base_vehicle import (
     ApiVehicleGeneration, RemoteRequestCommand, VehicleFeatures,
 )
@@ -258,6 +259,58 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ha.exceptions.ServiceValidationError):
             await handlers[call.service](call)
         self.assertEqual(client.remote_request_24mm.await_count, 1)
+
+
+class StolenVehicleTests(unittest.IsolatedAsyncioTestCase):
+    def test_reported_stolen_turns_off_commands_and_setting_writes(self):
+        vehicle = behavior.make_24mm_vehicle()
+        vehicle._extended_capabilities = {**vehicle.extended_capabilities, "climateCapable": True}
+        vehicle._charge_settings["schedules"] = []
+        field = next(iter(CHARGE_SETTINGS))
+        for remote_display, offered in ((None, True), (7, True), (1, True), (9, True), (10, False), (11, False)):
+            with self.subTest(remote_display=remote_display):
+                vehicle._remote_display = remote_display
+                self.assertEqual(vehicle.stolen, not offered)
+                self.assertEqual([
+                    vehicle.supports_command(RemoteRequestCommand.DoorLock),
+                    vehicle.supports_command(RemoteRequestCommand.Refresh),
+                    vehicle.supports_climate_settings,
+                    vehicle.supports_climate_schedules,
+                    vehicle.supports_charge_setting(field),
+                    vehicle.supports_charge_schedules,
+                ], [offered] * 6)
+
+    async def test_stolen_vehicle_commands_return_after_recovery(self):
+        vehicle = behavior.make_vehicle()
+        vehicle._remote_display = 10
+        coordinator = ha.DataUpdateCoordinator([vehicle])
+        hass = ha.FakeHass(coordinator)
+        entities = []
+        for platform in (ha.button, ha.lock_platform):
+            await platform.async_setup_entry(
+                hass, ha.ConfigEntry(), lambda added, update: entities.extend(added),
+            )
+        self.assertEqual(entities, [])
+        vehicle._remote_display = 7
+        coordinator.notify_listeners()
+        names = {entity.sensor_name for entity in entities}
+        self.assertTrue({"Flash Hazards", "Refresh Status", ""} <= names)
+        self.assertTrue(all(entity.available for entity in entities))
+        vehicle._remote_display = 11
+        self.assertFalse(any(entity.available for entity in entities))
+
+    async def test_stolen_vehicle_keeps_showing_its_data(self):
+        vehicle = behavior.make_vehicle()
+        vehicle._parse_telemetry({"fuelLevel": 61, "lastTimestamp": "2026-09-21T07:00:00Z"})
+        coordinator = ha.DataUpdateCoordinator([vehicle])
+        entities = []
+        await ha.sensor_platform.async_setup_entry(
+            ha.FakeHass(coordinator), ha.ConfigEntry(), lambda added, update: entities.extend(added),
+        )
+        fuel = next(entity for entity in entities if entity.sensor_name == "Fuel Level")
+        vehicle._remote_display = 10
+        self.assertTrue(fuel.available)
+        self.assertEqual(fuel.native_value, 61)
 
 
 class ChargingTests(unittest.IsolatedAsyncioTestCase):

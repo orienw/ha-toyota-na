@@ -354,6 +354,11 @@ class ToyotaVehicle(ABC):
         return self._remote_display
 
     @property
+    def stolen(self) -> bool:
+        """Toyota's app turns off remote controls while a vehicle is reported stolen."""
+        return self._remote_display in (10, 11)
+
+    @property
     def api_generation(self):
         """Return the generation string reported by vehicle discovery."""
         return self._generation.value
@@ -390,7 +395,7 @@ class ToyotaVehicle(ABC):
     @property
     def supports_climate_settings(self) -> bool:
         return (
-            self.subscribed
+            self.subscribed and not self.stolen
             and self._extended_capabilities.get("climateCapable") is True
             and self.feature_enabled("remoteClimate")
         )
@@ -434,7 +439,7 @@ class ToyotaVehicle(ABC):
     def supports_climate_schedules(self):
         return (
             self._offers_climate_schedules
-            and self.subscribed and self.feature_enabled("remoteClimate")
+            and self.subscribed and not self.stolen and self.feature_enabled("remoteClimate")
         )
 
     async def _read_climate_schedules(self):
@@ -593,13 +598,13 @@ class ToyotaVehicle(ABC):
         feature = "powerSupply" if field == "electricSupplyModeLimit" else "chargeSetting"
         return (
             field in CHARGE_SETTINGS and self.uses_appsync and self.electric
-            and self.subscribed and self.feature_enabled(feature)
+            and self.subscribed and not self.stolen and self.feature_enabled(feature)
         )
 
     @property
     def supports_charge_schedules(self):
         return (
-            self.electric and self.subscribed
+            self.electric and self.subscribed and not self.stolen
             and self.feature_enabled("multiDayCharging")
             and (self.uses_appsync or (self._feature_flags or {}).get("multiDayCharging") == 1)
             and isinstance(self.charge_settings.get("schedules"), list)
@@ -736,6 +741,8 @@ class ToyotaVehicle(ABC):
 
     def supports_command(self, command: RemoteRequestCommand) -> bool:
         """Return whether the API transport and vehicle support a command."""
+        if self.stolen:
+            return False
         if command == RemoteRequestCommand.Refresh:
             return self.subscribed and self.feature_enabled("vehicleState")
         if not self.subscribed or not self.feature_enabled("remoteCommands"):
