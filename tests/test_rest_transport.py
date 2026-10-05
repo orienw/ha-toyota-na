@@ -151,8 +151,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
              r"^Toyota could not return the vehicle list\. \[ONE-VL-10002\]$"),
         ):
             self.response.json.return_value = {"status": {"messages": messages}, "payload": payload}
-            with self.assertRaisesRegex(RuntimeError, error):
+            with self.assertRaisesRegex(RuntimeError, error) as caught:
                 await Client().get_user_vehicle_list()
+            self.assertEqual("ONE-VL-10002", caught.exception.response_code)
         self.assertTrue(str(self.session.request.call_args.args[1]).endswith("/oneapi/v2/vehicle/guid"))
 
     async def test_vehicle_list_success_bodies_return_payload_as_before(self):
@@ -584,6 +585,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertIs(caught.exception, error)
                 self.assertEqual(caught.exception.message, expected)
+                self.assertEqual(getattr(caught.exception, "response_code", None), message.get("responseCode"))
 
     async def test_rejected_21mm_command_preserves_http_error_without_toyota_details(self):
         self.response.status = 400

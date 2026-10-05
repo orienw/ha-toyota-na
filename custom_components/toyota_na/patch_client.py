@@ -343,7 +343,9 @@ async def get_user_vehicle_list(self):
         detail = message.get("detailedDescription") or message.get("description")
         if not isinstance(detail, str) or not detail:
             detail = "Toyota could not return the vehicle list."
-        raise RuntimeError(f"{detail} [ONE-VL-10002]")
+        err = RuntimeError(f"{detail} [ONE-VL-10002]")
+        err.response_code = "ONE-VL-10002"
+        raise err
     return body["payload"] if "payload" in body else body
 
 
@@ -1271,6 +1273,7 @@ async def api_request(self, method, endpoint, header_params=None, *, envelope=Fa
                             err.message = detail
                         if isinstance(code, str) and code:
                             err.message = f"{err.message} [{code}]"
+                            err.response_code = code
                     raise
             try:
                 resp_json = await resp.json()

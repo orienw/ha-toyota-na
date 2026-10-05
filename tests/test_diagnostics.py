@@ -4,6 +4,8 @@ import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
+
 import test_button as ha
 
 ha.ha_const.CONF_ACCESS_TOKEN = "access_token"
@@ -83,3 +85,54 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(diagnostics, "async_redact_data", side_effect=lambda data, keys: data):
             result = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
         self.assertEqual([schedules, None], result["climate_schedules"]["data"])
+
+    async def test_report_survives_a_failed_or_unusable_vehicle_list(self):
+        def failure(error, code=None):
+            if code is not None:
+                error.response_code = code
+            return AsyncMock(side_effect=error)
+
+        def forbidden(message):
+            return aiohttp.ClientResponseError(
+                MagicMock(real_url="https://example.invalid/oneapi/v2/vehicle/guid"), (),
+                status=403, message=message,
+            )
+
+        for lookup, vehicle_list in (
+            (failure(RuntimeError("No vehicles for JTHTESTVIN0000001 owner@example.com [ONE-VL-10002]"), "ONE-VL-10002"),
+             {"data": None, "error": "RuntimeError [ONE-VL-10002]"}),
+            (failure(forbidden("Denied for ABCDEF12-3456-7890-ABCD-EF1234567890 [APIGW-403]"), "APIGW-403"),
+             {"data": None, "error": "ClientResponseError 403 [APIGW-403]"}),
+            (failure(TimeoutError()), {"data": None, "error": "TimeoutError"}),
+            # Code-shaped text in Toyota's message is never exported.
+            (failure(forbidden("Account [ONE-ACCOUNT-12345]")), {"data": None, "error": "ClientResponseError 403"}),
+            (failure(RuntimeError("Account [ACCOUNT-123456789012] [ONE-VL-10002]")),
+             {"data": None, "error": "RuntimeError"}),
+            (failure(RuntimeError("Call us"), "PHONE-15555550123"), {"data": None, "error": "RuntimeError"}),
+            (AsyncMock(return_value=None), {"data": None}),
+            (AsyncMock(return_value={"status": {"messages": {"description": "Unavailable for owner@example.com"}}}),
+             {"data": None, "unexpected": "dict"}),
+        ):
+            client = types.SimpleNamespace(get_user_vehicle_list=lookup)
+            entry = ha.ConfigEntry()
+            hass = ha.FakeHass(None)
+            hass.data[ha.DOMAIN][entry.entry_id]["toyota_na_client"] = client
+            with patch.object(diagnostics, "async_redact_data", side_effect=lambda data, keys: data):
+                result = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
+            self.assertEqual(vehicle_list, result["vehicle_list"])
+            self.assertEqual([], result["vehicle_status"]["data"])
+
+    async def test_vehicle_entries_without_a_vin_are_skipped(self):
+        vehicles = ["unexpected", {"generation": "21MM"}, {"vin": "TESTVIN"}]
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(return_value=vehicles),
+            get_telemetry=AsyncMock(return_value={}),
+            get_electric_status=AsyncMock(return_value={}),
+        )
+        entry = ha.ConfigEntry()
+        hass = ha.FakeHass(None)
+        hass.data[ha.DOMAIN][entry.entry_id]["toyota_na_client"] = client
+        with patch.object(diagnostics, "async_redact_data", side_effect=lambda data, keys: data):
+            result = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
+        self.assertEqual(vehicles, result["vehicle_list"]["data"])
+        self.assertEqual([{}], result["telemetry"]["data"])

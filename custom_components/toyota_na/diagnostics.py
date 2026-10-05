@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
@@ -17,6 +18,8 @@ from .const import DOMAIN
 from .vehicle_helpers import endpoint_generation, is_appsync_generation
 
 _LOGGER = logging.getLogger(__name__)
+# Toyota's structured response codes, never its free text.
+TOYOTA_ERROR_CODE = re.compile(r"(?:ONE(?:-[A-Z]+)+|APIGW)-\d{3,5}")
 
 TO_REDACT = {
     CONF_ACCESS_TOKEN,
@@ -48,7 +51,25 @@ async def async_get_config_entry_diagnostics(
     ]
 
     # We don't directly expose this from the vehicle api abstraction, but it's critical to dump this in diagnostics for debugging
-    user_vehicle_list = await client.get_user_vehicle_list()
+    # Keep the report available while Toyota's vehicle list is failing.
+    vehicle_list = {"data": None}
+    try:
+        vehicle_list["data"] = await client.get_user_vehicle_list()
+    except Exception as err:
+        _LOGGER.debug("Vehicle list diagnostics failed: %s", err)
+        # Toyota's message text can carry account details that redaction can't see.
+        error = type(err).__name__
+        if isinstance(getattr(err, "status", None), int):
+            error += f" {err.status}"
+        code = getattr(err, "response_code", None)
+        if isinstance(code, str) and TOYOTA_ERROR_CODE.fullmatch(code):
+            error += f" [{code}]"
+        vehicle_list["error"] = error
+    if vehicle_list["data"] is not None and not isinstance(vehicle_list["data"], list):
+        # An unusable body is Toyota's free text too; keep only its shape.
+        vehicle_list["unexpected"] = type(vehicle_list["data"]).__name__
+        vehicle_list["data"] = None
+    user_vehicle_list = vehicle_list["data"] or []
     # Climate schedules as the last poll read them, to see what Toyota reports.
     coordinator = hass.data[DOMAIN][config_entry.entry_id].get("coordinator")
     vehicles = {vehicle.vin: vehicle for vehicle in getattr(coordinator, "data", None) or []}
@@ -60,12 +81,14 @@ async def async_get_config_entry_diagnostics(
     climate_schedules = []
 
     for vehicle in user_vehicle_list:
+        if not isinstance(vehicle, dict) or not isinstance(vehicle.get("vin"), str):
+            continue
         user_vehicle_status = None
         user_telemetry = None
         user_engine_status = None
         user_electric_status = None
         vin = vehicle["vin"]
-        api_generation = vehicle["generation"]
+        api_generation = vehicle.get("generation")
         generation = endpoint_generation(api_generation)
         region = vehicle.get("region") or "US"
         
@@ -153,7 +176,7 @@ async def async_get_config_entry_diagnostics(
     return async_redact_data(
         {
             "config_entry": async_redact_data(dict(config_entry.data), TO_REDACT),
-            "vehicle_list": {"data": user_vehicle_list},
+            "vehicle_list": vehicle_list,
             "vehicle_status": {"data": vehicle_status},
             "telemetry": {"data": telemetry},
             "engine_status": {"data": engine_status},
