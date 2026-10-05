@@ -61,6 +61,20 @@
           "locked": "Locked",
           "connected": "Connected"
         }
+      },
+      "remote_access": {
+        "state": {
+          "unsupported": "Not supported",
+          "authorization_required": "Authorization required",
+          "subscription_cancelled": "Subscription cancelled",
+          "activation_failed": "Activation failed",
+          "activation_pending": "Activation pending",
+          "activation_error": "Activation error",
+          "active": "Active",
+          "subscription_expired": "Subscription expired",
+          "stolen": "Reported stolen",
+          "stolen_immobilizer": "Reported stolen, remote immobilizer"
+        }
       }
     }
   }

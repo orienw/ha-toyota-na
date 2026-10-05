@@ -48,6 +48,7 @@ from custom_components.toyota_na.patch_client import (
 from custom_components.toyota_na.vehicle_helpers import (
     has_remote_subscription,
     is_electric_vehicle,
+    normalize_remote_display,
 )
 from custom_components.toyota_na.wake_policy import (
     CONF_WAKE_INTERVAL,
@@ -221,6 +222,14 @@ class VehicleMetadataTests(unittest.TestCase):
 
         self.assertFalse(has_remote_subscription(metadata))
 
+    def test_remote_display_accepts_integers_and_digits_sent_as_text(self):
+        for value, expected in (
+            (0, 0), (7, 7), (11, 11), (42, 42), (" 7 ", 7), ("10", 10),
+            (True, None), (7.0, None), ("", None), ("seven", None), ("-1", None), (None, None),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(normalize_remote_display(value), expected)
+
 
 class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_generation_names_are_normalized_for_supported_vehicles(self):
@@ -264,6 +273,24 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["MISSING", "NULL", "COMPLETE"], [vehicle.vin for vehicle in vehicles])
         self.assertEqual(["Vehicle", "Vehicle", "LC 500 2-DOOR COUPE"], [vehicle.model_name for vehicle in vehicles])
         self.assertEqual(["", "", "2024"], [vehicle.model_year for vehicle in vehicles])
+
+    async def test_remote_display_is_read_from_every_vehicle_list(self):
+        client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
+            {**LEXUS_21MM_COUPE, "vin": "ACTIVE", "remoteDisplay": 7},
+            {"vin": "LEGACY", "generation": "17CY", "remoteDisplay": "10"},
+            {"vin": "MISSING", "generation": "24MM"},
+        ]))
+        with (
+            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
+            patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
+        ):
+            vehicles = await get_vehicles(client)
+            self.assertEqual([7, 10, None], [vehicle.remote_display for vehicle in vehicles])
+            client.get_user_vehicle_list.return_value = [
+                {**LEXUS_21MM_COUPE, "vin": "ACTIVE", "remoteDisplay": 5},
+            ]
+            vehicle, = await get_vehicles(client)
+        self.assertEqual(5, vehicle.remote_display)
 
     async def test_missing_vehicle_names_preserve_previous_identity(self):
         previous = make_vehicle()

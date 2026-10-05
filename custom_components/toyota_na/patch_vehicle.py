@@ -8,7 +8,7 @@ from toyota_na.vehicle.vehicle_generations.seventeen_cy_plus import (
     SeventeenCYPlusToyotaVehicle,
 )
 
-from .vehicle_helpers import has_remote_subscription, is_electric_vehicle
+from .vehicle_helpers import has_remote_subscription, is_electric_vehicle, normalize_remote_display
 
 
 async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
@@ -50,6 +50,7 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
             "extended_capabilities": api_vehicle.get("extendedCapabilities"),
             "feature_flags": api_vehicle.get("features"),
             "legacy_capabilities": api_vehicle.get("capabilities"),
+            "remote_display": normalize_remote_display(api_vehicle.get("remoteDisplay")),
         }
 
         if (

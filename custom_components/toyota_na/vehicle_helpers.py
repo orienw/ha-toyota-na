@@ -44,6 +44,13 @@ def has_remote_subscription(vehicle: Mapping[str, Any]) -> bool:
     return vehicle.get("remoteSubscriptionExists") is True
 
 
+def normalize_remote_display(value: Any) -> int | None:
+    """Return Toyota's remote activation state, accepting digits sent as text."""
+    if isinstance(value, str) and value.strip().isdecimal():
+        return int(value)
+    return value if type(value) is int else None
+
+
 def is_electric_vehicle(vehicle: Mapping[str, Any]) -> bool:
     """Normalize electric-vehicle markers returned by different generations."""
     fuel_type = vehicle.get("fuelType")

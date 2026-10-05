@@ -103,6 +103,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         extended_capabilities: Optional[dict] = None,
         feature_flags: Optional[dict] = None,
         legacy_capabilities: Optional[list] = None,
+        remote_display: Optional[int] = None,
     ):
         self._has_remote_subscription = has_remote_subscription
         self._has_electric = has_electric
@@ -123,6 +124,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             extended_capabilities,
             feature_flags,
             legacy_capabilities,
+            remote_display,
         )
         self._feature_timestamps = {}
 

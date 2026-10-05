@@ -347,6 +347,22 @@ CONNECTOR_STATES = {
     "locked": "locked",
 }
 
+# Toyota's remoteDisplay values, named after the app's banners.
+REMOTE_ACCESS_STATES = {
+    0: "unsupported",
+    1: "authorization_required",
+    2: "subscription_cancelled",
+    3: "subscription_cancelled",
+    4: "activation_failed",
+    5: "activation_pending",
+    6: "activation_error",
+    7: "active",
+    8: "subscription_expired",
+    9: "subscription_expired",
+    10: "stolen",
+    11: "stolen_immobilizer",
+}
+
 SENSORS = [
     {
         "state_class": SensorStateClass.MEASUREMENT,

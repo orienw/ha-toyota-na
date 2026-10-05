@@ -101,3 +101,50 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
             self.vehicle.features[F.Speed] = ToyotaNumeric(100, unit)
             self.assertEqual(entity.native_value, 100)
             self.assertEqual(entity.native_unit_of_measurement, expected)
+
+
+class RemoteAccessSensorTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.vehicle = ha.FakeVehicle(set())
+        self.vehicle.remote_display = 7
+        self.other = ha.FakeVehicle(set(), vin="OTHERVIN")
+        self.coordinator = ha.DataUpdateCoordinator([self.vehicle, self.other])
+        self.entities = []
+        await ha.sensor_platform.async_setup_entry(
+            ha.FakeHass(self.coordinator), ha.ConfigEntry(),
+            lambda added, update: self.entities.extend(added),
+        )
+        self.assertEqual([entity.unique_id for entity in self.entities], ["TESTVIN.Remote Access"])
+        self.entity = self.entities[0]
+
+    async def test_states_follow_the_app_banners(self):
+        for raw, expected in (
+            (0, "unsupported"), (1, "authorization_required"),
+            (2, "subscription_cancelled"), (3, "subscription_cancelled"),
+            (4, "activation_failed"), (5, "activation_pending"), (6, "activation_error"),
+            (7, "active"), (8, "subscription_expired"), (9, "subscription_expired"),
+            (10, "stolen"), (11, "stolen_immobilizer"), (12, None), (-1, None),
+        ):
+            with self.subTest(raw=raw):
+                self.vehicle.remote_display = raw
+                self.assertTrue(self.entity.available)
+                self.assertEqual(self.entity.native_value, expected)
+                self.assertEqual(self.entity.extra_state_attributes, {"raw_value": raw})
+                if expected is not None:
+                    self.assertIn(expected, self.entity.options)
+        self.assertEqual(self.entity.device_class, ha.SensorDeviceClass.ENUM)
+        self.assertEqual(self.entity._attr_entity_category, "diagnostic")
+
+    async def test_unavailable_when_the_vehicle_list_drops_the_state(self):
+        self.vehicle.remote_display = None
+        self.assertFalse(self.entity.available)
+        self.assertIsNone(self.entity.native_value)
+        self.assertIsNone(self.entity.extra_state_attributes)
+
+    async def test_added_once_a_vehicle_reports_the_state(self):
+        self.other.remote_display = 1
+        self.coordinator.notify_listeners()
+        self.assertEqual(
+            [entity.unique_id for entity in self.entities],
+            ["TESTVIN.Remote Access", "OTHERVIN.Remote Access"],
+        )

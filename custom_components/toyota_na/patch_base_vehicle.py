@@ -150,6 +150,7 @@ class ToyotaVehicle(ABC):
     ]
     _has_remote_subscription = False
     _has_electric = False
+    _remote_display: Optional[int] = None
     _model_name: str
     _model_year: str
     _generation: ApiVehicleGeneration
@@ -218,6 +219,7 @@ class ToyotaVehicle(ABC):
         extended_capabilities: Optional[dict] = None,
         feature_flags: Optional[dict] = None,
         legacy_capabilities: Optional[list] = None,
+        remote_display: Optional[int] = None,
     ):
         """
         Initialize a new vehicle object. Must call `vehicle.update()` to fully populate the object.
@@ -240,6 +242,7 @@ class ToyotaVehicle(ABC):
         self._extended_capabilities = extended_capabilities or {}
         self._feature_flags = feature_flags
         self._legacy_capabilities = legacy_capabilities or []
+        self._remote_display = remote_display
         self._climate_settings = {}
         self._climate_lock = asyncio.Lock()
         self._climate_schedules = {}
@@ -344,6 +347,11 @@ class ToyotaVehicle(ABC):
     @property
     def extended_capabilities(self):
         return self._extended_capabilities
+
+    @property
+    def remote_display(self) -> Optional[int]:
+        """Return Toyota's remote activation state from the vehicle list."""
+        return self._remote_display
 
     @property
     def api_generation(self):

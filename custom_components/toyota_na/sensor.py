@@ -7,14 +7,14 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPressure
+from homeassistant.const import EntityCategory, UnitOfPressure
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util.unit_conversion import PressureConverter
 
 from .base_entity import ToyotaNABaseEntity
-from .const import DOMAIN, SENSORS
+from .const import DOMAIN, REMOTE_ACCESS_STATES, SENSORS
 from .entity_discovery import setup_entity_discovery
 from .climate_schedule_helpers import local_climate_schedule
 
@@ -36,6 +36,8 @@ async def async_setup_entry(
         for vehicle in coordinator.data or []:
             if isinstance(vehicle.climate_schedules.get("airConditioningReservation"), list):
                 yield ToyotaClimateSchedulesSensor(coordinator, "Climate Schedules", vehicle.vin)
+            if vehicle.remote_display is not None:
+                yield ToyotaRemoteAccessSensor(coordinator, "Remote Access", vehicle.vin)
             for config in SENSORS:
                 feature = vehicle.features.get(config["feature"])
                 if not isinstance(feature, ToyotaNumeric):
@@ -79,6 +81,26 @@ class ToyotaClimateSchedulesSensor(ToyotaNABaseEntity, SensorEntity):
             "max_temperature": settings.get("maxTemp"),
             "temperature_step": settings.get("tempInterval"),
         }
+
+
+class ToyotaRemoteAccessSensor(ToyotaNABaseEntity, SensorEntity):
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:car-connected"
+    _attr_options = list(dict.fromkeys(REMOTE_ACCESS_STATES.values()))
+    _attr_translation_key = "remote_access"
+
+    @property
+    def available(self):
+        return self.vehicle is not None and self.vehicle.remote_display is not None
+
+    @property
+    def native_value(self):
+        return REMOTE_ACCESS_STATES.get(self.vehicle.remote_display) if self.available else None
+
+    @property
+    def extra_state_attributes(self):
+        return {"raw_value": self.vehicle.remote_display} if self.available else None
 
 
 class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):

@@ -258,6 +258,7 @@ runtime_spec.loader.exec_module(integration_runtime)
 
 class FakeVehicle:
     climate_schedules = {}
+    remote_display = None
 
     _feature_flags = None
     uses_appsync = True
