@@ -161,6 +161,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             {"payload": vehicles},
             {"status": {"messages": [{"responseCode": "ONE-VL-10001", "description": "Note"}]}, "payload": vehicles},
             {"status": {"messages": "unexpected"}, "payload": vehicles},
+            {"status": {"messages": True}, "payload": vehicles},
+            {"status": {"messages": 5}, "payload": vehicles},
+            {"status": "unexpected", "payload": vehicles},
         ):
             self.response.json.return_value = body
             self.assertEqual(await Client().get_user_vehicle_list(), vehicles)

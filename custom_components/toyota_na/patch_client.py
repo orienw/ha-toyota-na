@@ -330,9 +330,11 @@ async def get_user_vehicle_list(self):
         return body
     status = body.get("status")
     messages = status.get("messages") if isinstance(status, dict) else None
+    if not isinstance(messages, list):
+        messages = []
     message = next(
         (
-            item for item in messages or []
+            item for item in messages
             if isinstance(item, dict) and item.get("responseCode") is not None
         ),
         {},
