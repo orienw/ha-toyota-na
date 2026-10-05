@@ -135,6 +135,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .websocket_handler import ToyotaWebSocketHandler
 from .command_refresh import refresh_after_command
 from .service_helpers import translate_service_errors
+from .remote_access import sync_remote_access_issues
 from .wake_policy import automatic_wake_due, record_vehicle_wake
 
 from .const import (
@@ -407,6 +408,7 @@ async def update_vehicles_status(
                 _refresh_coordinator_after_command(coordinator)
             )
             entry.async_on_unload(task.cancel)
+        sync_remote_access_issues(hass, entry, vehicles)
         return vehicles
     except AuthError as e:
         raise ConfigEntryAuthFailed(e) from e
@@ -444,3 +446,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
             await ws_handler.stop()
 
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clear the repairs of an account that was removed."""
+    sync_remote_access_issues(hass, entry, [])

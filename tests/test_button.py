@@ -206,6 +206,13 @@ entity_registry.async_get = lambda hass: hass.entity_registry
 entity_registry.async_entries_for_config_entry = lambda registry, entry_id: [
     entry for entry in registry.entries.values() if entry.config_entry_id == entry_id
 ]
+issue_registry = module("homeassistant.helpers.issue_registry")
+issue_registry.IssueSeverity = types.SimpleNamespace(WARNING="warning")
+issue_registry.async_get = lambda hass: hass.issue_registry
+issue_registry.async_create_issue = lambda hass, domain, issue_id, **issue: (
+    hass.issue_registry.issues.update({(domain, issue_id): issue})
+)
+issue_registry.async_delete_issue = lambda hass, domain, issue_id: hass.issue_registry.issues.pop((domain, issue_id))
 entity_platform = module("homeassistant.helpers.entity_platform")
 entity_platform.AddEntitiesCallback = object
 service = module("homeassistant.helpers.service")
@@ -299,6 +306,7 @@ class FakeHass:
         self.tasks = []
         self.config_entries = self
         self.entity_registry = FakeEntityRegistry()
+        self.issue_registry = types.SimpleNamespace(issues={})
 
     def async_create_task(self, coroutine):
         task = asyncio.create_task(coroutine)

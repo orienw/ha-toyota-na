@@ -77,5 +77,39 @@
         }
       }
     }
+  },
+  "issues": {
+    "remote_authorization_required": {
+      "title": "Authorize remote access for {vehicle}",
+      "description": "Toyota needs to confirm you are an authorized user of {vehicle} before remote commands work. Open the Toyota or Lexus app and follow its prompt to activate remote features."
+    },
+    "remote_subscription_cancelled": {
+      "title": "Remote subscription cancelled for {vehicle}",
+      "description": "Toyota reports the remote services subscription for {vehicle} as cancelled. Remote commands may fail until you renew it in the Toyota or Lexus app."
+    },
+    "remote_activation_failed": {
+      "title": "Remote activation failed for {vehicle}",
+      "description": "Toyota could not activate remote features for {vehicle}. Try activating them again in the Toyota or Lexus app."
+    },
+    "remote_activation_pending": {
+      "title": "Remote activation pending for {vehicle}",
+      "description": "Toyota is still activating remote features for {vehicle}, which can take up to 24 hours. Remote commands may fail until it finishes. This repair clears itself once activation completes."
+    },
+    "remote_activation_error": {
+      "title": "Remote activation error for {vehicle}",
+      "description": "Toyota could not activate remote features for {vehicle}. Contact support from the Toyota or Lexus app to finish activation."
+    },
+    "remote_subscription_expired": {
+      "title": "Remote subscription expired for {vehicle}",
+      "description": "Toyota reports the remote services subscription for {vehicle} as expired. Remote commands may fail until you renew it in the Toyota or Lexus app."
+    },
+    "vehicle_stolen": {
+      "title": "{vehicle} is reported stolen",
+      "description": "Toyota reports {vehicle} as stolen, so Home Assistant has turned off its remote commands, as Toyota's app does. Its last reported data stays visible. After the vehicle is recovered, choose Reactivate in the Toyota or Lexus app to turn remote services back on."
+    },
+    "vehicle_stolen_immobilizer": {
+      "title": "{vehicle} is reported stolen",
+      "description": "Toyota reports {vehicle} as stolen, so Home Assistant has turned off its remote commands, as Toyota's app does. Its last reported data stays visible. After the vehicle is recovered, enter the code shown in the Toyota or Lexus app on the vehicle's multimedia screen to turn remote services back on."
+    }
   }
 }
