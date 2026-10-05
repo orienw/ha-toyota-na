@@ -122,6 +122,7 @@ Sensors:
 * Key Fob Battery Status
 * Last Update
 * Last Tire Pressure Update
+* Remote Access
 * Speed
 * EV Plug Status
 * EV Remaining Charge Time
@@ -139,6 +140,14 @@ Sensors:
 
 Lock, remote start, hazards, and find-vehicle commands need a remote
 subscription.
+
+The Remote Access sensor shows the vehicle's remote activation state in Toyota's
+app, such as Active, Activation pending, or Subscription expired. When Toyota
+needs you to act in its app, for example to authorize remote access or renew a
+subscription, Home Assistant raises a repair. The repair clears itself once
+Toyota reports the vehicle active. While a vehicle is reported stolen, its
+commands and controls, including Refresh Status and climate and charging
+settings, are unavailable and scheduled wakes stop, like Toyota's app. Its last reported data, including location, stays visible.
 
 Actions:
 
@@ -207,7 +216,7 @@ vehicle's local time.
 
 ### Sensor display
 
-Plug Status and Connector Status show readable charging and connection states.
+Plug Status, Connector Status, and Remote Access show readable states.
 Unrecognized values show Unknown; Toyota's original value is in `raw_value`.
 Last Update Timestamp and Last Tire Pressure Update Timestamp show dates and
 times. Choose km/h or mph in the Speed sensor's settings.
