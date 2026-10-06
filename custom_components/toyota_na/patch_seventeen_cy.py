@@ -18,8 +18,6 @@ from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 from .vehicle_helpers import (
     normalize_charging_state,
     normalize_engine_state,
-    merge_opening_states,
-    opening_state_from_values,
     parse_api_timestamp,
 )
 
@@ -410,34 +408,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         if "vehicleStatus" not in vehicle_status or vehicle_status["vehicleStatus"] is None:
             return
 
-        openings = {}
-        for category in vehicle_status["vehicleStatus"]:
-            if not category or "sections" not in category:
-                continue
-            for section in category["sections"]:
-                if not section:
-                    continue
-
-                category_type = category.get("category")
-                section_type = section.get("section")
-
-                key = f"{category_type} {section_type}"
-
-                feature = self._vehicle_status_category_map.get(key)
-                if feature is None:
-                    continue
-                closed, locked = opening_state_from_values(
-                    section.get("values", [])
-                )
-                if feature == VehicleFeatures.GlassHatch:
-                    locked = None
-                if feature in openings:
-                    closed, locked = merge_opening_states(
-                        openings[feature], (closed, locked)
-                    )
-                openings[feature] = (closed, locked)
-
-        for feature, (closed, locked) in openings.items():
+        for feature, (closed, locked) in self._rest_openings(vehicle_status["vehicleStatus"]).items():
             self._store_opening(feature, closed, locked, observed_at)
 
     #

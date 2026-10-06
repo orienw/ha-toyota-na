@@ -15,7 +15,10 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
-from .vehicle_helpers import can_extend_remote_runtime, endpoint_generation, first_capability, is_appsync_generation, parse_api_timestamp
+from .vehicle_helpers import (
+    can_extend_remote_runtime, endpoint_generation, first_capability, is_appsync_generation,
+    merge_opening_states, opening_state_from_values, parse_api_timestamp,
+)
 from .climate_helpers import apply_climate_changes
 from .climate_schedule_helpers import build_climate_schedule, climate_schedule_matches
 from .charging_helpers import (
@@ -163,6 +166,7 @@ class ToyotaVehicle(ABC):
     _vin: str
     _region: str
     _command_map: dict[RemoteRequestCommand, str] = {}
+    _vehicle_status_category_map: dict[str, VehicleFeatures] = {}
 
     _EXTENDED_COMMANDS = {
         RemoteRequestCommand.SoundHorn: ("sound-horn", ("hornCapable",)),
@@ -207,6 +211,16 @@ class ToyotaVehicle(ABC):
     }
     _COMMANDS_REQUIRING_EXPLICIT_CAPABILITY = {
         RemoteRequestCommand.VehicleFinder,
+    }
+
+    # REST status sections Toyota's app finds by name in any category.
+    _REST_ANY_CATEGORY_SECTIONS = {
+        "trunk": VehicleFeatures.Trunk,
+        "hatch": VehicleFeatures.Trunk,
+        "tailgate": VehicleFeatures.Trunk,
+        "moonroof": VehicleFeatures.Moonroof,
+        "hood": VehicleFeatures.Hood,
+        "bonnet": VehicleFeatures.Hood,
     }
 
     def __init__(
@@ -535,6 +549,39 @@ class ToyotaVehicle(ABC):
             if result.get("returnCode") not in (None, "ONE-RES-10000") and result.get("message"):
                 message = result["message"]
             await self._wait_for_schedules(self._read_climate_schedules, confirmed, message)
+
+    def _rest_openings(self, categories) -> dict:
+        """Opening states from REST vehicle status, matched like Toyota's app."""
+        category_map = {key.lower(): feature for key, feature in self._vehicle_status_category_map.items()}
+        openings, named = {}, set()
+        for category in categories:
+            if not isinstance(category, dict) or not isinstance(category.get("sections"), list):
+                continue
+            category_name = str(category.get("category")).lower()
+            for section in category["sections"]:
+                if not isinstance(section, dict):
+                    continue
+                section_name = str(section.get("section")).lower()
+                feature = category_map.get(f"{category_name} {section_name}")
+                any_category = self._REST_ANY_CATEGORY_SECTIONS.get(section_name)
+                if feature is None and any_category is None:
+                    continue
+                closed, locked = opening_state_from_values(section.get("values", []))
+                if any_category is not None:
+                    # The app reads open state from the first section with each
+                    # name, in any category, and lock state only under Other.
+                    feature = any_category
+                    if section_name in named:
+                        closed = None
+                    named.add(section_name)
+                    if category_name != "other":
+                        locked = None
+                if feature == VehicleFeatures.GlassHatch:
+                    locked = None
+                if feature in openings:
+                    closed, locked = merge_opening_states(openings[feature], (closed, locked))
+                openings[feature] = (closed, locked)
+        return openings
 
     @property
     def health(self) -> dict:

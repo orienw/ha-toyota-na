@@ -1051,6 +1051,71 @@ class VehicleStateTests(unittest.TestCase):
                     backdoor = vehicle.features[VehicleFeatures.Trunk]
                     self.assertEqual((backdoor.closed, backdoor.locked), expected)
 
+    def test_rest_sections_match_in_any_case(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            with self.subTest(make=make.__name__):
+                vehicle = make()
+                vehicle._parse_vehicle_status({"vehicleStatus": [
+                    {"category": "DRIVER SIDE", "sections": [{"section": "door", "values": [
+                        {"value": "Open", "status": 0}, {"value": "UNLOCKED", "status": 1},
+                    ]}]},
+                    {"category": "other", "sections": [
+                        {"section": "TAILGATE", "values": [{"value": "closed"}, {"value": "locked", "status": 1}]},
+                        {"section": "Back Window", "values": [{"value": "open"}]},
+                    ]},
+                ]})
+                door = vehicle.features[VehicleFeatures.FrontDriverDoor]
+                backdoor = vehicle.features[VehicleFeatures.Trunk]
+                self.assertEqual((door.closed, door.locked), (False, False))
+                self.assertEqual((backdoor.closed, backdoor.locked), (True, True))
+                self.assertFalse(vehicle.features[VehicleFeatures.GlassHatch].closed)
+
+    def test_rest_open_state_comes_from_the_first_section_in_any_category(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            for categories, expected in (
+                # Lock state only under Other.
+                ([{"category": "Doors", "sections": [{"section": "Trunk", "values": [
+                    {"value": "open"}, {"value": "unlocked", "status": 1},
+                ]}]}], (False, None)),
+                # The first Trunk section decides open state; Other still decides the lock.
+                ([
+                    {"category": "Doors", "sections": [{"section": "Trunk", "values": [{"value": "open"}]}]},
+                    {"category": "Other", "sections": [{"section": "Trunk", "values": [
+                        {"value": "closed"}, {"value": "locked", "status": 1},
+                    ]}]},
+                ], (False, True)),
+                ([
+                    {"category": "Other", "sections": [{"section": "Trunk", "values": [
+                        {"value": "closed"}, {"value": "locked", "status": 1},
+                    ]}]},
+                    {"category": "Doors", "sections": [{"section": "Trunk", "values": [{"value": "open"}]}]},
+                ], (True, True)),
+                # Different names still combine, as the app ORs trunk, hatch and tailgate.
+                ([
+                    {"category": "Other", "sections": [{"section": "Trunk", "values": [{"value": "closed"}]}]},
+                    {"category": "Rear", "sections": [{"section": "Hatch", "values": [{"value": "open"}]}]},
+                ], (False, None)),
+            ):
+                with self.subTest(make=make.__name__, categories=categories):
+                    vehicle = make()
+                    vehicle._parse_vehicle_status({"vehicleStatus": categories})
+                    backdoor = vehicle.features[VehicleFeatures.Trunk]
+                    self.assertEqual((backdoor.closed, getattr(backdoor, "locked", None)), expected)
+
+    def test_rest_moonroof_and_hood_match_in_any_category(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            with self.subTest(make=make.__name__):
+                vehicle = make()
+                vehicle._parse_vehicle_status({"vehicleStatus": [
+                    {"category": "Roof", "sections": [{"section": "Moonroof", "values": [{"value": "open"}]}]},
+                    {"category": "Front", "sections": [{"section": "Bonnet", "values": [{"value": "closed"}]}]},
+                    "unexpected",
+                    {"category": "Other", "sections": None},
+                    {"category": "Other", "sections": ["unexpected", {"section": None}]},
+                ]})
+                self.assertFalse(vehicle.features[VehicleFeatures.Moonroof].closed)
+                self.assertTrue(vehicle.features[VehicleFeatures.Hood].closed)
+
     def test_24mm_status_parses_state_tires_and_electric_data(self):
         status = json.loads(
             (ROOT / "tests/fixtures/vehicle_24mm.json").read_text()
