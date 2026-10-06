@@ -1116,6 +1116,20 @@ class VehicleStateTests(unittest.TestCase):
                 self.assertFalse(vehicle.features[VehicleFeatures.Moonroof].closed)
                 self.assertTrue(vehicle.features[VehicleFeatures.Hood].closed)
 
+    def test_malformed_section_values_do_not_block_other_sections(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            with self.subTest(make=make.__name__):
+                vehicle = make()
+                vehicle._parse_vehicle_status({"vehicleStatus": [
+                    {"category": "Roof", "sections": [{"section": "Moonroof", "values": None}]},
+                    {"category": "Other", "sections": [{"section": "Trunk", "values": ["closed", None]}]},
+                    {"category": "Driver Side", "sections": [{"section": "Door", "values": [
+                        "unexpected", {"value": "open"}, {"value": "unlocked", "status": 1},
+                    ]}]},
+                ]})
+                door = vehicle.features[VehicleFeatures.FrontDriverDoor]
+                self.assertEqual((door.closed, door.locked), (False, False))
+
     def test_24mm_status_parses_state_tires_and_electric_data(self):
         status = json.loads(
             (ROOT / "tests/fixtures/vehicle_24mm.json").read_text()

@@ -566,7 +566,10 @@ class ToyotaVehicle(ABC):
                 any_category = self._REST_ANY_CATEGORY_SECTIONS.get(section_name)
                 if feature is None and any_category is None:
                     continue
-                closed, locked = opening_state_from_values(section.get("values", []))
+                values = section.get("values")
+                # A malformed section must not cost the rest of the response its update.
+                values = [value for value in values if isinstance(value, dict)] if isinstance(values, list) else []
+                closed, locked = opening_state_from_values(values)
                 if any_category is not None:
                     # The app reads open state from the first section with each
                     # name, in any category, and lock state only under Other.
