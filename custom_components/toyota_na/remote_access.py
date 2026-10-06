@@ -27,7 +27,8 @@ def sync_remote_access_issues(hass, entry, vehicles) -> None:
         translation_key = REMOTE_ACCESS_ISSUES.get(vehicle.remote_display)
         if translation_key is None:
             continue
-        # A new state gets a new issue, so ignoring one state doesn't hide the next.
+        # Each repair has its own issue, so ignoring one doesn't hide a different one.
+        # States with the same banner share a repair (2/3, 8/9).
         issue_id = f"{prefix}{vehicle.vin}_{translation_key}"
         current.add(issue_id)
         ir.async_create_issue(
