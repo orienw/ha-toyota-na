@@ -373,6 +373,29 @@ REMOTE_ACCESS_STATES = {
     11: "stolen_immobilizer",
 }
 
+# Toyota notification categories, lowercased, by the event type they fire.
+# Other categories fire "other"; the event data keeps the original category.
+NOTIFICATION_EVENT_TYPES = {
+    "remotecommand": "remote_command",
+    "realtimestatus": "status_update",
+    "vehiclestatusalert": "vehicle_alert",
+    "servicewarnings": "service_warning",
+    "ota_updates": "software_update",
+    "ota_updates_21mm": "software_update",
+    "update_notification": "software_update",
+    "install_notification": "software_update",
+    "release_notes": "software_update",
+    "subscriptions": "subscription",
+    "chargeassist": "charging",
+    "evgoenrollment": "charging",
+    "guestdriverprofileactivate": "shared_access",
+    "remote_user_activated": "shared_access",
+    "digitalkey": "digital_key",
+    "drive_recorder_new_event": "drive_recorder",
+    "drive_recorder_upload_complete": "drive_recorder",
+    "navi_send_to_phone": "navigation",
+}
+
 # Toyota's Health tab tiles, gated on the app's feature flags.
 HEALTH_SENSORS = (
     {

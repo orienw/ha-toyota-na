@@ -170,6 +170,26 @@ lock_component.LockEntity = LockEntity
 device_tracker_component = module("homeassistant.components.device_tracker")
 device_tracker_component.SourceType = SourceType
 device_tracker_component.TrackerEntity = type("TrackerEntity", (), {})
+
+
+class EventEntity:
+    async def async_added_to_hass(self):
+        pass
+
+    def _trigger_event(self, event_type, event_attributes=None):
+        if event_type not in self._attr_event_types:
+            raise ValueError(event_type)
+        self.__dict__.setdefault("events", []).append((event_type, event_attributes))
+
+    def _handle_coordinator_update(self):
+        self.async_write_ha_state()
+
+    def async_write_ha_state(self):
+        self.__dict__["writes"] = self.__dict__.get("writes", 0) + 1
+
+
+event_component = module("homeassistant.components.event")
+event_component.EventEntity = EventEntity
 sensor = module("homeassistant.components.sensor")
 sensor.SensorStateClass = SensorStateClass
 sensor.SensorDeviceClass = SensorDeviceClass

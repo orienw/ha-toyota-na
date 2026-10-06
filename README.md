@@ -138,6 +138,7 @@ Sensors:
 * Battery and Gasoline Power Supply Time
 * Average and Trip Fuel Consumption, Trip Count, and Gasoline Range
 * Charge Schedules and Climate Schedules
+* Notifications event
 
 Lock, remote start, hazards, and find-vehicle commands need a remote
 subscription.
@@ -191,6 +192,13 @@ Toyota offers that tab's tiles for the vehicle. Home Assistant reads them at
 most once an hour without waking the vehicle. Vehicle Alerts, Safety Recalls,
 and Service Campaigns count items and list them in their attributes. Like
 Toyota's app, Engine Oil and Key Fob Battery read Toyota's English status text.
+
+The Notifications event fires once for each new notification Toyota lists for
+the vehicle, such as remote command results, service warnings, and software
+updates. Its event type groups Toyota's categories, and the event data keeps
+Toyota's category, title, and message. Home Assistant checks at each update
+without waking the vehicle. Notifications from before Home Assistant started
+don't fire.
 
 Climate preferences for Remote Start appear under device configuration.
 Remote Start runs the engine or climate system the vehicle supports.

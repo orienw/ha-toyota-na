@@ -76,6 +76,28 @@
           "stolen_immobilizer": "Reported stolen, remote immobilizer"
         }
       }
+    },
+    "event": {
+      "notification": {
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "remote_command": "Remote command",
+              "status_update": "Status update",
+              "vehicle_alert": "Vehicle alert",
+              "service_warning": "Service warning",
+              "software_update": "Software update",
+              "subscription": "Subscription",
+              "charging": "Charging",
+              "shared_access": "Shared access",
+              "digital_key": "Digital key",
+              "drive_recorder": "Drive recorder",
+              "navigation": "Navigation",
+              "other": "Other"
+            }
+          }
+        }
+      }
     }
   },
   "issues": {
