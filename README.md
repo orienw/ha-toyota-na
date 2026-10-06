@@ -186,9 +186,11 @@ The main lock reports the vehicle's door locks, like the Doors tile in Toyota's
 app. Check cargo sensors separately in automations that monitor whether the
 whole vehicle is secured; on vehicles with a tailgate, use Tailgate Lock.
 
-Current Location reports the same position as Last Parked Location, so it
-starts disabled for vehicles added from 2.11 on. Enable it in the entity's
-settings if you use it; vehicles already set up keep it as it was.
+Current Location only takes the position from Toyota's telemetry. Last Parked
+Location takes that same position and also newer ones from vehicle status, so
+Current Location can lag behind it. Current Location starts disabled for
+vehicles added from 2.11 on. Enable it in the entity's settings if you use it;
+vehicles already set up keep it as it was.
 
 The health sensors mirror the Health tab in Toyota's app and appear only when
 Toyota offers that tab's tiles for the vehicle. Home Assistant reads them
