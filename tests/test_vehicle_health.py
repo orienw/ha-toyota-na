@@ -145,7 +145,7 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await patch_client.get_software_update(client, "TESTVIN"), expected)
                 client.api_request.assert_awaited_once_with(
                     "GET", "https://onecdn.telematicsct.com/oa24mm/v1/ota/update/check",
-                    {"vin": "TESTVIN"}, envelope=True,
+                    {"vin": "TESTVIN", "X-APIVERSION": "v1"}, envelope=True,
                 )
 
     async def test_report_and_status_reject_error_bodies(self):
@@ -237,6 +237,8 @@ class HealthTabTests(unittest.TestCase):
             ({"updateAvailable": False, "notificationStatus": 2}, False, "initialized"),
             ({"notificationStatus": 7}, False, "initialized"),
             ({"notificationStatus": 4}, False, "failed"),
+            ({"notificationStatus": 4.0}, False, "failed"),
+            ({"notificationStatus": "4.0"}, False, "failed"),
             ({"notificationStatus": 3}, False, "up_to_date"),
             ({"notificationStatus": None}, False, "up_to_date"),
             ({"notificationStatus": True}, False, "up_to_date"),

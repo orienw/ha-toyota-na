@@ -395,8 +395,11 @@ async def get_service_campaigns(self, vin):
 
 
 async def get_software_update(self, vin):
-    """Toyota's software update check, sent with only the app's lowercase vin header."""
-    body = await self.api_request("GET", OTA_UPDATE_CHECK, {"vin": vin}, envelope=True)
+    """Toyota's software update check, with the app's lowercase vin header.
+
+    The app's shared interceptor adds X-APIVERSION v1 to every /oa24mm request.
+    """
+    body = await self.api_request("GET", OTA_UPDATE_CHECK, {"vin": vin, "X-APIVERSION": "v1"}, envelope=True)
     return body.get("payload") if isinstance(body, dict) else None
 
 

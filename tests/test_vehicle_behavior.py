@@ -222,10 +222,11 @@ class VehicleMetadataTests(unittest.TestCase):
 
         self.assertFalse(has_remote_subscription(metadata))
 
-    def test_remote_display_accepts_integers_and_digits_sent_as_text(self):
+    def test_remote_display_reads_integers_like_the_apps_gson_model(self):
         for value, expected in (
-            (0, 0), (7, 7), (11, 11), (42, 42), (" 7 ", 7), ("10", 10),
-            (True, None), (7.0, None), ("", None), ("seven", None), ("-1", None), (None, None),
+            (0, 0), (7, 7), (11, 11), (42, 42), (" 7 ", 7), ("10", 10), ("-1", -1),
+            (7.0, 7), ("7.0", 7), ("7e0", 7), (7.5, None), ("7.5", None),
+            (True, None), ("", None), ("seven", None), ("nan", None), ("inf", None), (None, None), ([7], None),
         ):
             with self.subTest(value=value):
                 self.assertEqual(normalize_remote_display(value), expected)

@@ -60,10 +60,18 @@ def app_flag(value: Any) -> bool:
 
 
 def app_int(value: Any) -> int | None:
-    """Read a JSON value as an integer, accepting digits sent as text."""
-    if isinstance(value, str) and value.strip().isdecimal():
-        return int(value)
-    return value if type(value) is int else None
+    """Read a JSON value as the app's Gson Integer fields do: integral numbers, also as text."""
+    if type(value) is int:
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            try:
+                value = float(value.strip())
+            except ValueError:
+                return None
+    return int(value) if type(value) is float and value.is_integer() else None
 
 
 def normalize_remote_display(value: Any) -> int | None:

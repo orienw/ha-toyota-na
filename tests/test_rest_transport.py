@@ -311,6 +311,16 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             "GET", "https://onecdn.telematicsct.com/oneapi/v2/electric/status?remote-control=charge%2F123",
         ))
 
+    async def test_software_update_check_reaches_the_cdn_path_with_app_headers(self):
+        self.response.json.return_value = {"payload": {"updateAvailable": True}, "status": {}}
+        result = await client_module.get_software_update(Client(), "TESTVIN")
+        call = self.session.request.call_args
+        self.assertEqual(call.args, ("GET", "https://onecdn.telematicsct.com/oa24mm/v1/ota/update/check"))
+        self.assertEqual(call.kwargs["headers"]["vin"], "TESTVIN")
+        self.assertEqual(call.kwargs["headers"]["X-APIVERSION"], "v1")
+        self.assertIn("AUTHORIZATION", call.kwargs["headers"])
+        self.assertEqual(result, {"updateAvailable": True})
+
     async def test_refused_charging_command_fails_without_waiting(self):
         for completion, message in (
             ({"status": 0, "result": 3, "errorCode": "EV-1005"}, r"refused the charging command \(result 3, error EV-1005\)"),
