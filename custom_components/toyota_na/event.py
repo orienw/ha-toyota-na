@@ -73,8 +73,11 @@ class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # Without a date, a notification present at startup counts as history.
-        self._seen.update(message_id for message_id, date, _ in self._notifications or [] if date is None)
+        # Everything present at startup is history, unless Toyota dates it after setup.
+        self._seen.update(
+            message_id for message_id, date, _ in self._notifications or []
+            if date is None or date <= self._started
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:

@@ -164,6 +164,17 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
         self.entity._handle_coordinator_update()
         self.assertEqual([data["message_id"] for _, data in self.events()], ["new"])
 
+    async def test_history_present_at_startup_stays_history_without_its_date(self):
+        self.unread.notifications = [
+            {"messageId": "before", "category": "RemoteCommand", "notificationDate": "2026-10-06T06:59:59Z"},
+        ]
+        self.coordinator.notify_listeners()
+        late = self.entities[-1]
+        await late.async_added_to_hass()
+        self.unread.notifications = [{"messageId": "before", "category": "RemoteCommand"}]
+        late._handle_coordinator_update()
+        self.assertEqual(getattr(late, "events", []), [])
+
     async def test_a_late_first_read_still_fires_notifications_after_startup(self):
         self.unread.notifications = [
             {"messageId": "before", "category": "RemoteCommand", "notificationDate": "2026-10-06T06:00:00Z"},
