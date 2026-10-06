@@ -188,8 +188,9 @@ app. Check cargo sensors separately in automations that monitor whether the
 whole vehicle is secured; on vehicles with a tailgate, use Tailgate Lock.
 
 The health sensors mirror the Health tab in Toyota's app and appear only when
-Toyota offers that tab's tiles for the vehicle. Home Assistant reads them at
-most once an hour without waking the vehicle. Vehicle Alerts, Safety Recalls,
+Toyota offers that tab's tiles for the vehicle. Home Assistant reads them
+hourly without waking the vehicle, retrying at each update until Toyota first
+answers. Vehicle Alerts, Safety Recalls,
 and Service Campaigns count items and list them in their attributes. Like
 Toyota's app, Engine Oil and Key Fob Battery read Toyota's English status text.
 

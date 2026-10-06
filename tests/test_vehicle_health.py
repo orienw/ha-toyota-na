@@ -68,17 +68,36 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_or_unusable_reads_keep_the_last_response(self):
         client = health_client()
         vehicle = behavior.make_vehicle(client)
-        await vehicle.update_health()
+        with patch.object(patch_base_vehicle.time, "monotonic", return_value=1000.0):
+            await vehicle.update_health()
         client.get_vehicle_health_report.side_effect = RuntimeError("[APIGW-403]")
-        client.get_vehicle_health_status.return_value = None
+        client.get_vehicle_health_status.return_value = {}
         client.get_service_campaigns.return_value = {"status": "error"}
-        vehicle._health["read_at"] -= patch_base_vehicle.HEALTH_READ_INTERVAL
-        with self.assertLogs(patch_base_vehicle.__name__, level="DEBUG"):
+        with (
+            patch.object(patch_base_vehicle.time, "monotonic", return_value=4600.0),
+            self.assertLogs(patch_base_vehicle.__name__, level="DEBUG"),
+        ):
             await vehicle.update_health()
         self.assertEqual(
             (vehicle.health["report"], vehicle.health["status"], vehicle.health["campaigns"]),
             (REPORT, STATUS, CAMPAIGNS),
         )
+
+    async def test_reads_retry_each_poll_until_they_first_answer(self):
+        client = health_client(
+            get_vehicle_health_report=AsyncMock(side_effect=[TimeoutError(), {}, REPORT, REPORT]),
+            get_service_campaigns=AsyncMock(return_value=[]),
+        )
+        vehicle = behavior.make_vehicle(client)
+        for now in (1000.0, 1600.0, 2200.0, 2800.0, 4599.0):
+            with patch.object(patch_base_vehicle.time, "monotonic", return_value=now):
+                await vehicle.update_health()
+        self.assertEqual(client.get_vehicle_health_report.await_count, 3)
+        self.assertEqual(client.get_service_campaigns.await_count, 1)
+        self.assertEqual((vehicle.health["report"], vehicle.health["campaigns"]), (REPORT, []))
+        with patch.object(patch_base_vehicle.time, "monotonic", return_value=5800.0):
+            await vehicle.update_health()
+        self.assertEqual(client.get_vehicle_health_report.await_count, 4)
 
     async def test_both_vehicle_classes_read_health_each_poll(self):
         for vehicle in (behavior.make_vehicle(types.SimpleNamespace()), behavior.make_17cy_vehicle(types.SimpleNamespace())):

@@ -551,11 +551,12 @@ class ToyotaVehicle(ABC):
         self._notifications = items
 
     async def update_health(self) -> None:
-        """Read vehicle health at most hourly, behind the app's feature gates."""
+        """Read vehicle health behind the app's feature gates.
+
+        Each response is read every poll until it answers, then hourly.
+        """
         now = time.monotonic()
-        if "read_at" in self._health and now - self._health["read_at"] < HEALTH_READ_INTERVAL:
-            return
-        self._health["read_at"] = now
+        read_at = self._health.setdefault("read_at", {})
         reads = (
             ("report", dict, ("vehicleHealthReport", "scheduleMaintenance", "safetyRecall", "serviceCampaign"),
              lambda: self._client.get_vehicle_health_report(self.vin, self.api_generation, self.region, self.brand)),
@@ -565,6 +566,8 @@ class ToyotaVehicle(ABC):
              lambda: self._client.get_service_campaigns(self.vin)),
         )
         for key, shape, features, read in reads:
+            if key in read_at and now - read_at[key] < HEALTH_READ_INTERVAL:
+                continue
             if not any(self.feature_enabled(feature) for feature in features):
                 continue
             # Each response keeps its last good value when a read fails.
@@ -575,8 +578,10 @@ class ToyotaVehicle(ABC):
             except Exception as e:
                 _LOGGER.debug("Error fetching vehicle health %s: %s", key, e)
                 continue
-            if isinstance(response, shape):
+            # An empty report is a failed read; an empty campaign list means none.
+            if isinstance(response, shape) and (response or shape is list):
                 self._health[key] = response
+                read_at[key] = now
 
     async def update_tire_pressure(self) -> None:
         # Toyota's app reads this endpoint only when tire pressure is enabled.
