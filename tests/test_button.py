@@ -42,6 +42,7 @@ class BinarySensorDeviceClass(Enum):
     RUNNING = "running"
     WINDOW = "window"
     PROBLEM = "problem"
+    UPDATE = "update"
 
 
 class SensorStateClass(Enum):

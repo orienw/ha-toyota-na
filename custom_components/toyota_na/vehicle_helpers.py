@@ -59,11 +59,16 @@ def app_flag(value: Any) -> bool:
     return value is True or (isinstance(value, str) and value.lower() == "true")
 
 
-def normalize_remote_display(value: Any) -> int | None:
-    """Return Toyota's remote activation state, accepting digits sent as text."""
+def app_int(value: Any) -> int | None:
+    """Read a JSON value as an integer, accepting digits sent as text."""
     if isinstance(value, str) and value.strip().isdecimal():
         return int(value)
     return value if type(value) is int else None
+
+
+def normalize_remote_display(value: Any) -> int | None:
+    """Return Toyota's remote activation state."""
+    return app_int(value)
 
 
 def is_electric_vehicle(vehicle: Mapping[str, Any]) -> bool:

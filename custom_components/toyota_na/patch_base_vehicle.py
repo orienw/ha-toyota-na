@@ -611,6 +611,9 @@ class ToyotaVehicle(ABC):
              lambda: self._client.get_vehicle_health_status(self.vin, self.api_generation, self.region, self.brand)),
             ("campaigns", list, ("safetyRecall", "serviceCampaign"),
              lambda: self._client.get_service_campaigns(self.vin)),
+            # The app checks for software updates behind the autoDrive flag.
+            ("software", dict, ("autoDrive",),
+             lambda: self._client.get_software_update(self.vin)),
         )
         for key, shape, features, read in reads:
             if key in read_at and now - read_at[key] < HEALTH_READ_INTERVAL:

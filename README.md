@@ -120,6 +120,7 @@ Sensors:
 * Engine Oil and Key Fob Battery
 * Vehicle Alerts, Safety Recalls, and Service Campaigns
 * Maintenance Required
+* Software Update
 * Last Update
 * Last Tire Pressure Update
 * Remote Access
@@ -198,6 +199,9 @@ hourly without waking the vehicle, retrying at each update until Toyota first
 answers. Vehicle Alerts, Safety Recalls,
 and Service Campaigns count items and list them in their attributes. Like
 Toyota's app, Engine Oil and Key Fob Battery read Toyota's English status text.
+Software Update shows whether Toyota offers a vehicle software update, with its
+name, version, and status in attributes, on vehicles where Toyota's app checks
+for updates.
 
 The Notifications event fires once for each new notification Toyota lists for
 the vehicle, such as remote command results, service warnings, and software

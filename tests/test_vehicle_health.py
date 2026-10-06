@@ -12,6 +12,7 @@ from custom_components.toyota_na import health_helpers, patch_base_vehicle, patc
 REPORT = {"vehicleStatus": {"engOilLevelStatus": "Normal"}}
 STATUS = {"warning": []}
 CAMPAIGNS = [{"campaignType": "REC-S", "campaignNumber": "24V123"}]
+SOFTWARE = {"notificationStatus": 1, "updateAvailable": True, "updateName": "Multimedia", "versionNumber": "2.1"}
 
 
 def health_client(**overrides):
@@ -19,6 +20,7 @@ def health_client(**overrides):
         "get_vehicle_health_report": AsyncMock(return_value=REPORT),
         "get_vehicle_health_status": AsyncMock(return_value=STATUS),
         "get_service_campaigns": AsyncMock(return_value=CAMPAIGNS),
+        "get_software_update": AsyncMock(return_value=SOFTWARE),
         **overrides,
     })
 
@@ -31,9 +33,10 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
         client.get_vehicle_health_report.assert_awaited_once_with("TESTVIN", "21MM", "US", "L")
         client.get_vehicle_health_status.assert_awaited_once_with("TESTVIN", "21MM", "US", "L")
         client.get_service_campaigns.assert_awaited_once_with("TESTVIN")
+        client.get_software_update.assert_awaited_once_with("TESTVIN")
         self.assertEqual(
             {key: value for key, value in vehicle.health.items() if key != "read_at"},
-            {"report": REPORT, "status": STATUS, "campaigns": CAMPAIGNS},
+            {"report": REPORT, "status": STATUS, "campaigns": CAMPAIGNS, "software": SOFTWARE},
         )
 
     async def test_each_read_follows_its_feature_flags(self):
@@ -44,6 +47,7 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
             ({"safetyRecall": 1}, {"report", "campaigns"}),
             ({"serviceCampaign": 1}, {"report", "campaigns"}),
             ({"vehicleDiagnostic": 1}, {"status"}),
+            ({"autoDrive": 1}, {"software"}),
             ({"vehicleHealthReport": 2, "vehicleDiagnostic": 2}, set()),
         ):
             with self.subTest(flags=flags):
@@ -130,6 +134,20 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
                     "VIN": "TESTVIN", "X-BRAND": "L", "x-region": "CA", "GENERATION": "21MM",
                 }, envelope=True)
 
+    async def test_software_update_check_uses_the_cdn_path_and_vin_header(self):
+        for body, expected in (
+            ({"payload": SOFTWARE, "status": {}}, SOFTWARE),
+            ({"status": {"messages": [{"description": "error"}]}}, None),
+            (None, None),
+        ):
+            with self.subTest(body=body):
+                client = types.SimpleNamespace(api_request=AsyncMock(return_value=body))
+                self.assertEqual(await patch_client.get_software_update(client, "TESTVIN"), expected)
+                client.api_request.assert_awaited_once_with(
+                    "GET", "https://onecdn.telematicsct.com/oa24mm/v1/ota/update/check",
+                    {"vin": "TESTVIN"}, envelope=True,
+                )
+
     async def test_report_and_status_reject_error_bodies(self):
         error = {"status": {"messages": [{"description": "VIN TESTVIN not found for account-guid"}]}}
         for body in (error, {**error, "payload": None}, [], None):
@@ -209,6 +227,27 @@ class HealthTabTests(unittest.TestCase):
         report["campaignsExists"] = "yes"
         report["serviceCampaigns"].append({"title": "Hidden"})
         self.assertEqual(len(health_helpers.service_campaigns(health)), 1)
+
+    def test_software_update_follows_the_apps_texts(self):
+        self.assertIsNone(health_helpers.software_update_available({}))
+        self.assertIsNone(health_helpers.software_update_details({"software": "unexpected"}))
+        for software, available, status in (
+            ({"updateAvailable": True, "notificationStatus": 1}, True, "available"),
+            ({"updateAvailable": "true", "notificationStatus": "5"}, True, "available"),
+            ({"updateAvailable": False, "notificationStatus": 2}, False, "initialized"),
+            ({"notificationStatus": 7}, False, "initialized"),
+            ({"notificationStatus": 4}, False, "failed"),
+            ({"notificationStatus": 3}, False, "up_to_date"),
+            ({"notificationStatus": None}, False, "up_to_date"),
+            ({"notificationStatus": True}, False, "up_to_date"),
+        ):
+            with self.subTest(software=software):
+                health = {"software": software}
+                self.assertIs(health_helpers.software_update_available(health), available)
+                self.assertEqual(health_helpers.software_update_details(health)["update_status"], status)
+        self.assertEqual(health_helpers.software_update_details({"software": SOFTWARE}), {
+            "update_name": "Multimedia", "version": "2.1", "update_status": "available", "notification_status": 1,
+        })
 
     def test_alerts_add_diagnostic_warnings_the_report_does_not_list(self):
         health = {
@@ -309,6 +348,20 @@ class HealthEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(available, {"Maintenance Required", "Key Fob Battery"})
         self.assertIsNone(self.entities["Safety Recalls"].native_value)
         self.assertIsNone(self.entities["Safety Recalls"].extra_state_attributes)
+
+    async def test_software_update_appears_behind_auto_drive(self):
+        other = ha.FakeVehicle(set(), vin="OTAVIN")
+        other.health = {"software": SOFTWARE}
+        other._feature_flags = {"autoDrive": 1}
+        self.coordinator.data.append(other)
+        self.coordinator.notify_listeners()
+        ota = next(entity for entity in self.entities.values() if entity.vin == "OTAVIN")
+        self.assertEqual(ota.sensor_name, "Software Update")
+        self.assertEqual(ota.device_class, ha.BinarySensorDeviceClass.UPDATE)
+        self.assertIs(ota.is_on, True)
+        self.assertEqual(ota.extra_state_attributes["version"], "2.1")
+        other._feature_flags = {"autoDrive": 2}
+        self.assertFalse(ota.available)
 
     async def test_vehicles_without_health_get_no_health_entities(self):
         other = ha.FakeVehicle(set(), vin="OTHERVIN")

@@ -11,6 +11,8 @@ from toyota_na.exceptions import AuthError, TokenExpired
 
 API_GATEWAY = "https://onecdn.telematicsct.com/oneapi/"
 REMOTE_ROUTE = "https://onecdn.telematicsct.com/v1/remote/route/"
+# Outside /oneapi/, like the app's CDN base URL.
+OTA_UPDATE_CHECK = "https://onecdn.telematicsct.com/oa24mm/v1/ota/update/check"
 GRAPHQL_ENDPOINT = "https://oa-api.telematicsct.com/graphql"
 GRAPHQL_WS_ENDPOINT = "wss://oa-api.telematicsct.com/graphql/realtime"
 GRAPHQL_HOST = "oa-api.telematicsct.com"
@@ -390,6 +392,12 @@ async def get_service_campaigns(self, vin):
     """Recalls and campaigns; Toyota's app accepts either envelope spelling."""
     body = await self.api_get("v2/service-campaign", {"vin": vin})
     return body["payLoad"] if isinstance(body, dict) and "payLoad" in body else body
+
+
+async def get_software_update(self, vin):
+    """Toyota's software update check, sent with only the app's lowercase vin header."""
+    body = await self.api_request("GET", OTA_UPDATE_CHECK, {"vin": vin}, envelope=True)
+    return body.get("payload") if isinstance(body, dict) else None
 
 
 async def get_notification_history(self):

@@ -13,6 +13,8 @@ from .health_helpers import (
     safety_recalls,
     service_campaigns,
     service_due,
+    software_update_available,
+    software_update_details,
     vehicle_alerts,
 )
 
@@ -444,6 +446,14 @@ HEALTH_BINARY_SENSORS = (
         "features": ("vehicleHealthReport", "scheduleMaintenance"),
         "value": maintenance_required,
         "attributes": service_due,
+    },
+    {
+        "name": "Software Update",
+        "icon": "mdi:update",
+        "device_class": BinarySensorDeviceClass.UPDATE,
+        "features": ("autoDrive",),
+        "value": software_update_available,
+        "attributes": software_update_details,
     },
 )
 

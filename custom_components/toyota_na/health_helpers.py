@@ -5,10 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from .vehicle_helpers import app_flag, app_string
+from .vehicle_helpers import app_flag, app_int, app_string
 
 _RECALL_TYPES = ("rec-s", "safety recalls")
 _CAMPAIGN_TYPES = ("lsc", "ssc", "service campaigns")
+# The app's software update texts by notificationStatus; anything else is up to date.
+_SOFTWARE_STATUS = {1: "available", 5: "available", 2: "initialized", 7: "initialized", 4: "failed"}
 
 
 def _text(value: Any) -> str:
@@ -126,3 +128,26 @@ def maintenance_required(health: Mapping) -> bool | None:
 def service_due(health: Mapping) -> dict | None:
     information = _report(health).get("maintenanceInformation")
     return {"service_due": app_string(information.get("serviceDue"))} if isinstance(information, Mapping) else None
+
+
+def _software(health: Mapping) -> Mapping | None:
+    software = health.get("software")
+    return software if isinstance(software, Mapping) else None
+
+
+def software_update_available(health: Mapping) -> bool | None:
+    software = _software(health)
+    return app_flag(software.get("updateAvailable")) if software is not None else None
+
+
+def software_update_details(health: Mapping) -> dict | None:
+    software = _software(health)
+    if software is None:
+        return None
+    status = app_int(software.get("notificationStatus"))
+    return {
+        "update_name": app_string(software.get("updateName")),
+        "version": app_string(software.get("versionNumber")),
+        "update_status": _SOFTWARE_STATUS.get(status, "up_to_date"),
+        "notification_status": status,
+    }
