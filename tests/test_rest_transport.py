@@ -311,6 +311,34 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             "GET", "https://onecdn.telematicsct.com/oneapi/v2/electric/status?remote-control=charge%2F123",
         ))
 
+    async def test_refused_charging_command_fails_without_waiting(self):
+        for completion, message in (
+            ({"status": 0, "result": 3, "errorCode": "EV-1005"}, r"refused the charging command \(result 3, error EV-1005\)"),
+            ({"status": 0, "result": -1}, r"refused the charging command \(result -1\)"),
+        ):
+            with self.subTest(completion=completion):
+                self.session.request.reset_mock()
+                self.response.json.side_effect = [
+                    {"payload": {"appRequestNo": "charge-123", "returnCode": "ONE-RES-10000"}},
+                    {"payload": {"remoteControlResult": completion}},
+                ]
+                with self.assertRaisesRegex(RuntimeError, message):
+                    await client_module.electric_command(Client(), "TESTVIN", "21MM", "immediate-charge")
+                self.assertEqual(self.session.request.call_count, 2)
+
+    async def test_unfinished_or_unusable_results_keep_waiting(self):
+        self.response.json.side_effect = [
+            {"payload": {"appRequestNo": "charge-123", "returnCode": "ONE-RES-10000"}},
+            {"payload": {"remoteControlResult": {"status": 1, "result": 5}}},
+            {"payload": {"remoteControlResult": {"status": 0, "result": True}}},
+            {"payload": {"remoteControlResult": {"status": False, "result": 3}}},
+            {"payload": {"remoteControlResult": {"status": 0, "result": "3"}}},
+            {"payload": {"remoteControlResult": {"status": 0, "result": 0}}},
+        ]
+        with patch.object(client_module.asyncio, "sleep", AsyncMock()):
+            await client_module.electric_command(Client(), "TESTVIN", "21MM", "immediate-charge")
+        self.assertEqual(self.session.request.call_count, 6)
+
     async def test_charging_acceptance_without_completion_times_out(self):
         self.response.json.return_value = {"payload": {"appRequestNo": "123", "returnCode": "ONE-RES-10000"}}
         with patch.object(client_module, "ELECTRIC_COMMAND_TIMEOUT", 0):

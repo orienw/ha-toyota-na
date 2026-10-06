@@ -573,6 +573,11 @@ async def electric_command(self, vin, generation, command, region="US", brand="T
         completion = (status or {}).get("remoteControlResult") or {}
         if completion.get("status") == 0 and completion.get("result") == 0:
             return status
+        # Like Toyota's app, a finished command with a non-zero result was refused.
+        state, outcome, error = completion.get("status"), completion.get("result"), completion.get("errorCode")
+        if type(state) is int and state == 0 and type(outcome) is int and outcome != 0:
+            detail = f"result {outcome}" + (f", error {error}" if isinstance(error, (str, int)) and error != "" else "")
+            raise RuntimeError(f"Toyota refused the charging command ({detail}).")
         await asyncio.sleep(min(2, max(0, deadline - loop.time())))
     raise RuntimeError("Toyota accepted the charging command but did not confirm completion.")
 
