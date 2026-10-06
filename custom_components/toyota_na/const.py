@@ -6,6 +6,16 @@ from homeassistant.const import PERCENTAGE, UnitOfPressure
 
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand
 
+from .health_helpers import (
+    engine_oil_low,
+    key_fob_battery_low,
+    maintenance_required,
+    safety_recalls,
+    service_campaigns,
+    service_due,
+    vehicle_alerts,
+)
+
 
 DOMAIN = "toyota_na"
 
@@ -362,6 +372,57 @@ REMOTE_ACCESS_STATES = {
     10: "stolen",
     11: "stolen_immobilizer",
 }
+
+# Toyota's Health tab tiles, gated on the app's feature flags.
+HEALTH_SENSORS = (
+    {
+        "name": "Safety Recalls",
+        "icon": "mdi:alert-octagon-outline",
+        "features": ("safetyRecall",),
+        "attribute": "recalls",
+        "items": safety_recalls,
+    },
+    {
+        "name": "Service Campaigns",
+        "icon": "mdi:car-wrench",
+        "features": ("serviceCampaign",),
+        "attribute": "campaigns",
+        "items": service_campaigns,
+    },
+    {
+        "name": "Vehicle Alerts",
+        "icon": "mdi:car-light-alert",
+        "features": ("vehicleHealthReport",),
+        "attribute": "alerts",
+        "items": vehicle_alerts,
+    },
+)
+
+HEALTH_BINARY_SENSORS = (
+    {
+        "name": "Engine Oil",
+        "icon": "mdi:oil",
+        "device_class": BinarySensorDeviceClass.PROBLEM,
+        "features": ("vehicleHealthReport",),
+        "value": engine_oil_low,
+    },
+    {
+        # The app shows the key fob whenever the report names it.
+        "name": "Key Fob Battery",
+        "icon": "mdi:key-wireless",
+        "device_class": BinarySensorDeviceClass.BATTERY,
+        "features": None,
+        "value": key_fob_battery_low,
+    },
+    {
+        "name": "Maintenance Required",
+        "icon": "mdi:wrench-clock",
+        "device_class": BinarySensorDeviceClass.PROBLEM,
+        "features": ("vehicleHealthReport", "scheduleMaintenance"),
+        "value": maintenance_required,
+        "attributes": service_due,
+    },
+)
 
 SENSORS = [
     {

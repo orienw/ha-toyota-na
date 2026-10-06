@@ -17,8 +17,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
-from .const import BINARY_SENSORS, DOMAIN
+from .const import BINARY_SENSORS, DOMAIN, HEALTH_BINARY_SENSORS
 from .entity_discovery import setup_entity_discovery
+from .health_helpers import health_reading
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,6 +80,9 @@ async def async_setup_entry(
                     name,
                     vehicle.vin,
                 )
+            for config in HEALTH_BINARY_SENSORS:
+                if health_reading(vehicle, config["features"], config["value"]) is not None:
+                    yield ToyotaHealthBinarySensor(config, coordinator, config["name"], vehicle.vin)
 
     setup_entity_discovery(
         config_entry,
@@ -163,3 +167,28 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
         ):
             return sensor.closed is not None
         return True
+
+
+class ToyotaHealthBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
+    def __init__(self, config, *args):
+        super().__init__(*args)
+        self._config = config
+        self._attr_icon = config["icon"]
+        self._attr_device_class = config["device_class"]
+
+    @property
+    def device_class(self):
+        return self._attr_device_class
+
+    @property
+    def available(self):
+        return self.is_on is not None
+
+    @property
+    def is_on(self):
+        return health_reading(self.vehicle, self._config["features"], self._config["value"])
+
+    @property
+    def extra_state_attributes(self):
+        attributes = self._config.get("attributes")
+        return health_reading(self.vehicle, self._config["features"], attributes) if attributes else None

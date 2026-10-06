@@ -35,6 +35,7 @@ module("homeassistant.helpers")
 
 
 class BinarySensorDeviceClass(Enum):
+    BATTERY = "battery"
     BATTERY_CHARGING = "battery_charging"
     DOOR = "door"
     LOCK = "lock"
@@ -265,6 +266,7 @@ runtime_spec.loader.exec_module(integration_runtime)
 
 class FakeVehicle:
     climate_schedules = {}
+    health = {}
     remote_display = None
 
     _feature_flags = None

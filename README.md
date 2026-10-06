@@ -118,8 +118,9 @@ Sensors:
 * Tire Pressure and Tire Pressure Warnings
 * Fuel Level
 * Odometer
-* Oil Status
-* Key Fob Battery Status
+* Engine Oil and Key Fob Battery
+* Vehicle Alerts, Safety Recalls, and Service Campaigns
+* Maintenance Required
 * Last Update
 * Last Tire Pressure Update
 * Remote Access
@@ -184,6 +185,12 @@ Native controls:
 The main lock reports the vehicle's door locks, like the Doors tile in Toyota's
 app. Check cargo sensors separately in automations that monitor whether the
 whole vehicle is secured; on vehicles with a tailgate, use Tailgate Lock.
+
+The health sensors mirror the Health tab in Toyota's app and appear only when
+Toyota offers that tab's tiles for the vehicle. Home Assistant reads them at
+most once an hour without waking the vehicle. Vehicle Alerts, Safety Recalls,
+and Service Campaigns count items and list them in their attributes. Like
+Toyota's app, Engine Oil and Key Fob Battery read Toyota's English status text.
 
 Climate preferences for Remote Start appear under device configuration.
 Remote Start runs the engine or climate system the vehicle supports.

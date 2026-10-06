@@ -4,9 +4,10 @@ import types
 import unittest
 from unittest.mock import AsyncMock, patch
 
+import test_button as ha
 import test_vehicle_behavior as behavior
 
-from custom_components.toyota_na import patch_base_vehicle, patch_client
+from custom_components.toyota_na import health_helpers, patch_base_vehicle, patch_client
 
 REPORT = {"vehicleStatus": {"engOilLevelStatus": "Normal"}}
 STATUS = {"warning": []}
@@ -109,3 +110,159 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
                 client.api_get.assert_awaited_once_with(endpoint, {
                     "VIN": "TESTVIN", "X-BRAND": "L", "x-region": "CA", "GENERATION": "21MM",
                 })
+
+
+class HealthTabTests(unittest.TestCase):
+    def test_recalls_merge_report_and_campaign_lists_like_the_app(self):
+        report = {
+            "recallsListExists": True,
+            "safetyRecallsList": [
+                {"title": "Airbag", "description": "Inflator", "remedy": "Replace", "nhtsarecallDate": "2024-01-02", "dealerReferenceID": "24V1"},
+                {"title": "Fuel pump", "dealerReferenceID": "24V2"},
+            ],
+        }
+        campaigns = [
+            {"campaignType": "REC-S", "campaignNumber": "24V1", "campaignTitle": "Airbag inflator",
+             "description": "Updated", "remedyDescription": "Replace inflator", "campaignDate": "2024-03-04"},
+            {"campaignType": "Safety Recalls", "campaignNumber": "24V9"},
+            {"campaignType": "LSC", "campaignNumber": "24V2", "campaignTitle": "Warranty", "description": "Extended"},
+        ]
+        self.assertEqual(health_helpers.safety_recalls({"report": report, "campaigns": campaigns}), [
+            {"title": "Fuel pump", "description": "", "remedy": "", "date": ""},
+            {"title": "Airbag inflator", "description": "Updated", "remedy": "Replace inflator", "date": "2024-03-04"},
+            {"title": "", "description": "", "remedy": "", "date": ""},
+        ])
+        report["recallsListExists"] = None
+        self.assertEqual(len(health_helpers.safety_recalls({"report": report})), 0)
+        self.assertIsNone(health_helpers.safety_recalls({"status": {}}))
+
+    def test_campaigns_need_text_but_still_replace_report_entries(self):
+        report = {
+            "campaignsExists": True,
+            "serviceCampaigns": [
+                {"title": "Software", "activityDesc": "Update ECU", "remedyDesc": "Reflash", "campaignDate": "2025", "dealerRefID": "21TA"},
+                {"title": "Coating", "dealerRefID": "21TB"},
+            ],
+        }
+        campaigns = [
+            {"campaignType": "ssc", "campaignNumber": "21TA", "campaignTitle": "", "description": "No title"},
+            {"campaignType": "Service Campaigns", "campaignNumber": "21TC", "campaignTitle": "Wiring",
+             "description": "Inspect", "recallDate": "2026-01-01", "campaignDate": "2025-12-01"},
+            {"campaignType": "rec-s", "campaignNumber": "21TB", "campaignTitle": "Recall", "description": "Not a campaign"},
+        ]
+        self.assertEqual(health_helpers.service_campaigns({"report": report, "campaigns": campaigns}), [
+            {"title": "Coating", "description": "", "remedy": "", "date": ""},
+            {"title": "Wiring", "description": "Inspect", "remedy": "", "date": "2026-01-01"},
+        ])
+        self.assertEqual(health_helpers.service_campaigns({"campaigns": []}), [])
+        self.assertIsNone(health_helpers.service_campaigns({}))
+
+    def test_alerts_add_diagnostic_warnings_the_report_does_not_list(self):
+        health = {
+            "report": {"vehicleAlertList": [
+                {"wngname": "Check engine", "wngdesc": "Visit a dealer"},
+                {"wngname": "Tire pressure", "wngdesc": ""},
+            ]},
+            "status": {"warning": [
+                {"wngdesc": "Check engine", "wngownersManual": "See manual"},
+                {"wngdesc": "Brake system", "wngownersManual": "Stop safely"},
+                {"wngdesc": "Brake system", "wngownersManual": "Duplicate"},
+                {"wngdesc": "Washer fluid"},
+            ]},
+        }
+        self.assertEqual(health_helpers.vehicle_alerts(health), [
+            {"title": "Check engine", "description": "Visit a dealer"},
+            {"title": "Brake system", "description": "Stop safely"},
+        ])
+        self.assertEqual(health_helpers.vehicle_alerts({"status": {"warning": "unexpected"}}), [])
+        self.assertIsNone(health_helpers.vehicle_alerts({"campaigns": []}))
+
+    def test_oil_key_fob_and_maintenance_match_the_app_text(self):
+        def report(**sections):
+            return {"report": sections}
+
+        for status, expected in (("Oil LOW", True), ("Normal", False), (None, None)):
+            with self.subTest(oil=status):
+                self.assertEqual(health_helpers.engine_oil_low(report(vehicleStatus={"engOilLevelStatus": status})), expected)
+        for status, expected in (
+            ({"smartKeyBatteryTitle": "Key fob", "smartKeyBatteryDesc": "Battery is low"}, True),
+            ({"smartKeyBatteryTitle": "Key fob", "smartKeyBatteryDesc": "Low battery"}, False),
+            ({"smartKeyBatteryTitle": "Key fob"}, False),
+            ({"smartKeyBatteryDesc": "Battery is low"}, None),
+        ):
+            with self.subTest(key_fob=status):
+                self.assertEqual(health_helpers.key_fob_battery_low(report(vehicleStatus=status)), expected)
+        for information, expected in (
+            ({"maintenanceRequired": True, "serviceDue": "Service due"}, True),
+            ({"maintenanceRequired": "true"}, False),
+            ({}, False),
+            (None, None),
+        ):
+            with self.subTest(maintenance=information):
+                self.assertEqual(health_helpers.maintenance_required(report(maintenanceInformation=information)), expected)
+        self.assertEqual(
+            health_helpers.service_due(report(maintenanceInformation={"serviceDue": "Service due"})),
+            {"service_due": "Service due"},
+        )
+        self.assertIsNone(health_helpers.engine_oil_low({"report": "unexpected"}))
+
+
+class HealthEntityTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.vehicle = ha.FakeVehicle(set())
+        self.vehicle.health = {
+            "report": {
+                "recallsListExists": True,
+                "safetyRecallsList": [{"title": "Airbag", "dealerReferenceID": "24V1"}],
+                "vehicleAlertList": [{"wngname": "Check engine", "wngdesc": "Visit a dealer"}],
+                "vehicleStatus": {"engOilLevelStatus": "Low", "smartKeyBatteryTitle": "Key fob", "smartKeyBatteryDesc": "Good"},
+                "maintenanceInformation": {"maintenanceRequired": False, "serviceDue": "5,000 miles"},
+            },
+            "campaigns": [],
+        }
+        self.coordinator = ha.DataUpdateCoordinator([self.vehicle])
+        self.entities = {}
+        for platform in (ha.sensor_platform, ha.binary_sensor_platform):
+            await platform.async_setup_entry(
+                ha.FakeHass(self.coordinator), ha.ConfigEntry(),
+                lambda added, update: self.entities.update({entity.sensor_name: entity for entity in added}),
+            )
+
+    async def test_health_entities_show_the_app_tiles(self):
+        self.assertEqual(set(self.entities), {
+            "Safety Recalls", "Service Campaigns", "Vehicle Alerts",
+            "Engine Oil", "Key Fob Battery", "Maintenance Required",
+        })
+        recalls = self.entities["Safety Recalls"]
+        self.assertEqual(recalls.native_value, 1)
+        self.assertEqual(recalls.extra_state_attributes["recalls"][0]["title"], "Airbag")
+        self.assertEqual(self.entities["Service Campaigns"].native_value, 0)
+        self.assertEqual(self.entities["Vehicle Alerts"].extra_state_attributes, {
+            "alerts": [{"title": "Check engine", "description": "Visit a dealer"}],
+        })
+        self.assertIs(self.entities["Engine Oil"].is_on, True)
+        self.assertIs(self.entities["Key Fob Battery"].is_on, False)
+        maintenance = self.entities["Maintenance Required"]
+        self.assertIs(maintenance.is_on, False)
+        self.assertEqual(maintenance.extra_state_attributes, {"service_due": "5,000 miles"})
+        self.assertEqual(maintenance.device_class, ha.BinarySensorDeviceClass.PROBLEM)
+        self.assertEqual(self.entities["Key Fob Battery"].device_class, ha.BinarySensorDeviceClass.BATTERY)
+
+    async def test_feature_flags_gate_each_tile(self):
+        self.vehicle._feature_flags = {"scheduleMaintenance": 1, "safetyRecall": 2}
+        available = {name for name, entity in self.entities.items() if entity.available}
+        self.assertEqual(available, {"Maintenance Required", "Key Fob Battery"})
+        self.assertIsNone(self.entities["Safety Recalls"].native_value)
+        self.assertIsNone(self.entities["Safety Recalls"].extra_state_attributes)
+
+    async def test_vehicles_without_health_get_no_health_entities(self):
+        other = ha.FakeVehicle(set(), vin="OTHERVIN")
+        self.coordinator.data.append(other)
+        self.coordinator.notify_listeners()
+        self.assertFalse(any(entity.vin == "OTHERVIN" for entity in self.entities.values()))
+        other.health = {"status": {"warning": []}}
+        self.coordinator.notify_listeners()
+        self.assertEqual(
+            {name for name, entity in self.entities.items() if entity.vin == "OTHERVIN"},
+            {"Vehicle Alerts"},
+        )

@@ -14,9 +14,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util.unit_conversion import PressureConverter
 
 from .base_entity import ToyotaNABaseEntity
-from .const import DOMAIN, REMOTE_ACCESS_STATES, SENSORS
+from .const import DOMAIN, HEALTH_SENSORS, REMOTE_ACCESS_STATES, SENSORS
 from .entity_discovery import setup_entity_discovery
 from .climate_schedule_helpers import local_climate_schedule
+from .health_helpers import health_reading
 
 # Toyota reports tire pressure units in varying case, such as "kpa".
 _PRESSURE_UNITS = {"psi": UnitOfPressure.PSI, "kpa": UnitOfPressure.KPA, "bar": UnitOfPressure.BAR}
@@ -38,6 +39,9 @@ async def async_setup_entry(
                 yield ToyotaClimateSchedulesSensor(coordinator, "Climate Schedules", vehicle.vin)
             if vehicle.remote_display is not None:
                 yield ToyotaRemoteAccessSensor(coordinator, "Remote Access", vehicle.vin)
+            for config in HEALTH_SENSORS:
+                if health_reading(vehicle, config["features"], config["items"]) is not None:
+                    yield ToyotaHealthSensor(config, coordinator, config["name"], vehicle.vin)
             for config in SENSORS:
                 feature = vehicle.features.get(config["feature"])
                 if not isinstance(feature, ToyotaNumeric):
@@ -101,6 +105,33 @@ class ToyotaRemoteAccessSensor(ToyotaNABaseEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         return {"raw_value": self.vehicle.remote_display} if self.available else None
+
+
+class ToyotaHealthSensor(ToyotaNABaseEntity, SensorEntity):
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, config, *args):
+        super().__init__(*args)
+        self._config = config
+        self._attr_icon = config["icon"]
+
+    @property
+    def _items(self):
+        return health_reading(self.vehicle, self._config["features"], self._config["items"])
+
+    @property
+    def available(self):
+        return self._items is not None
+
+    @property
+    def native_value(self):
+        items = self._items
+        return None if items is None else len(items)
+
+    @property
+    def extra_state_attributes(self):
+        items = self._items
+        return None if items is None else {self._config["attribute"]: items}
 
 
 class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
