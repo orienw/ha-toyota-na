@@ -165,6 +165,32 @@ class HealthTabTests(unittest.TestCase):
         self.assertEqual(health_helpers.service_campaigns({"campaigns": []}), [])
         self.assertIsNone(health_helpers.service_campaigns({}))
 
+    def test_fields_decode_like_the_apps_gson_models(self):
+        report = {
+            "recallsListExists": "True",
+            "safetyRecallsList": [{"title": 2024, "dealerReferenceID": "24001"}, {"title": "Kept"}],
+            "campaignsExists": "true",
+            "serviceCampaigns": [{"title": "Software", "activityDesc": True, "dealerRefID": 21}],
+            "vehicleStatus": {"engOilLevelStatus": 0},
+            "maintenanceInformation": {"serviceDue": 5000},
+        }
+        campaigns = [
+            {"campaignType": "rec-s", "campaignNumber": 24001.5, "campaignTitle": "Not a match"},
+            {"campaignType": "lsc", "campaignNumber": 21, "campaignTitle": "Replaced", "description": "By number"},
+        ]
+        health = {"report": report, "campaigns": campaigns}
+        self.assertEqual([item["title"] for item in health_helpers.safety_recalls(health)], ["2024", "Kept", "Not a match"])
+        self.assertEqual(health_helpers.service_campaigns(health), [
+            {"title": "Replaced", "description": "By number", "remedy": "", "date": ""},
+        ])
+        self.assertIs(health_helpers.engine_oil_low(health), False)
+        self.assertEqual(health_helpers.service_due(health), {"service_due": "5000"})
+        report["serviceCampaigns"][0]["dealerRefID"] = "21"
+        self.assertEqual(len(health_helpers.service_campaigns(health)), 1)
+        report["campaignsExists"] = "yes"
+        report["serviceCampaigns"].append({"title": "Hidden"})
+        self.assertEqual(len(health_helpers.service_campaigns(health)), 1)
+
     def test_alerts_add_diagnostic_warnings_the_report_does_not_list(self):
         health = {
             "report": {"vehicleAlertList": [
@@ -202,7 +228,9 @@ class HealthTabTests(unittest.TestCase):
                 self.assertEqual(health_helpers.key_fob_battery_low(report(vehicleStatus=status)), expected)
         for information, expected in (
             ({"maintenanceRequired": True, "serviceDue": "Service due"}, True),
-            ({"maintenanceRequired": "true"}, False),
+            ({"maintenanceRequired": "TRUE"}, True),
+            ({"maintenanceRequired": "false"}, False),
+            ({"maintenanceRequired": 1}, False),
             ({}, False),
             (None, None),
         ):

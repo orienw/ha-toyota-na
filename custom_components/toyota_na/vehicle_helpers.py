@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
+import json
 from typing import Any
 
 _POSITION_STATES = {
@@ -42,6 +43,20 @@ def has_remote_subscription(vehicle: Mapping[str, Any]) -> bool:
     if isinstance(subscription_status, str) and subscription_status:
         return subscription_status.upper() in ("ACTIVE", "SUBSCRIBED")
     return vehicle.get("remoteSubscriptionExists") is True
+
+
+def app_string(value: Any) -> str | None:
+    """Read a JSON value as the app's Gson String fields do: scalars become text."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bool, int, float)):
+        return json.dumps(value)
+    return None
+
+
+def app_flag(value: Any) -> bool:
+    """Read a JSON value as the app's Gson Boolean fields do, including "true" as text."""
+    return value is True or (isinstance(value, str) and value.lower() == "true")
 
 
 def normalize_remote_display(value: Any) -> int | None:

@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from .vehicle_helpers import app_flag, app_string
+
 _RECALL_TYPES = ("rec-s", "safety recalls")
 _CAMPAIGN_TYPES = ("lsc", "ssc", "service campaigns")
 
 
 def _text(value: Any) -> str:
-    return value if isinstance(value, str) else ""
+    return app_string(value) or ""
 
 
 def _items(value: Any) -> list[Mapping]:
@@ -39,7 +41,8 @@ def _merge(entries, campaigns, types, *, require_text=False) -> list[dict]:
     for item in _items(campaigns):
         if _text(item.get("campaignType")).lower() not in types:
             continue
-        entries = [(reference, entry) for reference, entry in entries if reference != item.get("campaignNumber")]
+        number = app_string(item.get("campaignNumber"))
+        entries = [(reference, entry) for reference, entry in entries if reference != number]
         title, description = _text(item.get("campaignTitle")), _text(item.get("description"))
         if not require_text or (title and description):
             entries.append(("", {
@@ -64,7 +67,7 @@ def safety_recalls(health: Mapping) -> list[dict] | None:
             "date": _text(item.get("nhtsarecallDate")),
         })
         for item in _items(report.get("safetyRecallsList"))
-    ] if report.get("recallsListExists") is True else []
+    ] if app_flag(report.get("recallsListExists")) else []
     return _merge(entries, health.get("campaigns"), _RECALL_TYPES)
 
 
@@ -81,7 +84,7 @@ def service_campaigns(health: Mapping) -> list[dict] | None:
             "date": _text(item.get("campaignDate")),
         })
         for item in _items(report.get("serviceCampaigns"))
-    ] if report.get("campaignsExists") is True else []
+    ] if app_flag(report.get("campaignsExists")) else []
     return _merge(entries, health.get("campaigns"), _CAMPAIGN_TYPES, require_text=True)
 
 
@@ -103,8 +106,8 @@ def vehicle_alerts(health: Mapping) -> list[dict] | None:
 
 
 def engine_oil_low(health: Mapping) -> bool | None:
-    status = _vehicle_status(health).get("engOilLevelStatus")
-    return "low" in status.lower() if isinstance(status, str) else None
+    status = app_string(_vehicle_status(health).get("engOilLevelStatus"))
+    return "low" in status.lower() if status is not None else None
 
 
 def key_fob_battery_low(health: Mapping) -> bool | None:
@@ -117,9 +120,9 @@ def key_fob_battery_low(health: Mapping) -> bool | None:
 
 def maintenance_required(health: Mapping) -> bool | None:
     information = _report(health).get("maintenanceInformation")
-    return information.get("maintenanceRequired") is True if isinstance(information, Mapping) else None
+    return app_flag(information.get("maintenanceRequired")) if isinstance(information, Mapping) else None
 
 
 def service_due(health: Mapping) -> dict | None:
     information = _report(health).get("maintenanceInformation")
-    return {"service_due": information.get("serviceDue")} if isinstance(information, Mapping) else None
+    return {"service_due": app_string(information.get("serviceDue"))} if isinstance(information, Mapping) else None
