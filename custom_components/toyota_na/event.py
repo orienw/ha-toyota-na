@@ -80,9 +80,13 @@ class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
     def _handle_coordinator_update(self) -> None:
         notifications = self._notifications or []
         for message_id, date, item in sorted(notifications, key=lambda notification: notification[1] or _OLDEST):
-            if message_id in self._seen or (date is not None and date <= self._started):
+            if message_id in self._seen:
                 continue
+            # Remember skipped IDs too, so a later read that drops the date
+            # can't make an old notification fire.
             self._seen.add(message_id)
+            if date is not None and date <= self._started:
+                continue
             self._trigger_event(notification_event_type(item.get("category")), {
                 "message_id": message_id,
                 "category": item.get("category"),

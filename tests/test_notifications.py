@@ -160,6 +160,9 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.entity._handle_coordinator_update()
         self.assertEqual([data["message_id"] for _, data in self.events()], ["new"])
+        self.vehicle.notifications = [{"messageId": "restart", "category": "RemoteCommand", "notificationDate": None}]
+        self.entity._handle_coordinator_update()
+        self.assertEqual([data["message_id"] for _, data in self.events()], ["new"])
 
     async def test_a_late_first_read_still_fires_notifications_after_startup(self):
         self.unread.notifications = [
