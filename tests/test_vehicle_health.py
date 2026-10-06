@@ -105,11 +105,19 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
             (patch_client.get_vehicle_health_status, "v1/vehiclehealth/status"),
         ):
             with self.subTest(endpoint=endpoint):
-                client = types.SimpleNamespace(api_get=AsyncMock(return_value=REPORT))
-                await function(client, "TESTVIN", "21MM", "CA", "L")
-                client.api_get.assert_awaited_once_with(endpoint, {
+                client = types.SimpleNamespace(api_request=AsyncMock(return_value={"payload": REPORT}))
+                self.assertEqual(await function(client, "TESTVIN", "21MM", "CA", "L"), REPORT)
+                client.api_request.assert_awaited_once_with("GET", endpoint, {
                     "VIN": "TESTVIN", "X-BRAND": "L", "x-region": "CA", "GENERATION": "21MM",
-                })
+                }, envelope=True)
+
+    async def test_report_and_status_reject_error_bodies(self):
+        error = {"status": {"messages": [{"description": "VIN TESTVIN not found for account-guid"}]}}
+        for body in (error, {**error, "payload": None}, [], None):
+            for function in (patch_client.get_vehicle_health_report, patch_client.get_vehicle_health_status):
+                with self.subTest(body=body, function=function.__name__):
+                    client = types.SimpleNamespace(api_request=AsyncMock(return_value=body))
+                    self.assertIsNone(await function(client, "TESTVIN", "21MM", "CA", "L"))
 
 
 class HealthTabTests(unittest.TestCase):

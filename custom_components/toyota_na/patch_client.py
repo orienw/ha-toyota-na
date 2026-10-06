@@ -368,18 +368,22 @@ async def get_tire_pressure(self, vin, generation, region="US", brand="T"):
     )
 
 
-async def get_vehicle_health_report(self, vin, generation, region="US", brand="T"):
-    return await self.api_get(
-        "v1/vehiclehealth/report",
+async def _vehicle_health(self, endpoint, vin, generation, region, brand):
+    """Return only the payload; Toyota can answer errors with a 2xx body and no payload."""
+    body = await self.api_request(
+        "GET", endpoint,
         _vehicle_headers(vin, region, GENERATION=generation, **{"X-BRAND": brand}),
+        envelope=True,
     )
+    return body.get("payload") if isinstance(body, dict) else None
+
+
+async def get_vehicle_health_report(self, vin, generation, region="US", brand="T"):
+    return await _vehicle_health(self, "v1/vehiclehealth/report", vin, generation, region, brand)
 
 
 async def get_vehicle_health_status(self, vin, generation, region="US", brand="T"):
-    return await self.api_get(
-        "v1/vehiclehealth/status",
-        _vehicle_headers(vin, region, GENERATION=generation, **{"X-BRAND": brand}),
-    )
+    return await _vehicle_health(self, "v1/vehiclehealth/status", vin, generation, region, brand)
 
 
 async def get_service_campaigns(self, vin):
