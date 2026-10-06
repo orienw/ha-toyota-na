@@ -696,8 +696,8 @@ class DeviceTrackerTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            [entity.sensor_name for entity in entities],
-            ["Last Parked Location", "Current Location"],
+            [(entity.sensor_name, entity._attr_entity_registry_enabled_default) for entity in entities],
+            [("Last Parked Location", True), ("Current Location", False)],
         )
 
 

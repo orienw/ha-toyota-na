@@ -113,8 +113,7 @@ Sensors:
 * Door Lock Status
 * Window/Moonroof Status
 * Trunk or Tailgate Status
-* Vehicle Location
-* Last Parked Location
+* Last Parked Location, and Current Location (disabled by default)
 * Tire Pressure and Tire Pressure Warnings
 * Fuel Level
 * Odometer
@@ -186,6 +185,10 @@ Native controls:
 The main lock reports the vehicle's door locks, like the Doors tile in Toyota's
 app. Check cargo sensors separately in automations that monitor whether the
 whole vehicle is secured; on vehicles with a tailgate, use Tailgate Lock.
+
+Current Location reports the same position as Last Parked Location, so it
+starts disabled for vehicles added from 2.11 on. Enable it in the entity's
+settings if you use it; vehicles already set up keep it as it was.
 
 The health sensors mirror the Health tab in Toyota's app and appear only when
 Toyota offers that tab's tiles for the vehicle. Home Assistant reads them

@@ -63,6 +63,9 @@ class ToyotaDeviceTracker(ToyotaNABaseEntity, TrackerEntity):
     def __init__(self, feature: VehicleFeatures, *args: Any):
         super().__init__(*args)
         self._feature = feature
+        # Current Location repeats Last Parked from the same telemetry, so it
+        # starts disabled for entities new to the registry.
+        self._attr_entity_registry_enabled_default = feature != VehicleFeatures.RealTimeLocation
 
     @property
     def icon(self) -> str:
