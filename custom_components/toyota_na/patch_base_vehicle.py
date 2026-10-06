@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 import asyncio
 from contextlib import asynccontextmanager
+import logging
+import time
 from enum import Enum, auto, unique
 from typing import Optional, Union
 
@@ -24,7 +26,11 @@ from .charging_helpers import (
     schedule_matches,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 SCHEDULE_UPDATE_TIMEOUT = 90
+# Toyota's app reads vehicle health once per dashboard load.
+HEALTH_READ_INTERVAL = 3600
 
 
 @unique
@@ -251,6 +257,7 @@ class ToyotaVehicle(ABC):
         self._charge_settings = {}
         self._engine_details = {}
         self._schedule_lock = asyncio.Lock()
+        self._health = {}
 
     @abstractmethod
     async def poll_vehicle_refresh(self) -> None:
@@ -527,6 +534,39 @@ class ToyotaVehicle(ABC):
             if result.get("returnCode") not in (None, "ONE-RES-10000") and result.get("message"):
                 message = result["message"]
             await self._wait_for_schedules(self._read_climate_schedules, confirmed, message)
+
+    @property
+    def health(self) -> dict:
+        """Toyota's latest vehicle health responses, kept between polls."""
+        return self._health
+
+    async def update_health(self) -> None:
+        """Read vehicle health at most hourly, behind the app's feature gates."""
+        now = time.monotonic()
+        if "read_at" in self._health and now - self._health["read_at"] < HEALTH_READ_INTERVAL:
+            return
+        self._health["read_at"] = now
+        reads = (
+            ("report", dict, ("vehicleHealthReport", "scheduleMaintenance", "safetyRecall", "serviceCampaign"),
+             lambda: self._client.get_vehicle_health_report(self.vin, self.api_generation, self.region, self.brand)),
+            ("status", dict, ("vehicleDiagnostic",),
+             lambda: self._client.get_vehicle_health_status(self.vin, self.api_generation, self.region, self.brand)),
+            ("campaigns", list, ("safetyRecall", "serviceCampaign"),
+             lambda: self._client.get_service_campaigns(self.vin)),
+        )
+        for key, shape, features, read in reads:
+            if not any(self.feature_enabled(feature) for feature in features):
+                continue
+            # Each response keeps its last good value when a read fails.
+            try:
+                response = await read()
+            except AuthError:
+                raise
+            except Exception as e:
+                _LOGGER.debug("Error fetching vehicle health %s: %s", key, e)
+                continue
+            if isinstance(response, shape):
+                self._health[key] = response
 
     async def update_tire_pressure(self) -> None:
         # Toyota's app reads this endpoint only when tire pressure is enabled.
@@ -815,6 +855,7 @@ class ToyotaVehicle(ABC):
         self._charge_settings = previous.charge_settings
         self._engine_details = previous._engine_details
         self._schedule_lock = previous._schedule_lock
+        self._health = previous._health
         return True
 
     @property

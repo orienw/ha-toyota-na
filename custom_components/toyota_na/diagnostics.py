@@ -70,7 +70,7 @@ async def async_get_config_entry_diagnostics(
         vehicle_list["unexpected"] = type(vehicle_list["data"]).__name__
         vehicle_list["data"] = None
     user_vehicle_list = vehicle_list["data"] or []
-    # Climate schedules as the last poll read them, to see what Toyota reports.
+    # Climate schedules and vehicle health as the last poll read them, to see what Toyota reports.
     coordinator = hass.data[DOMAIN][config_entry.entry_id].get("coordinator")
     vehicles = {vehicle.vin: vehicle for vehicle in getattr(coordinator, "data", None) or []}
     
@@ -79,6 +79,7 @@ async def async_get_config_entry_diagnostics(
     engine_status = []
     electric_status = []
     climate_schedules = []
+    vehicle_health = []
 
     for vehicle in user_vehicle_list:
         if not isinstance(vehicle, dict) or not isinstance(vehicle.get("vin"), str):
@@ -172,6 +173,8 @@ async def async_get_config_entry_diagnostics(
         engine_status.append(user_engine_status)
         electric_status.append(user_electric_status)
         climate_schedules.append(getattr(vehicles.get(vin), "climate_schedules", None) or None)
+        health = getattr(vehicles.get(vin), "health", None) or {}
+        vehicle_health.append({key: value for key, value in health.items() if key != "read_at"} or None)
 
     return async_redact_data(
         {
@@ -182,6 +185,7 @@ async def async_get_config_entry_diagnostics(
             "engine_status": {"data": engine_status},
             "electric_status": {"data": electric_status},
             "climate_schedules": {"data": climate_schedules},
+            "vehicle_health": {"data": vehicle_health},
         },
         TO_REDACT,
     )

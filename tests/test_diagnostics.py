@@ -86,6 +86,27 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
             result = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
         self.assertEqual([schedules, None], result["climate_schedules"]["data"])
 
+    async def test_vehicle_health_comes_from_the_last_poll(self):
+        health = {"read_at": 1000.0, "report": {"vehicleStatus": {}}, "campaigns": []}
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(return_value=[{"vin": vin, "generation": "24MM"} for vin in ("READ", "OTHER")]),
+            graphql_get_vehicle_status=AsyncMock(return_value={}),
+            get_telemetry=AsyncMock(return_value={}),
+        )
+        coordinator = types.SimpleNamespace(data=[
+            types.SimpleNamespace(vin="READ", health=health),
+            types.SimpleNamespace(vin="OTHER", health={"read_at": 1000.0}),
+        ])
+        entry = ha.ConfigEntry()
+        hass = ha.FakeHass(coordinator)
+        hass.data[ha.DOMAIN][entry.entry_id]["toyota_na_client"] = client
+        with patch.object(diagnostics, "async_redact_data", side_effect=lambda data, keys: data):
+            result = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
+        self.assertEqual(
+            [{"report": {"vehicleStatus": {}}, "campaigns": []}, None],
+            result["vehicle_health"]["data"],
+        )
+
     async def test_report_survives_a_failed_or_unusable_vehicle_list(self):
         def failure(error, code=None):
             if code is not None:

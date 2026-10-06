@@ -212,6 +212,13 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         except Exception as e:
             _LOGGER.debug("Error fetching climate schedules: %s", e)
 
+        try:
+            await self.update_health()
+        except AuthError:
+            raise
+        except Exception as e:
+            _LOGGER.debug("Error fetching vehicle health: %s", e)
+
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
         if not self.supports_command(RemoteRequestCommand.Refresh):

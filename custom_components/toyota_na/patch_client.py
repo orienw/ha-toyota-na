@@ -368,6 +368,26 @@ async def get_tire_pressure(self, vin, generation, region="US", brand="T"):
     )
 
 
+async def get_vehicle_health_report(self, vin, generation, region="US", brand="T"):
+    return await self.api_get(
+        "v1/vehiclehealth/report",
+        _vehicle_headers(vin, region, GENERATION=generation, **{"X-BRAND": brand}),
+    )
+
+
+async def get_vehicle_health_status(self, vin, generation, region="US", brand="T"):
+    return await self.api_get(
+        "v1/vehiclehealth/status",
+        _vehicle_headers(vin, region, GENERATION=generation, **{"X-BRAND": brand}),
+    )
+
+
+async def get_service_campaigns(self, vin):
+    """Recalls and campaigns; Toyota's app accepts either envelope spelling."""
+    body = await self.api_get("v2/service-campaign", {"vin": vin})
+    return body["payLoad"] if isinstance(body, dict) and "payLoad" in body else body
+
+
 async def _auth_headers(self):
     return {
         **_app_headers(),
