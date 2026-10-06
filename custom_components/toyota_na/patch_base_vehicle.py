@@ -258,6 +258,7 @@ class ToyotaVehicle(ABC):
         self._engine_details = {}
         self._schedule_lock = asyncio.Lock()
         self._health = {}
+        self._notifications = None
 
     @abstractmethod
     async def poll_vehicle_refresh(self) -> None:
@@ -539,6 +540,15 @@ class ToyotaVehicle(ABC):
     def health(self) -> dict:
         """Toyota's latest vehicle health responses, kept between polls."""
         return self._health
+
+    @property
+    def notifications(self):
+        """This vehicle's items from Toyota's notification history, None until read."""
+        return self._notifications
+
+    @notifications.setter
+    def notifications(self, items) -> None:
+        self._notifications = items
 
     async def update_health(self) -> None:
         """Read vehicle health at most hourly, behind the app's feature gates."""
@@ -856,6 +866,7 @@ class ToyotaVehicle(ABC):
         self._engine_details = previous._engine_details
         self._schedule_lock = previous._schedule_lock
         self._health = previous._health
+        self._notifications = previous._notifications
         return True
 
     @property

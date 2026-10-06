@@ -39,7 +39,11 @@ TO_REDACT = {
     "vin",
     "latitude",
     "longitude",
+    "lat",  # notification history
+    "lon",
 }
+# Notification fields that describe an item without Toyota's text or location.
+_NOTIFICATION_FIELDS = ("messageId", "category", "displayCategory", "subcategory", "type", "status", "notificationDate", "isRead")
 
 
 async def async_get_config_entry_diagnostics(
@@ -80,6 +84,7 @@ async def async_get_config_entry_diagnostics(
     electric_status = []
     climate_schedules = []
     vehicle_health = []
+    notification_history = []
 
     for vehicle in user_vehicle_list:
         if not isinstance(vehicle, dict) or not isinstance(vehicle.get("vin"), str):
@@ -175,6 +180,10 @@ async def async_get_config_entry_diagnostics(
         climate_schedules.append(getattr(vehicles.get(vin), "climate_schedules", None) or None)
         health = getattr(vehicles.get(vin), "health", None) or {}
         vehicle_health.append({key: value for key, value in health.items() if key != "read_at"} or None)
+        notifications = getattr(vehicles.get(vin), "notifications", None)
+        notification_history.append([
+            {key: item[key] for key in _NOTIFICATION_FIELDS if key in item} for item in notifications
+        ] if isinstance(notifications, list) else None)
 
     return async_redact_data(
         {
@@ -186,6 +195,7 @@ async def async_get_config_entry_diagnostics(
             "electric_status": {"data": electric_status},
             "climate_schedules": {"data": climate_schedules},
             "vehicle_health": {"data": vehicle_health},
+            "notification_history": {"data": notification_history},
         },
         TO_REDACT,
     )

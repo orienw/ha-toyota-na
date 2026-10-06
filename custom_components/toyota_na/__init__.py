@@ -37,6 +37,7 @@ from .patch_client import (
     get_vehicle_health_report,
     get_vehicle_health_status,
     get_service_campaigns,
+    get_notification_history,
     get_vehicle_status_17cyplus,
     get_vehicle_status_21mm,
     get_vehicle_status_route,
@@ -78,6 +79,7 @@ ToyotaOneClient.get_tire_pressure = get_tire_pressure
 ToyotaOneClient.get_vehicle_health_report = get_vehicle_health_report
 ToyotaOneClient.get_vehicle_health_status = get_vehicle_health_status
 ToyotaOneClient.get_service_campaigns = get_service_campaigns
+ToyotaOneClient.get_notification_history = get_notification_history
 ToyotaOneClient.get_vehicle_status_17cyplus = get_vehicle_status_17cyplus
 ToyotaOneClient.get_vehicle_status_21mm = get_vehicle_status_21mm
 ToyotaOneClient.get_vehicle_status_route = get_vehicle_status_route

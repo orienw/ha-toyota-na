@@ -1,4 +1,7 @@
+import logging
+
 from toyota_na.client import ToyotaOneClient
+from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import (
     ApiVehicleGeneration,
     ToyotaVehicle,
@@ -9,6 +12,8 @@ from toyota_na.vehicle.vehicle_generations.seventeen_cy_plus import (
 )
 
 from .vehicle_helpers import has_remote_subscription, is_electric_vehicle, normalize_remote_display
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
@@ -74,5 +79,28 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
         vehicles.append(vehicle)
         state_cache[vehicle.vin] = vehicle
 
+    if vehicles:
+        await _read_notification_history(client, vehicles)
     client._vehicle_state_cache = state_cache
     return vehicles
+
+
+async def _read_notification_history(client: ToyotaOneClient, vehicles: list[ToyotaVehicle]) -> None:
+    """Give each vehicle its notifications, keeping the last list when the read fails."""
+    try:
+        history = await client.get_notification_history()
+    except AuthError:
+        raise
+    except Exception as e:
+        _LOGGER.debug("Error fetching notification history: %s", e)
+        return
+    if not isinstance(history, list):
+        return
+    items = [
+        (item.get("vin") or group.get("vin"), item)
+        for group in history if isinstance(group, dict) and isinstance(group.get("notifications"), list)
+        for item in group["notifications"] if isinstance(item, dict)
+    ]
+    for vehicle in vehicles:
+        # Items without a VIN are account notices, such as payments.
+        vehicle.notifications = [item for vin, item in items if vin == vehicle.vin]

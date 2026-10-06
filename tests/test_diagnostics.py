@@ -107,6 +107,33 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
             result["vehicle_health"]["data"],
         )
 
+    async def test_notification_history_keeps_only_structured_fields(self):
+        item = {
+            "messageId": "1", "category": "RemoteCommand", "displayCategory": "Remote", "subcategory": None,
+            "type": "alert", "status": "completed", "notificationDate": "2026-10-06T07:00:00Z", "isRead": False,
+            "title": "Doors locked", "message": "Locked at 1 Main St", "iconUrl": "https://example.com",
+            "lat": 37.1, "lon": -122.1, "vin": "READ", "readTimestamp": None,
+        }
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(return_value=[{"vin": vin, "generation": "24MM"} for vin in ("READ", "UNREAD")]),
+            graphql_get_vehicle_status=AsyncMock(return_value={}),
+            get_telemetry=AsyncMock(return_value={}),
+        )
+        coordinator = types.SimpleNamespace(data=[
+            types.SimpleNamespace(vin="READ", notifications=[item]),
+            types.SimpleNamespace(vin="UNREAD", notifications=None),
+        ])
+        entry = ha.ConfigEntry()
+        hass = ha.FakeHass(coordinator)
+        hass.data[ha.DOMAIN][entry.entry_id]["toyota_na_client"] = client
+        with patch.object(diagnostics, "async_redact_data", side_effect=lambda data, keys: data) as redact:
+            result = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
+        self.assertEqual(result["notification_history"]["data"], [[{
+            "messageId": "1", "category": "RemoteCommand", "displayCategory": "Remote", "subcategory": None,
+            "type": "alert", "status": "completed", "notificationDate": "2026-10-06T07:00:00Z", "isRead": False,
+        }], None])
+        self.assertTrue({"lat", "lon"} <= redact.call_args_list[-1].args[1])
+
     async def test_report_survives_a_failed_or_unusable_vehicle_list(self):
         def failure(error, code=None):
             if code is not None:

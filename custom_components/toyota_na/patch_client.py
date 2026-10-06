@@ -388,6 +388,11 @@ async def get_service_campaigns(self, vin):
     return body["payLoad"] if isinstance(body, dict) and "payLoad" in body else body
 
 
+async def get_notification_history(self):
+    """Account notifications grouped by vehicle; reading them never wakes a vehicle."""
+    return await self.api_get("v2/notification/history", {"GUID": await self.auth.get_guid()})
+
+
 async def _auth_headers(self):
     return {
         **_app_headers(),
