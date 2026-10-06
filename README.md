@@ -197,8 +197,8 @@ The Notifications event fires once for each new notification Toyota lists for
 the vehicle, such as remote command results, service warnings, and software
 updates. Its event type groups Toyota's categories, and the event data keeps
 Toyota's category, title, and message. Home Assistant checks at each update
-without waking the vehicle. Notifications from before Home Assistant started
-don't fire.
+without waking the vehicle. Notifications that Toyota dates before Home
+Assistant started don't fire.
 
 Climate preferences for Remote Start appear under device configuration.
 Remote Start runs the engine or climate system the vehicle supports.

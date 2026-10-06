@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import test_button as ha
 import test_vehicle_behavior as behavior
 
+from datetime import datetime, timezone
 import json
 
 from custom_components.toyota_na import event, patch_client
@@ -26,6 +27,9 @@ HISTORY = [
     {"vin": "SECONDVIN", "notifications": None},
     "unexpected",
 ]
+
+
+STARTED = datetime(2026, 10, 6, 7, 0, tzinfo=timezone.utc)
 
 
 def message_ids(vehicle):
@@ -94,12 +98,12 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
         self.unread = ha.FakeVehicle(set(), vin="UNREADVIN")
         self.unread.notifications = None
         self.coordinator = ha.DataUpdateCoordinator([self.vehicle, self.unread])
-        entities = []
-        await event.async_setup_entry(
-            ha.FakeHass(self.coordinator), ha.ConfigEntry(), lambda added, update: entities.extend(added),
-        )
-        self.assertEqual([entity.unique_id for entity in entities], ["TESTVIN.Notifications"])
-        self.entity = entities[0]
+        hass = ha.FakeHass(self.coordinator)
+        hass.data[ha.DOMAIN]["entry"]["started"] = STARTED
+        self.entities = []
+        await event.async_setup_entry(hass, ha.ConfigEntry(), lambda added, update: self.entities.extend(added))
+        self.assertEqual([entity.unique_id for entity in self.entities], ["TESTVIN.Notifications"])
+        self.entity = self.entities[0]
         await self.entity.async_added_to_hass()
 
     def events(self):
@@ -121,7 +125,7 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
                 "date": "2026-10-06T08:00:00Z",
             }),
             ("service_warning", {
-                "message_id": 7, "category": "SERVICEWARNINGS", "display_category": None,
+                "message_id": "7", "category": "SERVICEWARNINGS", "display_category": None,
                 "subcategory": None, "title": "Low oil", "message": "Check oil", "status": None,
                 "date": "2026-10-06T09:00:00Z",
             }),
@@ -147,6 +151,35 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.entity._handle_coordinator_update()
         self.assertEqual([event_type for event_type, _ in self.events()], ["other", "other"])
+
+    async def test_notifications_dated_before_startup_never_fire(self):
+        self.vehicle.notifications = [
+            {"messageId": "restart", "category": "RemoteCommand", "notificationDate": "2026-10-06T06:59:59Z"},
+            {"messageId": "edge", "category": "RemoteCommand", "notificationDate": "2026-10-06T07:00:00Z"},
+            {"messageId": "new", "category": "RemoteCommand", "notificationDate": "2026-10-06T07:00:01Z"},
+        ]
+        self.entity._handle_coordinator_update()
+        self.assertEqual([data["message_id"] for _, data in self.events()], ["new"])
+
+    async def test_a_late_first_read_still_fires_notifications_after_startup(self):
+        self.unread.notifications = [
+            {"messageId": "before", "category": "RemoteCommand", "notificationDate": "2026-10-06T06:00:00Z"},
+            {"messageId": "after", "category": "RemoteCommand", "notificationDate": "2026-10-06T07:05:00Z"},
+            {"messageId": "undated", "category": "RemoteCommand"},
+        ]
+        self.coordinator.notify_listeners()
+        late = self.entities[-1]
+        self.assertEqual(late.unique_id, "UNREADVIN.Notifications")
+        await late.async_added_to_hass()
+        late._handle_coordinator_update()
+        self.assertEqual([data["message_id"] for _, data in late.events], ["after"])
+
+    async def test_ids_compare_as_text_like_the_app(self):
+        self.vehicle.notifications = [{"messageId": 7, "category": "RemoteCommand"}]
+        self.entity._handle_coordinator_update()
+        self.vehicle.notifications = [{"messageId": "7", "category": "RemoteCommand"}, {"messageId": ""}]
+        self.entity._handle_coordinator_update()
+        self.assertEqual([data["message_id"] for _, data in self.events()], ["7"])
 
     async def test_unavailable_until_history_is_read(self):
         self.assertTrue(self.entity.available)

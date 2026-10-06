@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN, NOTIFICATION_EVENT_TYPES
 from .entity_discovery import setup_entity_discovery
-from .vehicle_helpers import parse_api_timestamp
+from .vehicle_helpers import app_string, parse_api_timestamp
 
 _OLDEST = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -24,14 +24,13 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up notification events."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]["coordinator"]
+    entry_data = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = entry_data["coordinator"]
 
     def discover_events():
         for vehicle in coordinator.data or []:
             if isinstance(vehicle.notifications, list):
-                yield ToyotaNotificationEvent(coordinator, "Notifications", vehicle.vin)
+                yield ToyotaNotificationEvent(entry_data["started"], coordinator, "Notifications", vehicle.vin)
 
     setup_entity_discovery(config_entry, coordinator, async_add_entities, discover_events)
 
@@ -46,19 +45,27 @@ class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
     _attr_icon = "mdi:bell-ring-outline"
     _attr_translation_key = "notification"
 
-    def __init__(self, *args) -> None:
+    def __init__(self, started, *args) -> None:
         super().__init__(*args)
+        # Notifications fire only when Toyota dates them after setup, so a late
+        # first read or a partial one after a restart can't replay old ones.
+        self._started = started
         # IDs only accumulate, so a read that comes back empty can't make old
         # notifications look new on the next one.
         self._seen = set()
 
     @property
     def _notifications(self):
+        """(ID, date, item) for each notification, with IDs as text like the app."""
         vehicle = self.vehicle
         notifications = vehicle.notifications if vehicle is not None else None
         if not isinstance(notifications, list):
             return None
-        return [item for item in notifications if isinstance(item.get("messageId"), (str, int))]
+        return [
+            (message_id, parse_api_timestamp(item.get("notificationDate")), item)
+            for item in notifications
+            if (message_id := app_string(item.get("messageId")))
+        ]
 
     @property
     def available(self):
@@ -66,18 +73,18 @@ class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # Notifications from before startup are history, not new events.
-        self._seen.update(item["messageId"] for item in self._notifications or [])
+        # Without a date, a notification present at startup counts as history.
+        self._seen.update(message_id for message_id, date, _ in self._notifications or [] if date is None)
 
     @callback
     def _handle_coordinator_update(self) -> None:
         notifications = self._notifications or []
-        for item in sorted(notifications, key=lambda item: parse_api_timestamp(item.get("notificationDate")) or _OLDEST):
-            if item["messageId"] in self._seen:
+        for message_id, date, item in sorted(notifications, key=lambda notification: notification[1] or _OLDEST):
+            if message_id in self._seen or (date is not None and date <= self._started):
                 continue
-            self._seen.add(item["messageId"])
+            self._seen.add(message_id)
             self._trigger_event(notification_event_type(item.get("category")), {
-                "message_id": item["messageId"],
+                "message_id": message_id,
                 "category": item.get("category"),
                 "display_category": item.get("displayCategory"),
                 "subcategory": item.get("subcategory"),

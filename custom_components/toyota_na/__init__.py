@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from zoneinfo import ZoneInfo
 
@@ -306,6 +306,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         _LOGGER.exception(e)
         raise ConfigEntryAuthFailed(e) from e
 
+    # Notifications Toyota dates before setup are history, not new events.
+    started = datetime.now(timezone.utc)
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
@@ -334,6 +336,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
         hass.data[DOMAIN][entry.entry_id] = {
             "toyota_na_client": client,
+            "started": started,
             "coordinator": coordinator,
             "ws_handler": ws_handler,
         }
