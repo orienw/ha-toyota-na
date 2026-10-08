@@ -30,7 +30,7 @@ integration under **Settings > Devices & services**. Each vehicle's
 [![Latest beta release](https://img.shields.io/github/v/release/orienw/ha-toyota-na?include_prereleases&filter=*b*&sort=date&style=for-the-badge&label=beta&color=orange)](https://github.com/orienw/ha-toyota-na/releases)
 
 ## Installation
-Requires Home Assistant 2024.11 or newer.
+Requires Home Assistant 2026.8 or newer.
 
 ### HACS
 

@@ -558,7 +558,7 @@ class ScheduleServiceTests(unittest.IsolatedAsyncioTestCase):
         self.handlers = {}
         self.hass.services = types.SimpleNamespace(async_register=lambda domain, name, handler: self.handlers.update({name: handler}))
         self.hass.async_get_entry = lambda entry_id: self.entry
-        device = types.SimpleNamespace(config_entries={self.entry.entry_id}, identifiers={(ha.DOMAIN, self.vehicle.vin)})
+        device = types.SimpleNamespace(config_entry_id=self.entry.entry_id, identifiers={(ha.DOMAIN, self.vehicle.vin)})
         self.hass.device_registry = types.SimpleNamespace(async_get=lambda device_id: device)
         await ha.integration_runtime.async_setup(self.hass, {})
 

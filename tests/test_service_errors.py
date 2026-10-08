@@ -31,7 +31,7 @@ class CommandServiceErrorTests(unittest.IsolatedAsyncioTestCase):
         self.hass.services = types.SimpleNamespace(async_register=lambda domain, name, handler: handlers.update({name: handler}))
         self.hass.async_get_entry = lambda entry_id: self.entry
         self.hass.device_registry = types.SimpleNamespace(async_get=lambda device_id: types.SimpleNamespace(
-            config_entries={self.entry.entry_id}, identifiers={(ha.DOMAIN, self.vehicle.vin)},
+            config_entry_id=self.entry.entry_id, identifiers={(ha.DOMAIN, self.vehicle.vin)},
         ))
         await ha.integration_runtime.async_setup(self.hass, {})
         self.actions = [

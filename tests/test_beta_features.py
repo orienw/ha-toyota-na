@@ -240,7 +240,7 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         )
         hass.async_get_entry = lambda entry_id: entry
         hass.device_registry = types.SimpleNamespace(async_get=lambda device_id: types.SimpleNamespace(
-            config_entries={entry.entry_id}, identifiers={(ha.DOMAIN, vehicle.vin)},
+            config_entry_id=entry.entry_id, identifiers={(ha.DOMAIN, vehicle.vin)},
         ))
         await ha.integration_runtime.async_setup(hass, {})
         for service in ("charge_start", "refresh"):

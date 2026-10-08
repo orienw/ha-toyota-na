@@ -178,10 +178,6 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             _LOGGER.warning("Device does not exist")
             return
 
-        if len(device.config_entries) == 0:
-            _LOGGER.warning("Device missing config entry")
-            return
-
         vin = next(
             (
                 identifier[1]
@@ -194,31 +190,14 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             _LOGGER.warning("Device has no %s identifier", DOMAIN)
             return
 
-        coordinator = None
-        config_entry = None
-        for entry_id in device.config_entries:
-            if entry_id not in hass.data[DOMAIN]:
-                _LOGGER.warning("Config entry not found")
-                continue
-
-            if "coordinator" not in hass.data[DOMAIN][entry_id]:
-                _LOGGER.warning("Coordinator not found")
-                continue
-
-            candidate = hass.data[DOMAIN][entry_id]["coordinator"]
-            if candidate.data is None:
-                _LOGGER.warning("No coordinator data")
-                continue
-            if not any(vehicle.vin == vin for vehicle in candidate.data):
-                continue
-
-            coordinator = candidate
-            config_entry = hass.config_entries.async_get_entry(entry_id)
-            break
-
-        if coordinator is None:
+        entry_id = device.config_entry_id
+        coordinator = hass.data[DOMAIN].get(entry_id, {}).get("coordinator")
+        if coordinator is None or coordinator.data is None or not any(
+            vehicle.vin == vin for vehicle in coordinator.data
+        ):
             _LOGGER.warning("No loaded coordinator found for device")
             return
+        config_entry = hass.config_entries.async_get_entry(entry_id)
 
         vehicle = next(
             item for item in coordinator.data if item.vin == vin

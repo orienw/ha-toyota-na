@@ -760,7 +760,7 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
         self.hass.services = types.SimpleNamespace(async_register=lambda domain, name, handler: handlers.update({name: handler}))
         entry = ha.ConfigEntry()
         self.hass.async_get_entry = lambda entry_id: entry
-        device = types.SimpleNamespace(config_entries={entry.entry_id}, identifiers={(ha.DOMAIN, self.vehicle.vin)})
+        device = types.SimpleNamespace(config_entry_id=entry.entry_id, identifiers={(ha.DOMAIN, self.vehicle.vin)})
         self.hass.device_registry = types.SimpleNamespace(async_get=lambda device_id: device)
         await ha.integration_runtime.async_setup(self.hass, {})
         self.vehicle.update_climate_schedule = AsyncMock()
