@@ -9,8 +9,12 @@ permissions:
   contents: read
 jobs:
   tests:
-    name: Tests
+    name: Tests (HA ${{ matrix.homeassistant }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        homeassistant: ["2026.8.0", "2026.9.0", "2026.10.0"]
     steps:
       - uses: actions/checkout@v7
       # Home Assistant 2026.8, the minimum, requires Python 3.14.
@@ -19,10 +23,13 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements-test.txt
-      - run: pip install -r requirements-test.txt
+      - run: pip install -r requirements-test.txt "homeassistant==${{ matrix.homeassistant }}"
       - run: ruff check .
       - run: ruff format --check .
-      - run: pytest -q
+      # These tests stub Home Assistant, so they run without its pytest plugin.
+      - run: pytest -q -p no:homeassistant --ignore=tests/ha
+      # tests/ha runs the integration in a real Home Assistant.
+      - run: pytest -q tests/ha
   hassfest:
     name: hassfest
     runs-on: ubuntu-latest
