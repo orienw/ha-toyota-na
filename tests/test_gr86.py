@@ -4,13 +4,12 @@ import types
 import unittest
 from unittest.mock import AsyncMock
 
-import test_vehicle_behavior as behavior
-
 from custom_components.toyota_na.patch_base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
 )
+from custom_components.toyota_na.patch_vehicle import get_vehicles
 
 
 class GR86Tests(unittest.IsolatedAsyncioTestCase):
@@ -62,7 +61,7 @@ class GR86Tests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_discovery_reads_and_commands_keep_gr86_generation(self):
-        (vehicle,) = await behavior.get_vehicles(self.client)
+        (vehicle,) = await get_vehicles(self.client)
         self.assertIs(ApiVehicleGeneration.GR86, vehicle.generation)
         self.assertFalse(vehicle.uses_appsync)
         self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverDoor].locked)
@@ -85,7 +84,7 @@ class GR86Tests(unittest.IsolatedAsyncioTestCase):
         self.client.graphql_pre_wake.assert_not_awaited()
 
     async def test_missing_capabilities_and_inactive_access_block_commands(self):
-        (vehicle,) = await behavior.get_vehicles(self.client)
+        (vehicle,) = await get_vehicles(self.client)
         for command in (RemoteRequestCommand.EngineStart, RemoteRequestCommand.HazardsOn):
             with self.subTest(command=command), self.assertRaisesRegex(ValueError, "unavailable"):
                 await vehicle.send_command(command)

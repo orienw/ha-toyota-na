@@ -26,10 +26,7 @@ jobs:
       - run: pip install -r requirements-test.txt "homeassistant==${{ matrix.homeassistant }}"
       - run: ruff check .
       - run: ruff format --check .
-      # These tests stub Home Assistant, so they run without its pytest plugin.
-      - run: pytest -q -p no:homeassistant --ignore=tests/ha
-      # tests/ha runs the integration in a real Home Assistant.
-      - run: pytest -q tests/ha
+      - run: pytest -q
   hassfest:
     name: hassfest
     runs-on: ubuntu-latest

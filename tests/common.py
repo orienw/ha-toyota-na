@@ -26,7 +26,7 @@ from custom_components.toyota_na.vehicle_helpers import (
 )
 
 EMAIL = "owner@example.com"
-STATUS_24MM = json.loads((Path(__file__).parents[1] / "fixtures/vehicle_24mm.json").read_text())
+STATUS_24MM = json.loads((Path(__file__).parent / "fixtures/vehicle_24mm.json").read_text())
 
 LEXUS_21MM_COUPE = {
     "modelYear": "2024",

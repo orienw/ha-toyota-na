@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import aiohttp
+import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 from toyota_na.client import ToyotaOneClient
@@ -35,6 +36,8 @@ class Client:
         return {"AUTHORIZATION": "Bearer test-token"}
 
 
+# These start a local HTTP server, so they need sockets.
+@pytest.mark.usefixtures("socket_enabled")
 class RequestTimeoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_stalled_http_command_times_out_without_replaying(self):
         calls = []
@@ -55,6 +58,7 @@ class RequestTimeoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["POST"], calls)
 
 
+@pytest.mark.usefixtures("socket_enabled")
 class ElectricStatusHttpTests(unittest.IsolatedAsyncioTestCase):
     async def test_app_headers_reach_every_electric_status_request(self):
         requests = []

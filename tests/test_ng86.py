@@ -4,7 +4,7 @@ import types
 import unittest
 from unittest.mock import AsyncMock
 
-import test_vehicle_behavior as behavior
+from common import LEXUS_21MM_COUPE, make_vehicle
 
 from custom_components.toyota_na.patch_base_vehicle import (
     ApiVehicleGeneration,
@@ -17,7 +17,7 @@ from custom_components.toyota_na.patch_vehicle import get_vehicles
 class NG86Tests(unittest.IsolatedAsyncioTestCase):
     async def test_ng86_uses_routed_state_engine_commands_and_refresh(self):
         metadata = {
-            **behavior.LEXUS_21MM_COUPE,
+            **LEXUS_21MM_COUPE,
             "vin": "TESTNG86",
             "generation": "NG86",
             "brand": "T",
@@ -63,7 +63,7 @@ class NG86Tests(unittest.IsolatedAsyncioTestCase):
         client.graphql_pre_wake.assert_not_awaited()
 
     async def test_ng86_requires_reported_command_support(self):
-        vehicle = behavior.make_vehicle()
+        vehicle = make_vehicle()
         vehicle._generation = ApiVehicleGeneration.NG86
         vehicle._remote_capabilities = {}
         vehicle._extended_capabilities = {}

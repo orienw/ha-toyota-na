@@ -1,376 +1,79 @@
-# ruff: noqa: I001
+"""Vehicle controls, door and location entities, and polling in a real Home Assistant."""
 
-import asyncio
-from enum import Enum
-import importlib.util
-from pathlib import Path
-import sys
-import types
-import unittest
-from unittest import mock
+import logging
+from datetime import timedelta
 
-ROOT = Path(__file__).resolve().parents[1]
-COMPONENTS = ROOT / "custom_components"
-INTEGRATION = COMPONENTS / "toyota_na"
-
-# The stubs below would overwrite parts of a real Home Assistant that is already loaded.
-if "homeassistant" in sys.modules:
-    raise RuntimeError(
-        "These tests stub Home Assistant. Run them with: pytest -p no:homeassistant --ignore=tests/ha"
-    )
-
-custom_components = sys.modules.setdefault(
-    "custom_components", types.ModuleType("custom_components")
+import pytest
+from common import FakeVehicle, account_entry, entity_id
+from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import (
+    async_capture_events,
+    async_fire_time_changed,
 )
-custom_components.__path__ = [str(COMPONENTS)]
-integration = sys.modules.setdefault(
-    "custom_components.toyota_na", types.ModuleType("custom_components.toyota_na")
-)
-integration.__path__ = [str(INTEGRATION)]
+from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
+from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
+from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
+from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 
-
-def module(name):
-    value = sys.modules.setdefault(name, types.ModuleType(name))
-    value.__path__ = []
-    return value
-
-
-module("homeassistant")
-module("homeassistant.components")
-module("homeassistant.helpers")
-
-
-class BinarySensorDeviceClass(Enum):
-    BATTERY = "battery"
-    BATTERY_CHARGING = "battery_charging"
-    DOOR = "door"
-    LOCK = "lock"
-    RUNNING = "running"
-    WINDOW = "window"
-    PROBLEM = "problem"
-    UPDATE = "update"
-
-
-class SensorStateClass(Enum):
-    MEASUREMENT = "measurement"
-    TOTAL_INCREASING = "total_increasing"
-
-
-class SensorDeviceClass(Enum):
-    ENUM = "enum"
-    SPEED = "speed"
-    TIMESTAMP = "timestamp"
-
-
-class SensorEntity:
-    state = property(lambda self: self.native_value)
-    unit_of_measurement = property(lambda self: self.native_unit_of_measurement)
-    state_class = property(lambda self: self._attr_state_class)
-    device_class = property(lambda self: self._attr_device_class)
-    options = property(lambda self: self._attr_options)
-    _attr_entity_registry_enabled_default = True
-    entity_registry_enabled_default = property(
-        lambda self: self._attr_entity_registry_enabled_default
-    )
-
-
-class SourceType(Enum):
-    GPS = "gps"
-
-
-class UnitOfPressure:
-    PSI = "psi"
-    KPA = "kPa"
-    BAR = "bar"
-
-
-class Subscriptable:
-    @classmethod
-    def __class_getitem__(cls, item):
-        return cls
-
-
-class CoordinatorEntity(Subscriptable):
-    def __init__(self, coordinator):
-        self.coordinator = coordinator
-
-
-class DataUpdateCoordinator(Subscriptable):
-    def __init__(self, data):
-        self.data = data
-        self.last_update_success = True
-        self.refreshes = 0
-        self.listeners = []
-
-    async def async_request_refresh(self):
-        self.refreshes += 1
-
-    def async_set_updated_data(self, data):
-        self.data = data
-        self.notify_listeners()
-
-    def async_add_listener(self, listener):
-        self.listeners.append(listener)
-
-        def remove_listener():
-            self.listeners.remove(listener)
-
-        return remove_listener
-
-    def notify_listeners(self):
-        for listener in list(self.listeners):
-            listener()
-
-
-class ConfigEntry:
-    def __init__(self):
-        self.entry_id = "entry"
-        self.title = "primary@example.com"
-        self.data = {}
-        self.options = {}
-        self.unload_callbacks = []
-
-    def async_on_unload(self, callback):
-        self.unload_callbacks.append(callback)
-
-
-class LockEntity:
-    def async_write_ha_state(self):
-        pass
-
-
-class ConfigFlow:
-    def __init__(self):
-        self.context = {"source": "user"}
-
-    @property
-    def source(self):
-        return self.context["source"]
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__()
-
-
-class OptionsFlow:
-    def async_create_entry(self, *, title, data):
-        return {"type": "create_entry", "title": title, "data": data}
-
-    def async_show_form(self, *, step_id, data_schema):
-        return {"type": "form", "step_id": step_id, "data_schema": data_schema}
-
-    def async_abort(self, *, reason):
-        return {"type": "abort", "reason": reason}
-
-
-binary_sensor = module("homeassistant.components.binary_sensor")
-binary_sensor.BinarySensorDeviceClass = BinarySensorDeviceClass
-binary_sensor.BinarySensorEntity = type("BinarySensorEntity", (), {})
-button_component = module("homeassistant.components.button")
-button_component.ButtonEntity = type("ButtonEntity", (), {})
-number_component = module("homeassistant.components.number")
-number_component.NumberEntity = type("NumberEntity", (), {})
-number_component.NumberDeviceClass = types.SimpleNamespace(TEMPERATURE="temperature")
-switch_component = module("homeassistant.components.switch")
-switch_component.SwitchEntity = type("SwitchEntity", (), {})
-select_component = module("homeassistant.components.select")
-select_component.SelectEntity = type("SelectEntity", (), {})
-lock_component = module("homeassistant.components.lock")
-lock_component.LockEntity = LockEntity
-device_tracker_component = module("homeassistant.components.device_tracker")
-device_tracker_component.SourceType = SourceType
-device_tracker_component.TrackerEntity = type("TrackerEntity", (), {})
-
-
-class EventEntity:
-    async def async_added_to_hass(self):
-        pass
-
-    def _trigger_event(self, event_type, event_attributes=None):
-        if event_type not in self._attr_event_types:
-            raise ValueError(event_type)
-        self.__dict__.setdefault("events", []).append((event_type, event_attributes))
-
-    def _handle_coordinator_update(self):
-        self.async_write_ha_state()
-
-    def async_write_ha_state(self):
-        self.__dict__["writes"] = self.__dict__.get("writes", 0) + 1
-
-
-event_component = module("homeassistant.components.event")
-event_component.EventEntity = EventEntity
-sensor = module("homeassistant.components.sensor")
-sensor.SensorStateClass = SensorStateClass
-sensor.SensorDeviceClass = SensorDeviceClass
-sensor.SensorEntity = SensorEntity
-
-config_entries = module("homeassistant.config_entries")
-config_entries.ConfigEntry = ConfigEntry
-config_entries.ConfigFlow = ConfigFlow
-config_entries.SOURCE_REAUTH = "reauth"
-config_entries.OptionsFlow = OptionsFlow
-core = module("homeassistant.core")
-core.callback = lambda function: function
-core.HomeAssistant = type("HomeAssistant", (), {})
-core.ServiceCall = type("ServiceCall", (), {})
-exceptions = module("homeassistant.exceptions")
-exceptions.ConfigEntryAuthFailed = type("ConfigEntryAuthFailed", (Exception,), {})
-exceptions.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
-exceptions.ServiceValidationError = type(
-    "ServiceValidationError", (exceptions.HomeAssistantError,), {}
-)
-ha_const = module("homeassistant.const")
-ha_const.PERCENTAGE = "%"
-ha_const.UnitOfPressure = UnitOfPressure
-ha_const.UnitOfTemperature = types.SimpleNamespace(CELSIUS="°C", FAHRENHEIT="°F")
-ha_const.EntityCategory = types.SimpleNamespace(CONFIG="config", DIAGNOSTIC="diagnostic")
-ha_const.UnitOfLength = types.SimpleNamespace(MILES="mi", KILOMETERS="km")
-module("homeassistant.util")
-unit_conversion = module("homeassistant.util.unit_conversion")
-unit_conversion.PressureConverter = types.SimpleNamespace(convert=mock.Mock())
-entity = module("homeassistant.helpers.entity")
-entity.DeviceInfo = dict
-device_registry = module("homeassistant.helpers.device_registry")
-device_registry.DeviceEntry = types.SimpleNamespace
-device_registry.async_get = lambda hass: hass.device_registry
-entity_registry = module("homeassistant.helpers.entity_registry")
-entity_registry.async_get = lambda hass: hass.entity_registry
-entity_registry.async_entries_for_config_entry = lambda registry, entry_id: [
-    entry for entry in registry.entries.values() if entry.config_entry_id == entry_id
-]
-issue_registry = module("homeassistant.helpers.issue_registry")
-issue_registry.IssueSeverity = types.SimpleNamespace(WARNING="warning")
-issue_registry.async_get = lambda hass: hass.issue_registry
-issue_registry.async_create_issue = lambda hass, domain, issue_id, **issue: (
-    hass.issue_registry.issues.update({(domain, issue_id): issue})
-)
-issue_registry.async_delete_issue = lambda hass, domain, issue_id: hass.issue_registry.issues.pop(
-    (domain, issue_id)
-)
-entity_platform = module("homeassistant.helpers.entity_platform")
-entity_platform.AddEntitiesCallback = object
-service = module("homeassistant.helpers.service")
-service.verify_domain_control = lambda domain: lambda function: function
-update_coordinator = module("homeassistant.helpers.update_coordinator")
-update_coordinator.CoordinatorEntity = CoordinatorEntity
-update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
-update_coordinator.UpdateFailed = type("UpdateFailed", (Exception,), {})
-
-import toyota_na.vehicle.base_vehicle as upstream_base
+from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.patch_base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
-    ToyotaVehicle,
     VehicleFeatures,
 )
-
-upstream_base.ApiVehicleGeneration = ApiVehicleGeneration
-upstream_base.RemoteRequestCommand = RemoteRequestCommand
-upstream_base.ToyotaVehicle = ToyotaVehicle
-upstream_base.VehicleFeatures = VehicleFeatures
-
-from custom_components.toyota_na import button
-from custom_components.toyota_na import binary_sensor as binary_sensor_platform
-from custom_components.toyota_na import config_flow
-from custom_components.toyota_na import device_tracker as device_tracker_platform
-from custom_components.toyota_na import lock as lock_platform
-from custom_components.toyota_na import sensor as sensor_platform
-from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.wake_policy import (
     CONF_WAKE_INTERVAL,
     LAST_VEHICLE_WAKES,
     LAST_WAKE_AT,
 )
-from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
+
+LC_CONTROLS = ["Remote Start", "Remote Stop", "Flash Hazards", "Find Vehicle", "Refresh Status"]
+STALE_TRUNK = ["binary_sensor.testvin_trunk", "binary_sensor.testvin_trunk_door_lock"]
 
 
-runtime_spec = importlib.util.spec_from_file_location(
-    "custom_components.toyota_na.integration_runtime",
-    INTEGRATION / "__init__.py",
-    submodule_search_locations=None,
-)
-integration_runtime = importlib.util.module_from_spec(runtime_spec)
-sys.modules[runtime_spec.name] = integration_runtime
-runtime_spec.loader.exec_module(integration_runtime)
+async def settle(hass):
+    """Run the poll entities requested as they were added, then wait out its cooldown.
+
+    Until then a requested poll waits for the cooldown instead of running.
+    """
+    for _ in range(2):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
+        await hass.async_block_till_done()
 
 
-class FakeVehicle:
-    climate_schedules = {}
-    health = {}
-    remote_display = None
-
-    _feature_flags = None
-    uses_appsync = True
-    feature_enabled = ToyotaVehicle.feature_enabled
-
-    def __init__(self, supported, vin="TESTVIN"):
-        self.vin = vin
-        self.subscribed = True
-        self.supported = set(supported)
-        self.sent = []
-        self.refresh_requests = 0
-        self.features = {}
-        self.electric = False
-        self.backdoor_type = "trunk"
-        self.model_year = "2024"
-        self.model_name = "LC 500 2-DOOR COUPE"
-        self.brand = "L"
-
-    def supports_command(self, command):
-        if command == RemoteRequestCommand.Refresh:
-            return self.subscribed
-        return command in self.supported
-
-    @property
-    def can_receive_status(self):
-        return True
-
-    async def send_command(self, command):
-        self.sent.append(command)
-
-    async def poll_vehicle_refresh(self):
-        self.refresh_requests += 1
+def registry_entries(hass, entry, domain):
+    return [
+        item
+        for item in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+        if item.domain == domain
+    ]
 
 
-class FakeHass:
-    def __init__(self, coordinator):
-        self.data = {DOMAIN: {"entry": {"coordinator": coordinator}}}
-        self.tasks = []
-        self.config_entries = self
-        self.entity_registry = FakeEntityRegistry()
-        self.issue_registry = types.SimpleNamespace(issues={})
-
-    def async_create_task(self, coroutine):
-        task = asyncio.create_task(coroutine)
-        self.tasks.append(task)
-        return task
-
-    def async_update_entry(self, entry, *, data):
-        entry.data = data
+async def update(hass, account):
+    account.coordinator.async_set_updated_data(account.coordinator.data)
+    await hass.async_block_till_done()
 
 
-class FakeEntityRegistry:
-    def __init__(self):
-        self.entities = {}
-        self.entries = {}
-        self.removed = []
-
-    def async_get_entity_id(self, platform, domain, unique_id):
-        return self.entities.get((platform, domain, unique_id))
-
-    def async_remove(self, entity_id):
-        self.removed.append(entity_id)
-        self.entries.pop(entity_id, None)
+def add_registry_entries(hass, entities):
+    """Register entities an earlier version created, before setup runs."""
+    registry = er.async_get(hass)
+    for unique_id, entity in entities.items():
+        registry.async_get_or_create(
+            "binary_sensor", DOMAIN, unique_id, suggested_object_id=entity.split(".")[1]
+        )
+    return async_capture_events(hass, er.EVENT_ENTITY_REGISTRY_UPDATED)
 
 
-class ButtonTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        button.COMMAND_REFRESH_DELAY = 0
-        lock_platform.COMMAND_REFRESH_DELAY = 0
-        self.vehicle = FakeVehicle(
+def removed(events):
+    return [event.data["entity_id"] for event in events if event.data["action"] == "remove"]
+
+
+class TestButtons:
+    @pytest.fixture
+    async def controls(self, hass, setup_vehicles):
+        vehicle = FakeVehicle(
             {
                 RemoteRequestCommand.DoorLock,
                 RemoteRequestCommand.DoorUnlock,
@@ -380,87 +83,67 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
                 RemoteRequestCommand.VehicleFinder,
             }
         )
-        self.coordinator = DataUpdateCoordinator([self.vehicle])
-        self.hass = FakeHass(self.coordinator)
-        self.config_entry = ConfigEntry()
-        self.entities = []
+        account = await setup_vehicles([vehicle])
+        await settle(hass)
+        return vehicle, account
 
-        await button.async_setup_entry(
-            self.hass,
-            self.config_entry,
-            lambda entities, update_before_add: self.entities.extend(entities),
+    async def press(self, hass, name):
+        await hass.services.async_call(
+            "button",
+            "press",
+            {"entity_id": entity_id(hass, "button", f"TESTVIN.{name}")},
+            blocking=True,
         )
-        for entity_instance in self.entities:
-            entity_instance.hass = self.hass
+        await hass.async_block_till_done()
 
-    async def test_creates_only_supported_lc_controls(self):
-        self.assertEqual(
-            [entity.sensor_name for entity in self.entities],
-            [
-                "Remote Start",
-                "Remote Stop",
-                "Flash Hazards",
-                "Find Vehicle",
-                "Refresh Status",
-            ],
-        )
-        self.assertEqual(
-            [entity.name for entity in self.entities],
-            [
-                "Remote Start",
-                "Remote Stop",
-                "Flash Hazards",
-                "Find Vehicle",
-                "Refresh Status",
-            ],
-        )
-        self.assertTrue(all(entity._attr_has_entity_name for entity in self.entities))
-
-    async def test_command_button_does_not_issue_an_extra_vehicle_wake(self):
-        await self.entities[0].async_press()
-        await asyncio.gather(*self.hass.tasks)
-
-        self.assertEqual(self.vehicle.sent, [RemoteRequestCommand.EngineStart])
-        self.assertEqual(self.vehicle.refresh_requests, 0)
-        self.assertEqual(self.coordinator.refreshes, 1)
-        self.assertIn(LAST_WAKE_AT, self.config_entry.data)
-        self.assertEqual(
-            self.config_entry.data[LAST_VEHICLE_WAKES],
-            [{"vin": "TESTVIN", "timestamp": self.config_entry.data[LAST_WAKE_AT]}],
+    async def test_creates_only_supported_lc_controls(self, hass, controls):
+        _, account = controls
+        buttons = registry_entries(hass, account.entry, "button")
+        assert [item.unique_id for item in buttons] == [f"TESTVIN.{name}" for name in LC_CONTROLS]
+        assert [item.original_name for item in buttons] == LC_CONTROLS
+        assert all(item.has_entity_name for item in buttons)
+        assert hass.states.get(buttons[0].entity_id).attributes["friendly_name"] == (
+            "2024 LC 500 2-DOOR COUPE Remote Start"
         )
 
-    async def test_refresh_button_explicitly_requests_vehicle_status(self):
-        await self.entities[-1].async_press()
-        await asyncio.gather(*self.hass.tasks)
+    async def test_command_button_does_not_issue_an_extra_vehicle_wake(self, hass, controls):
+        vehicle, account = controls
+        polls = account.get_vehicles.await_count
+        await self.press(hass, "Remote Start")
 
-        self.assertEqual(self.vehicle.refresh_requests, 1)
-        self.assertEqual(self.coordinator.refreshes, 1)
-        self.assertIn(LAST_WAKE_AT, self.config_entry.data)
-        self.assertEqual(
-            self.config_entry.data[LAST_VEHICLE_WAKES][0]["vin"],
-            "TESTVIN",
+        assert vehicle.sent == [RemoteRequestCommand.EngineStart]
+        assert vehicle.refresh_requests == 0
+        assert account.get_vehicles.await_count == polls + 1
+        data = account.entry.data
+        assert LAST_WAKE_AT in data
+        assert data[LAST_VEHICLE_WAKES] == [{"vin": "TESTVIN", "timestamp": data[LAST_WAKE_AT]}]
+
+    async def test_refresh_button_explicitly_requests_vehicle_status(self, hass, controls):
+        vehicle, account = controls
+        polls = account.get_vehicles.await_count
+        await self.press(hass, "Refresh Status")
+
+        assert vehicle.refresh_requests == 1
+        assert account.get_vehicles.await_count == polls + 1
+        assert LAST_WAKE_AT in account.entry.data
+        assert account.entry.data[LAST_VEHICLE_WAKES][0]["vin"] == "TESTVIN"
+
+    async def test_lock_command_does_not_issue_an_extra_vehicle_wake(self, hass, controls):
+        vehicle, account = controls
+        polls = account.get_vehicles.await_count
+        await hass.services.async_call(
+            "lock", "lock", {"entity_id": entity_id(hass, "lock", "TESTVIN.")}, blocking=True
         )
+        await hass.async_block_till_done()
 
-    async def test_lock_command_does_not_issue_an_extra_vehicle_wake(self):
-        entities = []
-        await lock_platform.async_setup_entry(
-            self.hass,
-            self.config_entry,
-            lambda added, update_before_add: entities.extend(added),
-        )
-        lock = entities[0]
-        lock.hass = self.hass
+        assert vehicle.sent == [RemoteRequestCommand.DoorLock]
+        assert vehicle.refresh_requests == 0
+        assert account.get_vehicles.await_count == polls + 1
+        assert LAST_WAKE_AT in account.entry.data
 
-        await lock.async_lock()
-        await asyncio.gather(*self.hass.tasks)
-
-        self.assertEqual(self.vehicle.sent, [RemoteRequestCommand.DoorLock])
-        self.assertEqual(self.vehicle.refresh_requests, 0)
-        self.assertEqual(self.coordinator.refreshes, 1)
-        self.assertIn(LAST_WAKE_AT, self.config_entry.data)
-
-    def test_primary_lock_ignores_other_lockable_openings(self):
-        entity = lock_platform.ToyotaLock(self.config_entry, self.coordinator, "", self.vehicle.vin)
+    async def test_primary_lock_ignores_other_lockable_openings(self, hass, controls, subtests):
+        vehicle, account = controls
+        lock = entity_id(hass, "lock", "TESTVIN.")
         doors = (
             VehicleFeatures.FrontDriverDoor,
             VehicleFeatures.FrontPassengerDoor,
@@ -469,23 +152,27 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
         )
         for door in doors:
             for locked in (True, False):
-                with self.subTest(door=door, locked=locked):
-                    self.vehicle.features = {
+                with subtests.test(door=door, locked=locked):
+                    vehicle.features = {
                         key: ToyotaLockableOpening(closed=True, locked=True) for key in doors
                     }
-                    self.vehicle.features[door] = ToyotaLockableOpening(closed=True, locked=locked)
+                    vehicle.features[door] = ToyotaLockableOpening(closed=True, locked=locked)
                     for key in (
                         VehicleFeatures.Trunk,
                         VehicleFeatures.Hood,
                         VehicleFeatures.GlassHatch,
                     ):
-                        self.vehicle.features[key] = ToyotaLockableOpening(
+                        vehicle.features[key] = ToyotaLockableOpening(
                             closed=True, locked=not locked
                         )
-                    self.assertIs(entity.is_locked, locked)
+                    await update(hass, account)
+                    assert hass.states.get(lock).state == ("locked" if locked else "unlocked")
 
-    def test_primary_lock_is_unknown_without_reported_door_locks(self):
-        entity = lock_platform.ToyotaLock(self.config_entry, self.coordinator, "", self.vehicle.vin)
+    async def test_primary_lock_is_unknown_without_reported_door_locks(
+        self, hass, controls, subtests
+    ):
+        vehicle, account = controls
+        lock = entity_id(hass, "lock", "TESTVIN.")
         for door in (
             None,
             ToyotaOpening(True),
@@ -493,220 +180,155 @@ class ButtonTests(unittest.IsolatedAsyncioTestCase):
             ToyotaLockableOpening(closed=True, locked=None),
         ):
             for cargo_locked in (True, False):
-                with self.subTest(door=door, cargo_locked=cargo_locked):
-                    self.vehicle.features = {
+                with subtests.test(door=door, cargo_locked=cargo_locked):
+                    vehicle.features = {
                         VehicleFeatures.FrontDriverDoor: door,
                         VehicleFeatures.Trunk: ToyotaLockableOpening(
                             closed=True, locked=cargo_locked
                         ),
                     }
-                    self.assertIsNone(entity.is_locked)
+                    await update(hass, account)
+                    assert hass.states.get(lock).state == "unknown"
 
-    async def test_lock_availability_tracks_capabilities(self):
-        entities = []
-        await lock_platform.async_setup_entry(
-            self.hass,
-            self.config_entry,
-            lambda added, update_before_add: entities.extend(added),
+    async def test_lock_availability_tracks_capabilities(self, hass, controls):
+        vehicle, account = controls
+        [lock] = registry_entries(hass, account.entry, "lock")
+        assert lock.has_entity_name
+        assert lock.original_name is None
+        assert lock.unique_id == "TESTVIN."
+        assert hass.states.get(lock.entity_id).attributes["friendly_name"] == (
+            "2024 LC 500 2-DOOR COUPE"
         )
 
-        lock = entities[0]
-        self.assertTrue(lock._attr_has_entity_name)
-        self.assertIsNone(lock.name)
-        self.assertEqual(lock.unique_id, "TESTVIN.")
+        vehicle.supported.remove(RemoteRequestCommand.DoorUnlock)
+        await update(hass, account)
 
-        self.vehicle.supported.remove(RemoteRequestCommand.DoorUnlock)
-
-        self.assertFalse(lock.available)
+        assert hass.states.get(lock.entity_id).state == "unavailable"
 
 
-class BinarySensorCleanupTests(unittest.IsolatedAsyncioTestCase):
-    async def test_position_only_door_does_not_report_lock_state(self):
-        for closed in (True, False):
-            with self.subTest(closed=closed):
-                vehicle = FakeVehicle(set())
-                vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaOpening(closed)
-                coordinator = DataUpdateCoordinator([vehicle])
-                entities = []
-                await binary_sensor_platform.async_setup_entry(
-                    FakeHass(coordinator),
-                    ConfigEntry(),
-                    lambda added, update: entities.extend(added),
-                )
-                lock = next(
-                    entity
-                    for entity in entities
-                    if entity.device_class == BinarySensorDeviceClass.LOCK
-                )
-                door = next(
-                    entity
-                    for entity in entities
-                    if entity.device_class == BinarySensorDeviceClass.DOOR
-                )
-                self.assertIsNone(lock.is_on)
-                self.assertFalse(lock.available)
-                self.assertEqual(door.is_on, not closed)
-                self.assertTrue(door.available)
+class TestBinarySensorCleanup:
+    @pytest.mark.parametrize("closed", [True, False])
+    async def test_position_only_door_does_not_report_lock_state(
+        self, hass, setup_vehicles, closed
+    ):
+        vehicle = FakeVehicle(set())
+        vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaOpening(closed)
+        account = await setup_vehicles([vehicle])
+        lock = entity_id(hass, "binary_sensor", "TESTVIN.Front Driver Door Lock")
+        door = entity_id(hass, "binary_sensor", "TESTVIN.Front Driver Door")
+        assert hass.states.get(lock).attributes["device_class"] == "lock"
+        assert hass.states.get(door).attributes["device_class"] == "door"
+        assert hass.states.get(lock).state == "unavailable"
+        assert hass.states.get(door).state == ("off" if closed else "on")
 
-                vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaLockableOpening(
-                    closed=None, locked=True
-                )
-                self.assertFalse(lock.is_on)
-                self.assertTrue(lock.available)
-                self.assertIsNone(door.is_on)
-                self.assertFalse(door.available)
+        vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaLockableOpening(
+            closed=None, locked=True
+        )
+        await update(hass, account)
 
-    async def test_tailgate_removes_stale_trunk_entities(self):
+        assert hass.states.get(lock).state == "off"
+        assert hass.states.get(door).state == "unavailable"
+
+    async def test_tailgate_removes_stale_trunk_entities(self, hass, setup_vehicles):
         vehicle = FakeVehicle(set())
         vehicle.backdoor_type = "tailgate"
-        coordinator = DataUpdateCoordinator([vehicle])
-        hass = FakeHass(coordinator)
-        config_entry = ConfigEntry()
-        hass.entity_registry.entities = {
-            (
-                "binary_sensor",
-                DOMAIN,
-                "TESTVIN.Trunk",
-            ): "binary_sensor.testvin_trunk",
-            (
-                "binary_sensor",
-                DOMAIN,
-                "TESTVIN.Trunk Door Lock",
-            ): "binary_sensor.testvin_trunk_door_lock",
+        events = add_registry_entries(
+            hass, dict(zip(("TESTVIN.Trunk", "TESTVIN.Trunk Door Lock"), STALE_TRUNK))
+        )
+
+        await setup_vehicles([vehicle])
+
+        assert removed(events) == STALE_TRUNK
+
+    @pytest.mark.parametrize("backdoor_type", ["tailgate", "Tailgate"])
+    async def test_tailgate_replaces_trunk_entities_with_tailgate(
+        self, hass, setup_vehicles, backdoor_type
+    ):
+        vehicle = FakeVehicle(set())
+        vehicle.backdoor_type = backdoor_type
+        vehicle.features[VehicleFeatures.Trunk] = ToyotaLockableOpening(closed=False, locked=False)
+        events = add_registry_entries(
+            hass,
+            {
+                "TESTVIN.Trunk": STALE_TRUNK[0],
+                "TESTVIN.Trunk Door Lock": STALE_TRUNK[1],
+                "TESTVIN.Tailgate": "binary_sensor.testvin_tailgate",
+            },
+        )
+
+        account = await setup_vehicles([vehicle])
+
+        assert removed(events) == STALE_TRUNK
+        sensors = {
+            item.original_name: item
+            for item in registry_entries(hass, account.entry, "binary_sensor")
+        }
+        assert set(sensors) == {"Tailgate", "Tailgate Lock"}
+        assert sensors["Tailgate"].unique_id == "TESTVIN.Tailgate"
+        assert sensors["Tailgate Lock"].unique_id == "TESTVIN.Tailgate Lock"
+        assert hass.states.get(sensors["Tailgate"].entity_id).state == "on"
+        assert hass.states.get(sensors["Tailgate Lock"].entity_id).state == "on"
+
+    @pytest.mark.parametrize("backdoor_type", ["trunk", "hatch", None])
+    async def test_other_backdoors_keep_trunk_entities(self, hass, setup_vehicles, backdoor_type):
+        vehicle = FakeVehicle(set())
+        vehicle.backdoor_type = backdoor_type
+        vehicle.features[VehicleFeatures.Trunk] = ToyotaLockableOpening(closed=True, locked=True)
+        events = add_registry_entries(hass, {"TESTVIN.Trunk": STALE_TRUNK[0]})
+
+        account = await setup_vehicles([vehicle])
+
+        assert removed(events) == []
+        assert {
+            item.unique_id for item in registry_entries(hass, account.entry, "binary_sensor")
+        } == {
+            "TESTVIN.Trunk",
+            "TESTVIN.Trunk Door Lock",
         }
 
-        await binary_sensor_platform.async_setup_entry(
-            hass,
-            config_entry,
-            lambda entities, update_before_add: None,
-        )
 
-        self.assertEqual(
-            hass.entity_registry.removed,
-            [
-                "binary_sensor.testvin_trunk",
-                "binary_sensor.testvin_trunk_door_lock",
-            ],
-        )
-
-    async def test_tailgate_replaces_trunk_entities_with_tailgate(self):
-        for backdoor_type in ("tailgate", "Tailgate"):
-            with self.subTest(backdoor_type=backdoor_type):
-                vehicle = FakeVehicle(set())
-                vehicle.backdoor_type = backdoor_type
-                vehicle.features[VehicleFeatures.Trunk] = ToyotaLockableOpening(
-                    closed=False, locked=False
-                )
-                hass = FakeHass(DataUpdateCoordinator([vehicle]))
-                hass.entity_registry.entities = {
-                    ("binary_sensor", DOMAIN, "TESTVIN.Trunk"): "binary_sensor.testvin_trunk",
-                    (
-                        "binary_sensor",
-                        DOMAIN,
-                        "TESTVIN.Trunk Door Lock",
-                    ): "binary_sensor.testvin_trunk_door_lock",
-                    ("binary_sensor", DOMAIN, "TESTVIN.Tailgate"): "binary_sensor.testvin_tailgate",
-                }
-                entities = []
-                await binary_sensor_platform.async_setup_entry(
-                    hass,
-                    ConfigEntry(),
-                    lambda added, update: entities.extend(added),
-                )
-
-                self.assertEqual(
-                    hass.entity_registry.removed,
-                    [
-                        "binary_sensor.testvin_trunk",
-                        "binary_sensor.testvin_trunk_door_lock",
-                    ],
-                )
-                by_name = {entity.name: entity for entity in entities}
-                self.assertEqual(set(by_name), {"Tailgate", "Tailgate Lock"})
-                self.assertEqual(by_name["Tailgate"].unique_id, "TESTVIN.Tailgate")
-                self.assertEqual(by_name["Tailgate Lock"].unique_id, "TESTVIN.Tailgate Lock")
-                self.assertTrue(by_name["Tailgate"].is_on)
-                self.assertTrue(by_name["Tailgate Lock"].is_on)
-
-    async def test_other_backdoors_keep_trunk_entities(self):
-        for backdoor_type in ("trunk", "hatch", None):
-            with self.subTest(backdoor_type=backdoor_type):
-                vehicle = FakeVehicle(set())
-                vehicle.backdoor_type = backdoor_type
-                vehicle.features[VehicleFeatures.Trunk] = ToyotaLockableOpening(
-                    closed=True, locked=True
-                )
-                hass = FakeHass(DataUpdateCoordinator([vehicle]))
-                hass.entity_registry.entities = {
-                    ("binary_sensor", DOMAIN, "TESTVIN.Trunk"): "binary_sensor.testvin_trunk",
-                }
-                entities = []
-                await binary_sensor_platform.async_setup_entry(
-                    hass,
-                    ConfigEntry(),
-                    lambda added, update: entities.extend(added),
-                )
-
-                self.assertEqual(hass.entity_registry.removed, [])
-                self.assertEqual(
-                    {entity.unique_id for entity in entities},
-                    {"TESTVIN.Trunk", "TESTVIN.Trunk Door Lock"},
-                )
-
-
-class NumericSensorTests(unittest.IsolatedAsyncioTestCase):
-    async def test_pressure_sensor_converts_reported_units_to_psi(self):
-        for value, unit, expected in (
+class TestNumericSensors:
+    @pytest.mark.parametrize(
+        ("value", "unit", "expected"),
+        [
             (240, "kPa", 34.809058),
             (240, "kpa", 34.809058),
             (2.4, "bar", 34.809058),
             (2.4, "BAR", 34.809058),
             (0, "kPa", 0),
-        ):
-            with self.subTest(value=value, unit=unit):
-                vehicle = FakeVehicle(set())
-                vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(value, unit)
-                coordinator = DataUpdateCoordinator([vehicle])
-                entities = []
-                await sensor_platform.async_setup_entry(
-                    FakeHass(coordinator),
-                    ConfigEntry(),
-                    lambda added, update: entities.extend(added),
-                )
-                pressure = entities[0]
-                with mock.patch.object(
-                    unit_conversion.PressureConverter, "convert", return_value=expected
-                ) as convert:
-                    self.assertEqual(pressure.state, expected)
-                    self.assertEqual(pressure.unit_of_measurement, "psi")
-                    convert.assert_called_once_with(
-                        value, {"kpa": "kPa"}.get(unit.lower(), unit.lower()), "psi"
-                    )
-
-    async def test_native_and_missing_pressure_values_do_not_need_conversion(self):
+        ],
+    )
+    async def test_pressure_sensor_converts_reported_units_to_psi(
+        self, hass, setup_vehicles, value, unit, expected
+    ):
         vehicle = FakeVehicle(set())
-        coordinator = DataUpdateCoordinator([vehicle])
-        pressure = sensor_platform.ToyotaSensor(
-            VehicleFeatures.SpareTirePressure,
-            "mdi:car-tire-alert",
-            "psi",
-            SensorStateClass.MEASUREMENT,
-            coordinator,
-            "Spare Tire Pressure",
-            vehicle.vin,
-        )
+        vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(value, unit)
+        await setup_vehicles([vehicle])
+
+        state = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Spare Tire Pressure"))
+        assert float(state.state) == pytest.approx(expected)
+        assert state.attributes["unit_of_measurement"] == "psi"
+
+    async def test_native_and_missing_pressure_values_do_not_need_conversion(
+        self, hass, setup_vehicles, subtests
+    ):
+        vehicle = FakeVehicle(set())
+        vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(35, "psi")
+        account = await setup_vehicles([vehicle])
+        pressure = entity_id(hass, "sensor", "TESTVIN.Spare Tire Pressure")
         for value, unit in ((35, "psi"), (35, "PSI"), (35, ""), (35, None), (None, "kPa")):
-            with self.subTest(value=value, unit=unit):
+            with subtests.test(value=value, unit=unit):
                 vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(value, unit)
-                with mock.patch.object(unit_conversion.PressureConverter, "convert") as convert:
-                    self.assertEqual(pressure.state, value)
-                    convert.assert_not_called()
+                await update(hass, account)
+                # A converted value would read 35.0.
+                assert hass.states.get(pressure).state == ("unknown" if value is None else "35")
         vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(35, "atm")
-        self.assertIsNone(pressure.native_value)
+        await update(hass, account)
+        assert hass.states.get(pressure).state == "unknown"
 
 
-class DeviceTrackerTests(unittest.IsolatedAsyncioTestCase):
-    async def test_unsubscribed_vehicle_exposes_both_location_entities(self):
+class TestDeviceTracker:
+    async def test_unsubscribed_vehicle_exposes_both_location_entities(self, hass, setup_vehicles):
         vehicle = FakeVehicle(set())
         vehicle.subscribed = False
         location = ToyotaLocation(34.05, -118.25)
@@ -714,27 +336,19 @@ class DeviceTrackerTests(unittest.IsolatedAsyncioTestCase):
             VehicleFeatures.ParkingLocation: location,
             VehicleFeatures.RealTimeLocation: location,
         }
-        coordinator = DataUpdateCoordinator([vehicle])
-        hass = FakeHass(coordinator)
-        entities = []
 
-        await device_tracker_platform.async_setup_entry(
-            hass,
-            ConfigEntry(),
-            lambda added, update_before_add: entities.extend(added),
-        )
+        account = await setup_vehicles([vehicle])
 
-        self.assertEqual(
-            [
-                (entity.sensor_name, entity._attr_entity_registry_enabled_default)
-                for entity in entities
-            ],
-            [("Last Parked Location", True), ("Current Location", False)],
-        )
+        assert [
+            (item.original_name, item.disabled_by is None)
+            for item in registry_entries(hass, account.entry, "device_tracker")
+        ] == [("Last Parked Location", True), ("Current Location", False)]
 
 
-class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
-    async def test_poll_reconciles_only_current_push_capable_vehicles(self):
+class TestCoordinatorUpdate:
+    async def test_poll_reconciles_only_current_push_capable_vehicles(
+        self, hass, setup_vehicles, caplog
+    ):
         vehicles = []
         for vin, generation, subscribed in (
             ("NEWVIN", ApiVehicleGeneration.MM21, True),
@@ -747,112 +361,74 @@ class CoordinatorUpdateTests(unittest.IsolatedAsyncioTestCase):
             vehicle.subscribed = subscribed
             vehicle.region = "CA"
             vehicles.append(vehicle)
-        coordinator = DataUpdateCoordinator([])
-        handler = types.SimpleNamespace(update_vehicle_contexts=mock.AsyncMock())
-        client = types.SimpleNamespace(_ws_handler=handler)
-        with (
-            mock.patch.object(
-                integration_runtime, "get_vehicles", mock.AsyncMock(return_value=vehicles)
-            ),
-            mock.patch.object(integration_runtime, "automatic_wake_due", return_value=False),
-            self.assertNoLogs(integration_runtime.__name__, level="WARNING"),
-        ):
-            result = await integration_runtime.update_vehicles_status(
-                FakeHass(coordinator),
-                client,
-                ConfigEntry(),
-                coordinator,
-            )
-        self.assertEqual(result, vehicles)
-        handler.update_vehicle_contexts.assert_awaited_once_with(
+        account = await setup_vehicles(vehicles)
+        # Polls during setup already pushed the contexts once.
+        account.websocket.update_vehicle_contexts.reset_mock()
+        caplog.clear()
+
+        await account.coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert account.coordinator.data == vehicles
+        account.websocket.update_vehicle_contexts.assert_awaited_once_with(
             {
                 "NEWVIN": {"region": "CA", "backdoor_type": "trunk"},
                 "OTHERNEWVIN": {"region": "CA", "backdoor_type": "trunk"},
                 "EXPIREDVIN": {"region": "CA", "backdoor_type": "trunk"},
             }
         )
-
-    async def test_automatic_wakes_schedule_one_followup_poll(self):
-        vehicles = [
-            FakeVehicle(set(), vin="FIRSTVIN"),
-            FakeVehicle(set(), vin="SECONDVIN"),
+        assert not [
+            record
+            for record in caplog.records
+            if record.name.startswith("custom_components.toyota_na")
+            and record.levelno >= logging.WARNING
         ]
-        coordinator = DataUpdateCoordinator(vehicles)
-        hass = FakeHass(coordinator)
-        entry = ConfigEntry()
 
-        with (
-            mock.patch.object(
-                integration_runtime,
-                "get_vehicles",
-                mock.AsyncMock(return_value=vehicles),
-            ),
-            mock.patch.object(
-                integration_runtime,
-                "automatic_wake_due",
-                return_value=True,
-            ),
-            mock.patch.object(
-                integration_runtime,
-                "COMMAND_REFRESH_DELAY",
-                0,
-            ),
-        ):
-            result = await integration_runtime.update_vehicles_status(
-                hass,
-                object(),
-                entry,
-                coordinator,
-            )
-            await asyncio.gather(*hass.tasks)
-
-        self.assertEqual(result, vehicles)
-        self.assertEqual(
-            [vehicle.refresh_requests for vehicle in vehicles],
-            [1, 1],
+    async def test_automatic_wakes_schedule_one_followup_poll(self, hass, setup_vehicles):
+        vehicles = [FakeVehicle(set(), vin="FIRSTVIN"), FakeVehicle(set(), vin="SECONDVIN")]
+        account = await setup_vehicles(vehicles)
+        await settle(hass)
+        # Neither vehicle has a recorded wake, so the next poll wakes both.
+        hass.config_entries.async_update_entry(
+            account.entry, options={CONF_WAKE_INTERVAL: 2 * 3600}
         )
-        self.assertEqual(len(hass.tasks), 1)
-        self.assertEqual(coordinator.refreshes, 1)
+        polls = account.get_vehicles.await_count
+
+        await account.coordinator.async_refresh()
+        await hass.async_block_till_done()
+        # A second follow-up would have waited out the cooldown of the first.
+        await settle(hass)
+
+        assert account.coordinator.data == vehicles
+        assert [vehicle.refresh_requests for vehicle in vehicles] == [1, 1]
+        # This poll and one follow-up.
+        assert account.get_vehicles.await_count == polls + 2
 
 
-class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
-    def make_flow(self, *, options=None):
-        config_entry = ConfigEntry()
-        config_entry.options = options or {}
-        return config_flow.ToyotaNAOptionsFlow(config_entry)
+class TestOptionsFlow:
+    async def open(self, hass, *, options=None):
+        entry = account_entry(options=options or {})
+        entry.add_to_hass(hass)
+        return entry, await hass.config_entries.options.async_init(entry.entry_id)
 
-    async def test_default_preserves_existing_two_hour_behavior(self):
-        result = await self.make_flow().async_step_init()
+    async def test_default_preserves_existing_two_hour_behavior(self, hass):
+        _, result = await self.open(hass)
 
-        self.assertEqual(
-            result["data_schema"]({}),
-            {CONF_WAKE_INTERVAL: str(2 * 3600)},
+        assert result["data_schema"]({}) == {CONF_WAKE_INTERVAL: str(2 * 3600)}
+
+    async def test_manual_only_is_saved(self, hass):
+        entry, result = await self.open(hass)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {CONF_WAKE_INTERVAL: "0"}
         )
 
-    async def test_manual_only_is_saved(self):
-        result = await self.make_flow().async_step_init({CONF_WAKE_INTERVAL: "0"})
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["title"] == ""
+        assert result["data"] == {CONF_WAKE_INTERVAL: 0}
+        assert entry.options == {CONF_WAKE_INTERVAL: 0}
 
-        self.assertEqual(
-            result,
-            {
-                "type": "create_entry",
-                "title": "",
-                "data": {CONF_WAKE_INTERVAL: 0},
-            },
-        )
+    @pytest.mark.parametrize("interval", [0, 12 * 3600])
+    async def test_saved_interval_is_selected_when_reopened(self, hass, interval):
+        _, result = await self.open(hass, options={CONF_WAKE_INTERVAL: interval})
 
-    async def test_saved_interval_is_selected_when_reopened(self):
-        for interval in (0, 12 * 3600):
-            with self.subTest(interval=interval):
-                result = await self.make_flow(
-                    options={CONF_WAKE_INTERVAL: interval}
-                ).async_step_init()
-
-                self.assertEqual(
-                    result["data_schema"]({}),
-                    {CONF_WAKE_INTERVAL: str(interval)},
-                )
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert result["data_schema"]({}) == {CONF_WAKE_INTERVAL: str(interval)}

@@ -19,7 +19,7 @@ from custom_components.toyota_na.const import NOTIFICATION_EVENT_TYPES
 from custom_components.toyota_na.patch_seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
 from custom_components.toyota_na.patch_vehicle import get_vehicles
 
-INTEGRATION = Path(__file__).parents[2] / "custom_components/toyota_na"
+INTEGRATION = Path(__file__).parents[1] / "custom_components/toyota_na"
 HISTORY = [
     {
         "vin": "FIRSTVIN",

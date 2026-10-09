@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import test_appsync_transport as transport
-import test_vehicle_behavior as behavior
+from common import make_24mm_vehicle
 
 from custom_components.toyota_na.patch_base_vehicle import RemoteRequestCommand
 
@@ -30,7 +30,7 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
         client.remote_request_24mm = AsyncMock(
             side_effect=lambda *args: client.graphql_get_vehicle_status.assert_awaited_once()
         )
-        vehicle = behavior.make_24mm_vehicle(client)
+        vehicle = make_24mm_vehicle(client)
         vehicle.apply_graphql_status(remote_status())
         await vehicle.send_command(RemoteRequestCommand.ExtendRuntime)
         client.graphql_get_vehicle_status.assert_awaited_once_with(
@@ -51,7 +51,7 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
             {"stopTime": "2020-01-01T00:00:00Z"},
         ):
             with self.subTest(changes=changes):
-                vehicle = behavior.make_24mm_vehicle()
+                vehicle = make_24mm_vehicle()
                 vehicle.apply_graphql_status(remote_status(**changes))
                 self.assertFalse(vehicle.supports_command(RemoteRequestCommand.ExtendRuntime))
 
@@ -60,7 +60,7 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
             graphql_get_vehicle_status=AsyncMock(return_value=remote_status(running=False)),
             remote_request_24mm=AsyncMock(),
         )
-        vehicle = behavior.make_24mm_vehicle(client)
+        vehicle = make_24mm_vehicle(client)
         vehicle.apply_graphql_status(remote_status())
         with self.assertRaisesRegex(ValueError, "unavailable for this session"):
             await vehicle.send_command(RemoteRequestCommand.ExtendRuntime)

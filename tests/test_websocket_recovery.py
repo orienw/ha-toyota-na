@@ -6,10 +6,8 @@ import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from test_vehicle_behavior import (
-    ToyotaWebSocketHandler,
-    websocket_module,
-)
+from custom_components.toyota_na import websocket_handler as websocket_module
+from custom_components.toyota_na.websocket_handler import ToyotaWebSocketHandler
 
 SCHEMA_ERROR = {"message": "Validation error of type FieldUndefined: actualChargingRate"}
 

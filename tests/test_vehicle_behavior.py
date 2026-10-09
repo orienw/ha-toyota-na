@@ -1,43 +1,24 @@
-# ruff: noqa: I001
-
 import asyncio
 import json
-import sys
 import types
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from common import (
+    LEXUS_21MM_COUPE,
+    TWENTY_FOUR_MM_PHEV,
+    make_17cy_vehicle,
+    make_24mm_vehicle,
+    make_vehicle,
+)
 
-ROOT = Path(__file__).resolve().parents[1]
-COMPONENTS = ROOT / "custom_components"
-INTEGRATION = COMPONENTS / "toyota_na"
-
-custom_components = types.ModuleType("custom_components")
-custom_components.__path__ = [str(COMPONENTS)]
-sys.modules.setdefault("custom_components", custom_components)
-
-integration = types.ModuleType("custom_components.toyota_na")
-integration.__path__ = [str(INTEGRATION)]
-sys.modules.setdefault("custom_components.toyota_na", integration)
-
-import toyota_na.vehicle.base_vehicle as upstream_base
+from custom_components.toyota_na import websocket_handler as websocket_module
 from custom_components.toyota_na.patch_base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
-    ToyotaVehicle,
     VehicleFeatures,
 )
-
-upstream_base.ApiVehicleGeneration = ApiVehicleGeneration
-upstream_base.RemoteRequestCommand = RemoteRequestCommand
-upstream_base.ToyotaVehicle = ToyotaVehicle
-upstream_base.VehicleFeatures = VehicleFeatures
-
-from custom_components.toyota_na.patch_seventeen_cy_plus import (
-    SeventeenCYPlusToyotaVehicle,
-)
-from custom_components.toyota_na.patch_seventeen_cy import SeventeenCYToyotaVehicle
 from custom_components.toyota_na.patch_client import (
     get_telemetry,
     get_vehicle_status_17cyplus,
@@ -45,9 +26,11 @@ from custom_components.toyota_na.patch_client import (
     graphql_confirm_subscription,
     remote_request_17cy,
 )
+from custom_components.toyota_na.patch_seventeen_cy import SeventeenCYToyotaVehicle
+from custom_components.toyota_na.patch_seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
+from custom_components.toyota_na.patch_vehicle import get_vehicles
 from custom_components.toyota_na.vehicle_helpers import (
     has_remote_subscription,
-    is_electric_vehicle,
     normalize_remote_display,
 )
 from custom_components.toyota_na.wake_policy import (
@@ -58,119 +41,8 @@ from custom_components.toyota_na.wake_policy import (
     record_vehicle_wake,
 )
 from custom_components.toyota_na.websocket_handler import ToyotaWebSocketHandler
-from custom_components.toyota_na import websocket_handler as websocket_module
 
-import toyota_na.vehicle.vehicle_generations.seventeen_cy as upstream_17cy
-import toyota_na.vehicle.vehicle_generations.seventeen_cy_plus as upstream_17cyplus
-
-upstream_17cy.SeventeenCYToyotaVehicle = SeventeenCYToyotaVehicle
-upstream_17cyplus.SeventeenCYPlusToyotaVehicle = SeventeenCYPlusToyotaVehicle
-
-from custom_components.toyota_na.patch_vehicle import get_vehicles
-
-
-LEXUS_21MM_COUPE = {
-    "modelYear": "2024",
-    "modelName": "LC 500 2-DOOR COUPE",
-    "generation": "21MM",
-    "brand": "L",
-    "region": "US",
-    "remoteSubscriptionStatus": "ACTIVE",
-    "subscriptionStatus": "SUBSCRIBED",
-    "remoteSubscriptionExists": True,
-    "remoteServiceCapabilities": {
-        "estartStopCapable": True,
-        "dlockUnlockCapable": True,
-        "powerWindowCapable": False,
-        "trunkCommandCapable": False,
-        "hornCommandCapable": False,
-        "estartEnabled": True,
-        "estopEnabled": True,
-        "hazardCapable": True,
-        "vehicleFinderCapable": True,
-    },
-    "extendedCapabilities": {
-        "rearDriverDoorOpenStatus": True,
-        "rearDriverDoorLockStatus": True,
-        "rearPassengerDoorOpenStatus": True,
-        "rearPassengerDoorLockStatus": True,
-        "remoteEngineStartStop": True,
-        "doorLockUnlockCapable": True,
-        "vehicleFinder": True,
-        "lastParkedCapable": True,
-    },
-    "backdoorType": "trunk",
-    "fuelType": "G",
-    "evVehicle": False,
-}
-
-TWENTY_FOUR_MM_PHEV = {
-    "modelYear": "2026",
-    "modelName": "RAV4 PLUG-IN HYBRID",
-    "generation": "24MM",
-    "brand": "T",
-    "region": "CA",
-    "remoteSubscriptionStatus": None,
-    "subscriptionStatus": "subscribed",
-    "remoteSubscriptionExists": True,
-    "remoteServiceCapabilities": {
-        "estartStopCapable": True,
-        "dlockUnlockCapable": True,
-    },
-    "extendedCapabilities": {
-        "remoteEngineStartStop": True,
-        "doorLockUnlockCapable": True,
-    },
-    "backdoorType": "hatch",
-    "fuelType": "I",
-    "evVehicle": False,
-}
-
-
-def make_vehicle(client=None):
-    return SeventeenCYPlusToyotaVehicle(
-        client=client or object(),
-        has_remote_subscription=has_remote_subscription(LEXUS_21MM_COUPE),
-        has_electric=is_electric_vehicle(LEXUS_21MM_COUPE),
-        model_name=LEXUS_21MM_COUPE["modelName"],
-        model_year=LEXUS_21MM_COUPE["modelYear"],
-        vin="TESTVIN",
-        region=LEXUS_21MM_COUPE["region"],
-        generation=ApiVehicleGeneration(LEXUS_21MM_COUPE["generation"]),
-        brand=LEXUS_21MM_COUPE["brand"],
-        backdoor_type=LEXUS_21MM_COUPE["backdoorType"],
-        remote_capabilities=LEXUS_21MM_COUPE["remoteServiceCapabilities"],
-        extended_capabilities=LEXUS_21MM_COUPE["extendedCapabilities"],
-    )
-
-
-def make_17cy_vehicle(client=None):
-    return SeventeenCYToyotaVehicle(
-        client or object(),
-        True,
-        True,
-        "PRIUS PRIME",
-        "2018",
-        "TESTVIN",
-        "CA",
-    )
-
-
-def make_24mm_vehicle(client=None):
-    return SeventeenCYPlusToyotaVehicle(
-        client=client or object(),
-        has_remote_subscription=has_remote_subscription(TWENTY_FOUR_MM_PHEV),
-        has_electric=is_electric_vehicle(TWENTY_FOUR_MM_PHEV),
-        model_name=TWENTY_FOUR_MM_PHEV["modelName"],
-        model_year=TWENTY_FOUR_MM_PHEV["modelYear"],
-        vin="TESTVIN24",
-        region=TWENTY_FOUR_MM_PHEV["region"],
-        generation=ApiVehicleGeneration(TWENTY_FOUR_MM_PHEV["generation"]),
-        brand=TWENTY_FOUR_MM_PHEV["brand"],
-        backdoor_type=TWENTY_FOUR_MM_PHEV["backdoorType"],
-        remote_capabilities=TWENTY_FOUR_MM_PHEV["remoteServiceCapabilities"],
-        extended_capabilities=TWENTY_FOUR_MM_PHEV["extendedCapabilities"],
-    )
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class VehicleMetadataTests(unittest.TestCase):
