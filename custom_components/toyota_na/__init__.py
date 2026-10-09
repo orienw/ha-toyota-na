@@ -160,7 +160,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
 
-from .command_refresh import refresh_after_command
+from .command_refresh import cancel_on_unload, refresh_after_command
 from .const import (
     COMMAND_MAP,
     COMMAND_REFRESH_DELAY,
@@ -292,7 +292,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
 
         task = hass.async_create_task(_refresh_coordinator_after_command(coordinator, vin, command))
         if config_entry is not None:
-            config_entry.async_on_unload(task.cancel)
+            cancel_on_unload(config_entry, task)
         _LOGGER.info("Handling service call %s for VIN ...%s", remote_action, vin[-4:])
 
         return
@@ -444,7 +444,7 @@ async def update_vehicles_status(
             vehicles.append(vehicle)
         if wake_requested:
             task = hass.async_create_task(_refresh_coordinator_after_command(coordinator))
-            entry.async_on_unload(task.cancel)
+            cancel_on_unload(entry, task)
         sync_remote_access_issues(hass, entry, vehicles)
         return vehicles
     except AuthError as e:

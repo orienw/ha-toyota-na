@@ -14,6 +14,7 @@ from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
 
 from .base_entity import ToyotaNABaseEntity
+from .command_refresh import cancel_on_unload
 from .const import (
     COMMAND_MAP,
     COMMAND_REFRESH_DELAY,
@@ -135,7 +136,7 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
                 raise
             record_vehicle_wake(self.hass, self._config_entry, self.vin)
             task = self.hass.async_create_task(self._background_refresh())
-            self._config_entry.async_on_unload(task.cancel)
+            cancel_on_unload(self._config_entry, task)
 
     async def _background_refresh(self):
         """Refresh coordinator state after a remote command."""

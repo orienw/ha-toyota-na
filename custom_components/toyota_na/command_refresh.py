@@ -11,6 +11,16 @@ ENGINE_STATUS_INTERVAL = 20
 ENGINE_STATUS_TIMEOUT = 90
 
 
+def cancel_on_unload(entry, task) -> None:
+    """Cancel a follow-up task when the entry unloads."""
+
+    def cancel() -> None:
+        # Home Assistant runs a truthy return value as a job, and Task.cancel returns True.
+        task.cancel()
+
+    entry.async_on_unload(cancel)
+
+
 async def refresh_after_command(coordinator, vin=None, command=None, *, delay=10):
     try:
         if command in (RemoteRequestCommand.EngineStart, RemoteRequestCommand.EngineStop):
