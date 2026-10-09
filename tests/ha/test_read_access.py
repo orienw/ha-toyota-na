@@ -1,86 +1,204 @@
 """Cached readings and shutdown independently of command access."""
 
+import json
 import types
 import unittest
+from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import test_appsync_transport as http
-import test_button as ha
-import test_vehicle_behavior as behavior
+import pytest
+from common import entity_id, make_17cy_vehicle, make_24mm_vehicle, make_vehicle
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.helpers import entity_registry as er
 
-from custom_components.toyota_na import binary_sensor, patch_client, sensor
+from custom_components.toyota_na import patch_client
+from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.patch_base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
 )
 
+RECOVERY_STATUS = {
+    "vin": "TESTVIN24",
+    "telemetry": {"odo": {"value": 1234, "unit": "mi"}},
+    "electric": None,
+}
+ELECTRIC = {
+    "battery": {"stateOfChargeDisplay": {"value": 0, "unit": "%"}},
+    "charging": {"chargingState": "charging"},
+}
+FIELD_ERROR = {
+    "path": ["getVehicleStatus", "electric", "charging", "chargeSettings", "schedules"],
+    "message": "Field failed",
+}
+
+
+class _Response:
+    def __init__(self, status=200, body=None):
+        self.status = status
+        self.body = {"data": {"getVehicleStatus": {"vin": "TESTVIN24"}}} if body is None else body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def text(self):
+        return json.dumps(self.body)
+
+
+def appsync_client():
+    client = types.SimpleNamespace(
+        auth=types.SimpleNamespace(
+            get_guid=AsyncMock(return_value="guid"),
+            get_device_id=lambda: "device",
+            get_access_token=AsyncMock(return_value="token"),
+        ),
+        get_telemetry=AsyncMock(return_value={}),
+    )
+    client.graphql_request = types.MethodType(patch_client.graphql_request, client)
+    client.graphql_get_vehicle_status = types.MethodType(
+        patch_client.graphql_get_vehicle_status, client
+    )
+    return client
+
+
+def http_session():
+    session = MagicMock()
+    session.__aenter__.return_value = session
+    return session
+
+
+def reading_names(hass, entry, vin):
+    """Names of a vehicle's sensors and binary sensors."""
+    return {
+        item.unique_id.removeprefix(f"{vin}.")
+        for item in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+        if item.domain in ("sensor", "binary_sensor") and item.unique_id.startswith(f"{vin}.")
+    }
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"vehicleInfo": {"chargeInfo": None}},
+        {"vehicleInfo": {"chargeInfo": {"gasolineTravelableDistance": 0}}},
+        patch_client.aiohttp.ClientResponseError(MagicMock(), (), status=401),
+    ],
+)
+async def test_21mm_legacy_fallback_restores_all_nine_ev_entities(hass, setup_vehicles, response):
+    status = {
+        "vehicleInfo": {
+            "acquisitionDatetime": "2026-09-27T12:00:00Z",
+            "chargeInfo": {
+                "evDistance": 200,
+                "evDistanceAC": 180,
+                "evDistanceUnit": "km",
+                "chargeRemainingAmount": 85,
+                "plugStatus": 40,
+                "remainingChargeTime": 90,
+                "evTravelableDistance": 200,
+                "chargeType": 2,
+                "connectorStatus": 5,
+            },
+        }
+    }
+    expected = {
+        "EV Range": "200",
+        "EV Range AC": "180",
+        "EV Battery Level": "85",
+        "Plug Status": "charging",
+        "Remaining Charge Time": "90",
+        "EV Travelable Distance": "200",
+        "Charge Type": "2",
+        "Connector Status": "locked",
+    }
+    client = types.SimpleNamespace(
+        api_get=AsyncMock(side_effect=[response, status]),
+        get_telemetry=AsyncMock(return_value={}),
+        get_vehicle_status_21mm=AsyncMock(return_value={}),
+        get_engine_status_21mm=AsyncMock(return_value={}),
+        get_climate_settings=AsyncMock(return_value=None),
+    )
+    client.get_electric_status = types.MethodType(patch_client.get_electric_status, client)
+    vehicle = make_vehicle(client)
+    vehicle._has_electric = True
+    await vehicle.update()
+
+    account = await setup_vehicles([vehicle])
+
+    assert reading_names(hass, account.entry, "TESTVIN") == set(expected) | {"Charging Status"}
+    for name, value in expected.items():
+        assert hass.states.get(entity_id(hass, "sensor", f"TESTVIN.{name}")).state == value, name
+    charging = hass.states.get(entity_id(hass, "binary_sensor", "TESTVIN.Charging Status"))
+    assert charging.state == "on"
+    assert [call.args[0] for call in client.api_get.call_args_list] == [
+        "v3/electric/status",
+        "v2/electric/status",
+    ]
+
+
+async def test_failed_unload_keeps_live_subscription_running(hass, setup_vehicles):
+    account = await setup_vehicles([])
+    with patch.object(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=False)):
+        assert not await hass.config_entries.async_unload(account.entry.entry_id)
+    account.websocket.stop.assert_not_awaited()
+    assert account.entry.state is ConfigEntryState.FAILED_UNLOAD
+    # Home Assistant won't unload an entry again once its unload failed,
+    # so mark it loaded to retry.
+    account.entry.mock_state(hass, ConfigEntryState.LOADED)
+    assert await hass.config_entries.async_unload(account.entry.entry_id)
+    account.websocket.stop.assert_awaited_once()
+    assert account.entry.entry_id not in hass.data[DOMAIN]
+
+
+@pytest.mark.parametrize(
+    ("response", "calls"),
+    [
+        (
+            {
+                "errors": [
+                    {"message": "Validation error of type FieldUndefined: actualChargingRate"}
+                ]
+            },
+            2,
+        ),
+        ({"data": {"getVehicleStatus": RECOVERY_STATUS}, "errors": [FIELD_ERROR]}, 2),
+        (
+            {
+                "data": {"getVehicleStatus": {**RECOVERY_STATUS, "electric": ELECTRIC}},
+                "errors": [FIELD_ERROR],
+            },
+            1,
+        ),
+    ],
+)
+async def test_recovery_creates_battery_and_charging_entities_after_vehicle_update(
+    hass, setup_vehicles, response, calls
+):
+    healthy = deepcopy({**RECOVERY_STATUS, "electric": ELECTRIC})
+    vehicle = make_24mm_vehicle(appsync_client())
+    session = http_session()
+    session.post.side_effect = [
+        _Response(200, deepcopy(response)),
+        _Response(200, {"data": {"getVehicleStatus": healthy}}),
+    ]
+    with patch.object(patch_client.aiohttp, "ClientSession", return_value=session):
+        await vehicle.update()
+
+    await setup_vehicles([vehicle])
+
+    battery = entity_id(hass, "sensor", "TESTVIN24.EV Battery Level")
+    charging = entity_id(hass, "binary_sensor", "TESTVIN24.Charging Status")
+    assert hass.states.get(battery).state == "0"
+    assert hass.states.get(charging).state == "on"
+    assert hass.states.get(entity_id(hass, "sensor", "TESTVIN24.Odometer")).state == "1234"
+    assert session.post.call_count == calls
+
 
 class ReadAccessTests(unittest.IsolatedAsyncioTestCase):
-    async def test_21mm_legacy_fallback_restores_all_nine_ev_entities(self):
-        status = {
-            "vehicleInfo": {
-                "acquisitionDatetime": "2026-09-27T12:00:00Z",
-                "chargeInfo": {
-                    "evDistance": 200,
-                    "evDistanceAC": 180,
-                    "evDistanceUnit": "km",
-                    "chargeRemainingAmount": 85,
-                    "plugStatus": 40,
-                    "remainingChargeTime": 90,
-                    "evTravelableDistance": 200,
-                    "chargeType": 2,
-                    "connectorStatus": 5,
-                },
-            }
-        }
-        expected = {
-            "EV Range": 200,
-            "EV Range AC": 180,
-            "EV Battery Level": 85,
-            "Plug Status": "charging",
-            "Remaining Charge Time": 90,
-            "EV Travelable Distance": 200,
-            "Charge Type": 2,
-            "Connector Status": "locked",
-        }
-        for response in (
-            {"vehicleInfo": {"chargeInfo": None}},
-            {"vehicleInfo": {"chargeInfo": {"gasolineTravelableDistance": 0}}},
-            patch_client.aiohttp.ClientResponseError(MagicMock(), (), status=401),
-        ):
-            with self.subTest(response=response):
-                client = types.SimpleNamespace(
-                    api_get=AsyncMock(side_effect=[response, status]),
-                    get_telemetry=AsyncMock(return_value={}),
-                    get_vehicle_status_21mm=AsyncMock(return_value={}),
-                    get_engine_status_21mm=AsyncMock(return_value={}),
-                    get_climate_settings=AsyncMock(return_value=None),
-                )
-                client.get_electric_status = types.MethodType(
-                    patch_client.get_electric_status, client
-                )
-                vehicle = behavior.make_vehicle(client)
-                vehicle._has_electric = True
-                await vehicle.update()
-                coordinator = ha.DataUpdateCoordinator([vehicle])
-                hass, entry, entities = ha.FakeHass(coordinator), ha.ConfigEntry(), []
-                for platform in (sensor, binary_sensor):
-                    await platform.async_setup_entry(
-                        hass, entry, lambda added, update: entities.extend(added)
-                    )
-                by_name = {entity.sensor_name: entity for entity in entities}
-                self.assertEqual(set(expected) | {"Charging Status"}, set(by_name))
-                for name, value in expected.items():
-                    self.assertTrue(by_name[name].available, name)
-                    self.assertEqual(value, by_name[name].native_value, name)
-                self.assertTrue(by_name["Charging Status"].available)
-                self.assertTrue(by_name["Charging Status"].is_on)
-                self.assertEqual(
-                    ["v3/electric/status", "v2/electric/status"],
-                    [call.args[0] for call in client.api_get.call_args_list],
-                )
-
     async def test_all_supported_generations_read_cached_status_without_subscription(self):
         rest_status = {
             "vehicleStatus": [
@@ -122,9 +240,9 @@ class ReadAccessTests(unittest.IsolatedAsyncioTestCase):
                     graphql_pre_wake=AsyncMock(),
                 )
                 vehicle = (
-                    behavior.make_17cy_vehicle(client)
+                    make_17cy_vehicle(client)
                     if generation == ApiVehicleGeneration.CY17
-                    else behavior.make_vehicle(client)
+                    else make_vehicle(client)
                 )
                 vehicle._generation = generation
                 vehicle._has_electric = False
@@ -136,98 +254,24 @@ class ReadAccessTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(vehicle.supports_command(RemoteRequestCommand.DoorUnlock))
                 client.graphql_pre_wake.assert_not_awaited()
 
-    async def test_failed_unload_keeps_live_subscription_running(self):
-        coordinator = ha.DataUpdateCoordinator([])
-        hass = ha.FakeHass(coordinator)
-        entry = ha.ConfigEntry()
-        handler = types.SimpleNamespace(stop=AsyncMock())
-        hass.data[ha.DOMAIN][entry.entry_id]["ws_handler"] = handler
-        hass.async_unload_platforms = AsyncMock(return_value=False)
-        self.assertFalse(await ha.integration_runtime.async_unload_entry(hass, entry))
-        handler.stop.assert_not_awaited()
-        hass.async_unload_platforms.return_value = True
-        self.assertTrue(await ha.integration_runtime.async_unload_entry(hass, entry))
-        handler.stop.assert_awaited_once()
-        self.assertNotIn(entry.entry_id, hass.data[ha.DOMAIN])
-
 
 class StatusRecoveryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.client = types.SimpleNamespace(
-            auth=types.SimpleNamespace(
-                get_guid=AsyncMock(return_value="guid"),
-                get_device_id=lambda: "device",
-                get_access_token=AsyncMock(return_value="token"),
-            ),
-            get_telemetry=AsyncMock(return_value={}),
-        )
-        self.client.graphql_request = types.MethodType(patch_client.graphql_request, self.client)
-        self.client.graphql_get_vehicle_status = types.MethodType(
-            patch_client.graphql_get_vehicle_status, self.client
-        )
-        self.session = MagicMock()
-        self.session.__aenter__.return_value = self.session
+        self.client = appsync_client()
+        self.session = http_session()
         session_patch = patch.object(
             patch_client.aiohttp, "ClientSession", return_value=self.session
         )
         session_patch.start()
         self.addCleanup(session_patch.stop)
-        self.status = {
-            "vin": "TESTVIN24",
-            "telemetry": {"odo": {"value": 1234, "unit": "mi"}},
-            "electric": None,
-        }
-        self.electric = {
-            "battery": {"stateOfChargeDisplay": {"value": 0, "unit": "%"}},
-            "charging": {"chargingState": "charging"},
-        }
-        self.error = {
-            "path": ["getVehicleStatus", "electric", "charging", "chargeSettings", "schedules"],
-            "message": "Field failed",
-        }
-
-    async def test_recovery_creates_battery_and_charging_entities_after_vehicle_update(self):
-        healthy = {**self.status, "electric": self.electric}
-        for response, calls in (
-            (
-                {
-                    "errors": [
-                        {"message": "Validation error of type FieldUndefined: actualChargingRate"}
-                    ]
-                },
-                2,
-            ),
-            ({"data": {"getVehicleStatus": self.status}, "errors": [self.error]}, 2),
-            ({"data": {"getVehicleStatus": healthy}, "errors": [self.error]}, 1),
-        ):
-            with self.subTest(response=response):
-                vehicle = behavior.make_24mm_vehicle(self.client)
-                self.session.post.reset_mock()
-                self.session.post.side_effect = [
-                    http._Response(200, response),
-                    http._Response(200, {"data": {"getVehicleStatus": healthy}}),
-                ]
-                await vehicle.update()
-                coordinator = ha.DataUpdateCoordinator([vehicle])
-                hass, entry, entities = ha.FakeHass(coordinator), ha.ConfigEntry(), []
-                for platform in (sensor, binary_sensor):
-                    await platform.async_setup_entry(
-                        hass, entry, lambda added, update: entities.extend(added)
-                    )
-                by_name = {entity.sensor_name: entity for entity in entities}
-                self.assertEqual(0, by_name["EV Battery Level"].native_value)
-                self.assertTrue(by_name["Charging Status"].is_on)
-                self.assertEqual(1234, by_name["Odometer"].native_value)
-                self.assertEqual(
-                    "TESTVIN24.EV Battery Level", by_name["EV Battery Level"].unique_id
-                )
-                self.assertEqual("TESTVIN24.Charging Status", by_name["Charging Status"].unique_id)
-                self.assertEqual(calls, self.session.post.call_count)
+        self.status = deepcopy(RECOVERY_STATUS)
+        self.electric = deepcopy(ELECTRIC)
+        self.error = deepcopy(FIELD_ERROR)
 
     async def test_recovered_sections_do_not_inherit_a_newer_primary_timestamp(self):
         for fallback_time in ("2026-09-27T11:00:00Z", None):
             with self.subTest(fallback_time=fallback_time):
-                vehicle = behavior.make_24mm_vehicle(self.client)
+                vehicle = make_24mm_vehicle(self.client)
                 vehicle.apply_graphql_status(
                     {
                         "lastUpdateDateTime": "2026-09-27T11:30:00Z",
@@ -244,10 +288,8 @@ class StatusRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "telemetry": {"odo": {"value": 999}},
                 }
                 self.session.post.side_effect = [
-                    http._Response(
-                        200, {"data": {"getVehicleStatus": primary}, "errors": [self.error]}
-                    ),
-                    http._Response(200, {"data": {"getVehicleStatus": fallback}}),
+                    _Response(200, {"data": {"getVehicleStatus": primary}, "errors": [self.error]}),
+                    _Response(200, {"data": {"getVehicleStatus": fallback}}),
                 ]
                 await vehicle.update()
                 self.assertEqual(50, vehicle.features[VehicleFeatures.ChargeLevel].value)
@@ -269,7 +311,7 @@ class StatusRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 ("2026-09-27T13:00:00Z", False),
             ):
                 with self.subTest(cached=cached, fallback_time=fallback_time):
-                    vehicle = behavior.make_24mm_vehicle(self.client)
+                    vehicle = make_24mm_vehicle(self.client)
                     if cached:
                         vehicle.apply_graphql_status(
                             {
@@ -295,10 +337,10 @@ class StatusRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     fallback = {"lastUpdateDateTime": fallback_time, "electric": self.electric}
                     self.session.post.reset_mock()
                     self.session.post.side_effect = [
-                        http._Response(
+                        _Response(
                             200, {"data": {"getVehicleStatus": primary}, "errors": [self.error]}
                         ),
-                        http._Response(200, {"data": {"getVehicleStatus": fallback}}),
+                        _Response(200, {"data": {"getVehicleStatus": fallback}}),
                     ]
                     await vehicle.update()
                     self.assertEqual(2, self.session.post.call_count)
@@ -340,13 +382,11 @@ class StatusRecoveryTests(unittest.IsolatedAsyncioTestCase):
             {"electric": {"battery": {"stateOfChargeDisplay": {"value": 10}}}},
         ):
             with self.subTest(fallback=fallback):
-                vehicle = behavior.make_24mm_vehicle(self.client)
+                vehicle = make_24mm_vehicle(self.client)
                 self.session.post.reset_mock()
                 self.session.post.side_effect = [
-                    http._Response(
-                        200, {"data": {"getVehicleStatus": primary}, "errors": [self.error]}
-                    ),
-                    http._Response(200, {"data": {"getVehicleStatus": fallback}}),
+                    _Response(200, {"data": {"getVehicleStatus": primary}, "errors": [self.error]}),
+                    _Response(200, {"data": {"getVehicleStatus": fallback}}),
                 ]
                 await vehicle.update()
                 self.assertEqual(2, self.session.post.call_count)
