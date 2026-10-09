@@ -40,9 +40,9 @@ jobs:
     name: HACS validation
     runs-on: ubuntu-latest
     steps:
-      # The repository has no license or topics yet.
+      # The repository has no license yet.
       - uses: hacs/action@main
         with:
           category: integration
           comment: false
-          ignore: license topics
+          ignore: license
