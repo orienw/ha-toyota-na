@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENTS = ROOT / "custom_components"
 INTEGRATION = COMPONENTS / "toyota_na"
 
+# The stubs below would overwrite parts of a real Home Assistant that is already loaded.
+if "homeassistant" in sys.modules:
+    raise RuntimeError(
+        "These tests stub Home Assistant. Run them with: pytest -p no:homeassistant --ignore=tests/ha"
+    )
+
 custom_components = sys.modules.setdefault(
     "custom_components", types.ModuleType("custom_components")
 )
