@@ -20,7 +20,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-test.txt
       - run: pip install -r requirements-test.txt
-      - run: python -m unittest discover -s tests
+      - run: pytest -q
   hassfest:
     name: hassfest
     runs-on: ubuntu-latest
