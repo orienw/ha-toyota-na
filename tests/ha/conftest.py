@@ -43,7 +43,11 @@ async def setup_vehicles(hass, caplog):
             stack.enter_context(
                 patch("custom_components.toyota_na.ToyotaWebSocketHandler", FakeWebSocket)
             )
-            stack.enter_context(patch("custom_components.toyota_na.COMMAND_REFRESH_DELAY", 0))
+            # Poll right after a command. Buttons and locks import their own copy of the delay.
+            for module in ("", ".button", ".lock"):
+                stack.enter_context(
+                    patch(f"custom_components.toyota_na{module}.COMMAND_REFRESH_DELAY", 0)
+                )
             # A wake interval of 0 keeps setup from waking the vehicle.
             entry = account_entry(options={CONF_WAKE_INTERVAL: 0, **(options or {})}, data=data)
             entry.add_to_hass(hass)

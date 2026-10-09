@@ -2,7 +2,6 @@
 
 import logging
 from datetime import timedelta
-from unittest.mock import patch
 
 import pytest
 from common import FakeVehicle, account_entry, entity_id
@@ -32,19 +31,6 @@ from custom_components.toyota_na.wake_policy import (
 
 LC_CONTROLS = ["Remote Start", "Remote Stop", "Flash Hazards", "Find Vehicle", "Refresh Status"]
 STALE_TRUNK = ["binary_sensor.testvin_trunk", "binary_sensor.testvin_trunk_door_lock"]
-
-
-@pytest.fixture(autouse=True)
-def no_command_delay():
-    """Poll right after a command, like setup_vehicles does for the integration's services.
-
-    The button and lock platforms import their own copy of the delay.
-    """
-    with (
-        patch("custom_components.toyota_na.button.COMMAND_REFRESH_DELAY", 0),
-        patch("custom_components.toyota_na.lock.COMMAND_REFRESH_DELAY", 0),
-    ):
-        yield
 
 
 async def settle(hass):

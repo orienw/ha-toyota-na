@@ -19,19 +19,6 @@ from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.patch_base_vehicle import RemoteRequestCommand
 
 
-@pytest.fixture(autouse=True)
-def no_command_delay():
-    """Poll right after a command, like setup_vehicles does for the integration's services.
-
-    The button and lock platforms import their own copy of the delay.
-    """
-    with (
-        patch("custom_components.toyota_na.button.COMMAND_REFRESH_DELAY", 0),
-        patch("custom_components.toyota_na.lock.COMMAND_REFRESH_DELAY", 0),
-    ):
-        yield
-
-
 @pytest.fixture
 async def commands(hass, setup_vehicles):
     vehicle = FakeVehicle(
