@@ -4,8 +4,10 @@ import types
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import test_button as ha
-import test_vehicle_behavior as behavior
+import pytest
+from common import FakeVehicle, make_17cy_vehicle, make_vehicle
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+from homeassistant.helpers import entity_registry as er
 
 from custom_components.toyota_na import health_helpers, patch_base_vehicle, patch_client
 
@@ -18,6 +20,8 @@ SOFTWARE = {
     "updateName": "Multimedia",
     "versionNumber": "2.1",
 }
+# Attributes Home Assistant adds to every state, around the entity's own.
+STANDARD_ATTRIBUTES = {"friendly_name", "icon", "device_class", "state_class"}
 
 
 def health_client(**overrides):
@@ -35,7 +39,7 @@ def health_client(**overrides):
 class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
     async def test_reads_use_the_vehicle_headers_like_the_app(self):
         client = health_client()
-        vehicle = behavior.make_vehicle(client)
+        vehicle = make_vehicle(client)
         await vehicle.update_health()
         client.get_vehicle_health_report.assert_awaited_once_with("TESTVIN", "21MM", "US", "L")
         client.get_vehicle_health_status.assert_awaited_once_with("TESTVIN", "21MM", "US", "L")
@@ -58,17 +62,17 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
             ({"vehicleHealthReport": 2, "vehicleDiagnostic": 2}, set()),
         ):
             with self.subTest(flags=flags):
-                vehicle = behavior.make_vehicle(health_client())
+                vehicle = make_vehicle(health_client())
                 vehicle._feature_flags = flags
                 await vehicle.update_health()
                 self.assertEqual(set(vehicle.health) - {"read_at"}, expected)
 
     async def test_reads_are_hourly_across_polls(self):
         client = health_client()
-        previous = behavior.make_vehicle(client)
+        previous = make_vehicle(client)
         with patch.object(patch_base_vehicle.time, "monotonic", return_value=1000.0):
             await previous.update_health()
-        vehicle = behavior.make_vehicle(client)
+        vehicle = make_vehicle(client)
         self.assertTrue(vehicle.inherit_state(previous))
         for now, reads in ((4599.0, 1), (4600.0, 2)):
             with patch.object(patch_base_vehicle.time, "monotonic", return_value=now):
@@ -78,7 +82,7 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_or_unusable_reads_keep_the_last_response(self):
         client = health_client()
-        vehicle = behavior.make_vehicle(client)
+        vehicle = make_vehicle(client)
         with patch.object(patch_base_vehicle.time, "monotonic", return_value=1000.0):
             await vehicle.update_health()
         client.get_vehicle_health_report.side_effect = RuntimeError("[APIGW-403]")
@@ -99,7 +103,7 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
             get_vehicle_health_report=AsyncMock(side_effect=[TimeoutError(), {}, REPORT, REPORT]),
             get_service_campaigns=AsyncMock(return_value=[]),
         )
-        vehicle = behavior.make_vehicle(client)
+        vehicle = make_vehicle(client)
         for now in (1000.0, 1600.0, 2200.0, 2800.0, 4599.0):
             with patch.object(patch_base_vehicle.time, "monotonic", return_value=now):
                 await vehicle.update_health()
@@ -112,8 +116,8 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_both_vehicle_classes_read_health_each_poll(self):
         for vehicle in (
-            behavior.make_vehicle(types.SimpleNamespace()),
-            behavior.make_17cy_vehicle(types.SimpleNamespace()),
+            make_vehicle(types.SimpleNamespace()),
+            make_17cy_vehicle(types.SimpleNamespace()),
         ):
             with (
                 self.subTest(vehicle=type(vehicle).__name__),
@@ -427,98 +431,118 @@ class HealthTabTests(unittest.TestCase):
         self.assertIsNone(health_helpers.engine_oil_low({"report": "unexpected"}))
 
 
-class HealthEntityTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.vehicle = ha.FakeVehicle(set())
-        self.vehicle.health = {
-            "report": {
-                "recallsListExists": True,
-                "safetyRecallsList": [{"title": "Airbag", "dealerReferenceID": "24V1"}],
-                "vehicleAlertList": [{"wngname": "Check engine", "wngdesc": "Visit a dealer"}],
-                "vehicleStatus": {
-                    "engOilLevelStatus": "Low",
-                    "smartKeyBatteryTitle": "Key fob",
-                    "smartKeyBatteryDesc": "Good",
-                },
-                "maintenanceInformation": {
-                    "maintenanceRequired": False,
-                    "serviceDue": "5,000 miles",
-                },
+def health_entities(hass, entry, vin):
+    """Entity IDs of a vehicle's sensors and binary sensors, by name."""
+    return {
+        item.unique_id.removeprefix(f"{vin}."): item.entity_id
+        for item in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+        if item.domain in ("sensor", "binary_sensor") and item.unique_id.startswith(f"{vin}.")
+    }
+
+
+def extra_attributes(state):
+    return {key: value for key, value in state.attributes.items() if key not in STANDARD_ATTRIBUTES}
+
+
+async def add_to_account(hass, account, vehicle):
+    """List another vehicle in the account and poll it."""
+    account.get_vehicles.return_value.append(vehicle)
+    await account.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+
+@pytest.fixture
+async def health(hass, setup_vehicles):
+    vehicle = FakeVehicle(set())
+    vehicle.health = {
+        "report": {
+            "recallsListExists": True,
+            "safetyRecallsList": [{"title": "Airbag", "dealerReferenceID": "24V1"}],
+            "vehicleAlertList": [{"wngname": "Check engine", "wngdesc": "Visit a dealer"}],
+            "vehicleStatus": {
+                "engOilLevelStatus": "Low",
+                "smartKeyBatteryTitle": "Key fob",
+                "smartKeyBatteryDesc": "Good",
             },
-            "campaigns": [],
-        }
-        self.coordinator = ha.DataUpdateCoordinator([self.vehicle])
-        self.entities = {}
-        for platform in (ha.sensor_platform, ha.binary_sensor_platform):
-            await platform.async_setup_entry(
-                ha.FakeHass(self.coordinator),
-                ha.ConfigEntry(),
-                lambda added, update: self.entities.update(
-                    {entity.sensor_name: entity for entity in added}
-                ),
-            )
-
-    async def test_health_entities_show_the_app_tiles(self):
-        self.assertEqual(
-            set(self.entities),
-            {
-                "Safety Recalls",
-                "Service Campaigns",
-                "Vehicle Alerts",
-                "Engine Oil",
-                "Key Fob Battery",
-                "Maintenance Required",
+            "maintenanceInformation": {
+                "maintenanceRequired": False,
+                "serviceDue": "5,000 miles",
             },
-        )
-        recalls = self.entities["Safety Recalls"]
-        self.assertEqual(recalls.native_value, 1)
-        self.assertEqual(recalls.extra_state_attributes["recalls"][0]["title"], "Airbag")
-        self.assertEqual(self.entities["Service Campaigns"].native_value, 0)
-        self.assertEqual(
-            self.entities["Vehicle Alerts"].extra_state_attributes,
-            {
-                "alerts": [{"title": "Check engine", "description": "Visit a dealer"}],
-            },
-        )
-        self.assertIs(self.entities["Engine Oil"].is_on, True)
-        self.assertIs(self.entities["Key Fob Battery"].is_on, False)
-        maintenance = self.entities["Maintenance Required"]
-        self.assertIs(maintenance.is_on, False)
-        self.assertEqual(maintenance.extra_state_attributes, {"service_due": "5,000 miles"})
-        self.assertEqual(maintenance.device_class, ha.BinarySensorDeviceClass.PROBLEM)
-        self.assertEqual(
-            self.entities["Key Fob Battery"].device_class, ha.BinarySensorDeviceClass.BATTERY
-        )
+        },
+        "campaigns": [],
+    }
+    account = await setup_vehicles([vehicle])
 
-    async def test_feature_flags_gate_each_tile(self):
-        self.vehicle._feature_flags = {"scheduleMaintenance": 1, "safetyRecall": 2}
-        available = {name for name, entity in self.entities.items() if entity.available}
-        self.assertEqual(available, {"Maintenance Required", "Key Fob Battery"})
-        self.assertIsNone(self.entities["Safety Recalls"].native_value)
-        self.assertIsNone(self.entities["Safety Recalls"].extra_state_attributes)
+    async def refresh():
+        account.coordinator.async_set_updated_data(account.coordinator.data)
+        await hass.async_block_till_done()
 
-    async def test_software_update_appears_behind_auto_drive(self):
-        other = ha.FakeVehicle(set(), vin="OTAVIN")
-        other.health = {"software": SOFTWARE}
-        other._feature_flags = {"autoDrive": 1}
-        self.coordinator.data.append(other)
-        self.coordinator.notify_listeners()
-        ota = next(entity for entity in self.entities.values() if entity.vin == "OTAVIN")
-        self.assertEqual(ota.sensor_name, "Software Update")
-        self.assertEqual(ota.device_class, ha.BinarySensorDeviceClass.UPDATE)
-        self.assertIs(ota.is_on, True)
-        self.assertEqual(ota.extra_state_attributes["version"], "2.1")
-        other._feature_flags = {"autoDrive": 2}
-        self.assertFalse(ota.available)
+    return vehicle, account, health_entities(hass, account.entry, "TESTVIN"), refresh
 
-    async def test_vehicles_without_health_get_no_health_entities(self):
-        other = ha.FakeVehicle(set(), vin="OTHERVIN")
-        self.coordinator.data.append(other)
-        self.coordinator.notify_listeners()
-        self.assertFalse(any(entity.vin == "OTHERVIN" for entity in self.entities.values()))
-        other.health = {"status": {"warning": []}}
-        self.coordinator.notify_listeners()
-        self.assertEqual(
-            {name for name, entity in self.entities.items() if entity.vin == "OTHERVIN"},
-            {"Vehicle Alerts"},
-        )
+
+async def test_health_entities_show_the_app_tiles(hass, health):
+    _, _, entities, _ = health
+    assert set(entities) == {
+        "Safety Recalls",
+        "Service Campaigns",
+        "Vehicle Alerts",
+        "Engine Oil",
+        "Key Fob Battery",
+        "Maintenance Required",
+    }
+    states = {name: hass.states.get(entity) for name, entity in entities.items()}
+    assert states["Safety Recalls"].state == "1"
+    assert states["Safety Recalls"].attributes["recalls"][0]["title"] == "Airbag"
+    assert states["Service Campaigns"].state == "0"
+    assert extra_attributes(states["Vehicle Alerts"]) == {
+        "alerts": [{"title": "Check engine", "description": "Visit a dealer"}],
+    }
+    assert states["Engine Oil"].state == "on"
+    assert states["Key Fob Battery"].state == "off"
+    maintenance = states["Maintenance Required"]
+    assert maintenance.state == "off"
+    assert extra_attributes(maintenance) == {"service_due": "5,000 miles"}
+    assert maintenance.attributes["device_class"] == BinarySensorDeviceClass.PROBLEM
+    assert states["Key Fob Battery"].attributes["device_class"] == BinarySensorDeviceClass.BATTERY
+
+
+async def test_feature_flags_gate_each_tile(hass, health):
+    vehicle, _, entities, refresh = health
+    vehicle._feature_flags = {"scheduleMaintenance": 1, "safetyRecall": 2}
+    await refresh()
+
+    available = {
+        name for name, entity in entities.items() if hass.states.get(entity).state != "unavailable"
+    }
+    assert available == {"Maintenance Required", "Key Fob Battery"}
+    recalls = hass.states.get(entities["Safety Recalls"])
+    assert recalls.state == "unavailable"
+    assert "recalls" not in recalls.attributes
+
+
+async def test_software_update_appears_behind_auto_drive(hass, health):
+    _, account, _, refresh = health
+    other = FakeVehicle(set(), vin="OTAVIN")
+    other.health = {"software": SOFTWARE}
+    other._feature_flags = {"autoDrive": 1}
+    await add_to_account(hass, account, other)
+
+    entities = health_entities(hass, account.entry, "OTAVIN")
+    assert set(entities) == {"Software Update"}
+    ota = hass.states.get(entities["Software Update"])
+    assert ota.attributes["device_class"] == BinarySensorDeviceClass.UPDATE
+    assert ota.state == "on"
+    assert ota.attributes["version"] == "2.1"
+    other._feature_flags = {"autoDrive": 2}
+    await refresh()
+    assert hass.states.get(entities["Software Update"]).state == "unavailable"
+
+
+async def test_vehicles_without_health_get_no_health_entities(hass, health):
+    _, account, _, refresh = health
+    other = FakeVehicle(set(), vin="OTHERVIN")
+    await add_to_account(hass, account, other)
+    assert health_entities(hass, account.entry, "OTHERVIN") == {}
+    other.health = {"status": {"warning": []}}
+    await refresh()
+    assert set(health_entities(hass, account.entry, "OTHERVIN")) == {"Vehicle Alerts"}
