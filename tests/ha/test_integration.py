@@ -160,6 +160,7 @@ async def test_sign_in_with_a_one_time_code_creates_the_account(hass):
     with (
         patch("custom_components.toyota_na.config_flow.ToyotaOneClient", return_value=client),
         patch("custom_components.toyota_na.async_setup_entry", AsyncMock(return_value=True)),
+        patch("custom_components.toyota_na.async_unload_entry", AsyncMock(return_value=True)),
     ):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         assert (result["type"], result["step_id"]) == (FlowResultType.FORM, "user")
@@ -171,8 +172,10 @@ async def test_sign_in_with_a_one_time_code_creates_the_account(hass):
             result["flow_id"], {"code": "123456"}
         )
         await hass.async_block_till_done()
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        # Setup was stubbed, so unload with the stub before the real unload sees the entry.
+        assert await hass.config_entries.async_unload(result["result"].entry_id)
 
-    assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == EMAIL
     assert result["data"] == {
         "tokens": {"access_token": "test-access"},
