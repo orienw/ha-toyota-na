@@ -4,6 +4,7 @@ import asyncio
 import base64
 import copy
 import hashlib
+import logging
 import os
 import time
 import types
@@ -13,10 +14,18 @@ from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 import jwt
-import test_button as platform
+import pytest
+from common import FakeVehicle, account_entry
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from toyota_na.exceptions import LoginError, TokenExpired
 
-from custom_components.toyota_na import patch_auth
+from custom_components.toyota_na import config_flow, patch_auth
+from custom_components.toyota_na.const import DOMAIN
+
+CREDENTIALS = {"username": "owner", "password": "password"}
 
 
 class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
@@ -155,28 +164,60 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
                 auth.refresh_tokens.assert_awaited_once()
 
 
-class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.auth = types.SimpleNamespace(
+def errors_logged(caplog, logger):
+    return [
+        record
+        for record in caplog.records
+        if record.name == logger and record.levelno >= logging.ERROR
+    ]
+
+
+def reauth_flows(hass, entry):
+    return [
+        flow
+        for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+        if flow["context"]["source"] == "reauth" and flow["context"]["entry_id"] == entry.entry_id
+    ]
+
+
+class TestAuthFlow:
+    @pytest.fixture
+    async def setup_entry(self, hass):
+        """Stub account setup, so a finished sign-in doesn't load the integration."""
+        with (
+            patch(
+                "custom_components.toyota_na.async_setup_entry", AsyncMock(return_value=True)
+            ) as setup_entry,
+            patch("custom_components.toyota_na.async_unload_entry", AsyncMock(return_value=True)),
+        ):
+            yield setup_entry
+            # Unload with the stub before the real unload sees the entries.
+            for entry in hass.config_entries.async_entries(DOMAIN):
+                if entry.state is ConfigEntryState.LOADED:
+                    assert await hass.config_entries.async_unload(entry.entry_id)
+
+    @pytest.fixture
+    def auth(self, setup_entry):
+        auth = types.SimpleNamespace(
             authorize=AsyncMock(),
             request_tokens=AsyncMock(),
             get_id_info=AsyncMock(return_value={"email": "owner@example.com"}),
             get_tokens=lambda: {"access_token": "token"},
         )
-        self.flow = platform.config_flow.ToyotaNAConfigFlow()
-        self.flow.async_show_form = lambda **kwargs: {"type": "form", **kwargs}
-        self.flow.async_set_unique_id = AsyncMock(return_value=None)
-        self.flow.async_create_entry = lambda **kwargs: {"type": "create_entry", **kwargs}
-        client_patch = patch.object(
-            platform.config_flow,
-            "ToyotaOneClient",
-            return_value=types.SimpleNamespace(auth=self.auth),
-        )
-        client_patch.start()
-        self.addCleanup(client_patch.stop)
-        self.credentials = {"username": "owner", "password": "password"}
+        with patch.object(
+            config_flow, "ToyotaOneClient", return_value=types.SimpleNamespace(auth=auth)
+        ):
+            yield auth
 
-    async def test_failed_authentication_does_not_log_callback_body(self):
+    async def sign_in(self, hass, result=None):
+        if result is None:
+            result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        assert (result["type"], result["step_id"]) == (FlowResultType.FORM, "user")
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], CREDENTIALS)
+        await hass.async_block_till_done()
+        return result
+
+    async def test_failed_authentication_does_not_log_callback_body(self, caplog):
         response = MagicMock(status=401)
         response.text = AsyncMock(return_value='{"authId":"private-auth-session","callbacks":[]}')
         response.__aenter__ = AsyncMock(return_value=response)
@@ -185,188 +226,206 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
         session.post.return_value = response
-        with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
-            with self.assertLogs(patch_auth.__name__, level="INFO") as logs:
-                with self.assertRaises(LoginError):
-                    await patch_auth.authorize(types.SimpleNamespace(), "owner", "password")
-        self.assertIn("401", " ".join(logs.output))
-        self.assertNotIn("private-auth-session", " ".join(logs.output))
-
-    async def test_authorized_login_finishes_without_asking_for_otp(self):
-        self.auth.authorize.return_value = "authorization-code"
-
-        result = await self.flow.async_step_user(self.credentials)
-
-        self.assertEqual(result["type"], "create_entry")
-        self.assertEqual(result["data"]["tokens"], {"access_token": "token"})
-        self.assertNotIn("password", result["data"])
-        self.auth.authorize.assert_awaited_once_with("owner", "password")
-        self.auth.request_tokens.assert_awaited_once_with("authorization-code")
-
-    async def test_otp_can_be_retried_before_finishing_login(self):
-        self.auth.authorize.side_effect = [{"callbacks": []}, LoginError(), "code"]
-
-        result = await self.flow.async_step_user(self.credentials)
-        self.assertEqual(result["step_id"], "otp")
-        self.auth.request_tokens.assert_not_awaited()
-        with self.assertLogs(platform.config_flow.__name__, level="ERROR"):
-            result = await self.flow.async_step_otp({"code": "wrong"})
-        self.assertEqual(result["step_id"], "otp")
-        self.assertEqual(result["errors"], {"base": "otp_not_logged_in"})
-        self.auth.request_tokens.assert_not_awaited()
-
-        result = await self.flow.async_step_otp({"code": "correct"})
-
-        self.assertEqual(result["type"], "create_entry")
-        self.auth.authorize.assert_awaited_with("owner", "password", "correct")
-        self.assertNotIn("password", result["data"])
-        self.auth.request_tokens.assert_awaited_once_with("code")
-
-    async def test_identity_provider_account_reports_password_setup_error(self):
-        self.auth.authorize.side_effect = patch_auth.SsoAccountError()
-
-        with self.assertLogs(platform.config_flow.__name__, level="ERROR"):
-            result = await self.flow.async_step_user(self.credentials)
-
-        self.assertEqual(result["step_id"], "user")
-        self.assertEqual(result["errors"], {"base": "sso_account"})
-        self.auth.request_tokens.assert_not_awaited()
-
-    async def test_identity_provider_error_during_otp_returns_to_credentials(self):
-        self.auth.authorize.side_effect = patch_auth.SsoAccountError()
-        self.flow.user_info = self.credentials
-        self.flow.client = types.SimpleNamespace(auth=self.auth)
-
-        with self.assertLogs(platform.config_flow.__name__, level="ERROR"):
-            result = await self.flow.async_step_otp({"code": "123456"})
-
-        self.assertEqual(result["step_id"], "user")
-        self.assertEqual(result["errors"], {"base": "sso_account"})
-        self.assertEqual(
-            result["data_schema"]({"username": "owner", "password": "password"}),
-            self.credentials,
-        )
-        self.auth.request_tokens.assert_not_awaited()
-
-    async def test_expired_credentials_request_home_assistant_reauthentication(self):
-        client = types.SimpleNamespace()
-        entry = platform.ConfigEntry()
-        entry.data = self.credentials
-        with patch.object(
-            platform.integration_runtime, "get_vehicles", AsyncMock(side_effect=LoginError())
+        with (
+            patch.object(patch_auth.aiohttp, "ClientSession", return_value=session),
+            caplog.at_level(logging.INFO, logger=patch_auth.__name__),
+            pytest.raises(LoginError),
         ):
-            with self.assertRaises(platform.exceptions.ConfigEntryAuthFailed):
-                await platform.integration_runtime.update_vehicles_status(
-                    None,
-                    client,
-                    entry,
-                    None,
-                )
-
-    async def test_reauthentication_keeps_device_id_and_updates_existing_entry(self):
-        entry = platform.ConfigEntry()
-        entry.data = {
-            "device_id": "existing-device",
-            "tokens": {"access_token": "expired"},
-            "password": "old-password",
-        }
-        self.auth.authorize.return_value = "code"
-        self.flow.async_set_unique_id.return_value = entry
-        entries = types.SimpleNamespace(async_update_entry=MagicMock(), async_reload=AsyncMock())
-        self.flow.hass = types.SimpleNamespace(config_entries=entries)
-        self.flow.async_abort = lambda **kwargs: {"type": "abort", **kwargs}
-
-        result = await self.flow.async_step_user(self.credentials)
-
-        self.assertEqual(result, {"type": "abort", "reason": "reauth_successful"})
-        saved = entries.async_update_entry.call_args.kwargs["data"]
-        self.assertEqual(saved["device_id"], "existing-device")
-        self.assertEqual(saved["tokens"], {"access_token": "token"})
-        self.assertNotIn("password", saved)
-        entries.async_reload.assert_awaited_once_with(entry.entry_id)
-
-    async def test_reauth_updates_original_entry_when_account_email_changes(self):
-        entry = platform.ConfigEntry()
-        entry.data = {
-            "email": "old@example.com",
-            "device_id": "existing-device",
-            "tokens": {"guid": "same-account"},
-            "password": "old-password",
-        }
-        self.flow.context = {"source": "reauth", "entry_id": entry.entry_id}
-        self.flow._get_reauth_entry = lambda: entry
-        self.flow.async_update_reload_and_abort = MagicMock(
-            return_value={"type": "abort", "reason": "reauth_successful"}
+            await patch_auth.authorize(types.SimpleNamespace(), "owner", "password")
+        logs = " ".join(
+            record.getMessage() for record in caplog.records if record.name == patch_auth.__name__
         )
-        self.auth.get_tokens = lambda: {"guid": "same-account", "access_token": "new"}
-        self.auth.authorize.return_value = "code"
+        assert "401" in logs
+        assert "private-auth-session" not in logs
 
-        await self.flow.async_step_reauth(entry.data)
-        result = await self.flow.async_step_user(self.credentials)
+    async def test_authorized_login_finishes_without_asking_for_otp(self, hass, auth):
+        auth.authorize.return_value = "authorization-code"
 
-        self.assertEqual("reauth_successful", result["reason"])
-        call = self.flow.async_update_reload_and_abort.call_args
-        self.assertIs(entry, call.args[0])
-        self.assertEqual("owner@example.com", call.kwargs["data"]["email"])
-        self.assertEqual("existing-device", call.kwargs["data"]["device_id"])
-        self.assertNotIn("password", call.kwargs["data"])
-        self.flow.async_set_unique_id.assert_not_awaited()
+        result = await self.sign_in(hass)
 
-    async def test_reauth_rejects_another_account_without_updating_any_entry(self):
-        entry = platform.ConfigEntry()
-        entry.data = {"email": "owner@example.com", "tokens": {"guid": "original-account"}}
-        self.flow.context = {"source": "reauth", "entry_id": entry.entry_id}
-        self.flow._get_reauth_entry = lambda: entry
-        self.flow.async_abort = lambda **kwargs: {"type": "abort", **kwargs}
-        self.flow.async_update_reload_and_abort = MagicMock()
-        self.auth.get_tokens = lambda: {"guid": "different-account"}
-        self.auth.authorize.return_value = "code"
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["data"]["tokens"] == {"access_token": "token"}
+        assert "password" not in result["data"]
+        auth.authorize.assert_awaited_once_with("owner", "password")
+        auth.request_tokens.assert_awaited_once_with("authorization-code")
 
-        result = await self.flow.async_step_user(self.credentials)
+    async def test_otp_can_be_retried_before_finishing_login(self, hass, auth, caplog):
+        auth.authorize.side_effect = [{"callbacks": []}, LoginError(), "code"]
 
-        self.assertEqual("reauth_wrong_account", result["reason"])
-        self.flow.async_set_unique_id.assert_not_awaited()
-        self.flow.async_update_reload_and_abort.assert_not_called()
-
-    async def test_reauth_email_fallback_is_case_insensitive(self):
-        entry = platform.ConfigEntry()
-        entry.data = {"email": "OWNER@EXAMPLE.COM", "tokens": {}}
-        self.flow.context = {"source": "reauth", "entry_id": entry.entry_id}
-        self.flow._get_reauth_entry = lambda: entry
-        self.flow.async_update_reload_and_abort = MagicMock(
-            return_value={"type": "abort", "reason": "reauth_successful"}
+        result = await self.sign_in(hass)
+        assert result["step_id"] == "otp"
+        auth.request_tokens.assert_not_awaited()
+        caplog.clear()
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"code": "wrong"}
         )
-        self.auth.authorize.return_value = "code"
-        result = await self.flow.async_step_user(self.credentials)
-        self.assertEqual("reauth_successful", result["reason"])
-        self.flow.async_update_reload_and_abort.assert_called_once()
+        assert errors_logged(caplog, config_flow.__name__)
+        assert result["step_id"] == "otp"
+        assert result["errors"] == {"base": "otp_not_logged_in"}
+        auth.request_tokens.assert_not_awaited()
 
-    async def test_setup_removes_saved_password_even_when_tokens_are_expired(self):
-        entry = platform.ConfigEntry()
-        entry.data = {
-            "device_id": "existing-device",
-            "tokens": {"access_token": "expired"},
-            "password": "old-password",
-        }
-        hass = platform.FakeHass(None)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"code": "correct"}
+        )
+        await hass.async_block_till_done()
+
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        auth.authorize.assert_awaited_with("owner", "password", "correct")
+        assert "password" not in result["data"]
+        auth.request_tokens.assert_awaited_once_with("code")
+
+    async def test_identity_provider_account_reports_password_setup_error(self, hass, auth, caplog):
+        auth.authorize.side_effect = patch_auth.SsoAccountError()
+
+        result = await self.sign_in(hass)
+
+        assert errors_logged(caplog, config_flow.__name__)
+        assert result["step_id"] == "user"
+        assert result["errors"] == {"base": "sso_account"}
+        auth.request_tokens.assert_not_awaited()
+
+    async def test_identity_provider_error_during_otp_returns_to_credentials(
+        self, hass, auth, caplog
+    ):
+        auth.authorize.side_effect = [{"callbacks": []}, patch_auth.SsoAccountError()]
+        result = await self.sign_in(hass)
+        assert result["step_id"] == "otp"
+        caplog.clear()
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"code": "123456"}
+        )
+
+        assert errors_logged(caplog, config_flow.__name__)
+        assert result["step_id"] == "user"
+        assert result["errors"] == {"base": "sso_account"}
+        assert result["data_schema"]({"username": "owner", "password": "password"}) == (CREDENTIALS)
+        auth.request_tokens.assert_not_awaited()
+
+    async def test_expired_credentials_request_home_assistant_reauthentication(
+        self, hass, setup_vehicles
+    ):
+        account = await setup_vehicles([FakeVehicle(set())])
+        account.get_vehicles.side_effect = LoginError()
+
+        await account.coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert isinstance(account.coordinator.last_exception, ConfigEntryAuthFailed)
+        assert reauth_flows(hass, account.entry)
+
+    async def test_reauthentication_keeps_device_id_and_updates_existing_entry(
+        self, hass, auth, setup_entry
+    ):
+        entry = account_entry(
+            data={
+                "device_id": "existing-device",
+                "tokens": {"access_token": "expired"},
+                "password": "old-password",
+            }
+        )
+        entry.add_to_hass(hass)
+        auth.authorize.return_value = "code"
+
+        result = await self.sign_in(hass)
+
+        assert (result["type"], result["reason"]) == (FlowResultType.ABORT, "reauth_successful")
+        assert entry.data["device_id"] == "existing-device"
+        assert entry.data["tokens"] == {"access_token": "token"}
+        assert "password" not in entry.data
+        # The reload sets the entry up.
+        setup_entry.assert_awaited_once_with(hass, entry)
+
+    async def test_reauth_updates_original_entry_when_account_email_changes(
+        self, hass, auth, setup_entry
+    ):
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="old@example.com",
+            unique_id=f"{DOMAIN}:old@example.com",
+            data={
+                "email": "old@example.com",
+                "device_id": "existing-device",
+                "tokens": {"guid": "same-account"},
+                "password": "old-password",
+            },
+        )
+        entry.add_to_hass(hass)
+        auth.get_tokens = lambda: {"guid": "same-account", "access_token": "new"}
+        auth.authorize.return_value = "code"
+
+        result = await self.sign_in(hass, await entry.start_reauth_flow(hass))
+
+        assert result["reason"] == "reauth_successful"
+        assert hass.config_entries.async_entries(DOMAIN) == [entry]
+        assert entry.data["email"] == "owner@example.com"
+        assert entry.data["device_id"] == "existing-device"
+        assert "password" not in entry.data
+        assert entry.unique_id == f"{DOMAIN}:old@example.com"
+        setup_entry.assert_awaited_once_with(hass, entry)
+
+    async def test_reauth_rejects_another_account_without_updating_any_entry(
+        self, hass, auth, setup_entry
+    ):
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="owner@example.com",
+            unique_id=f"{DOMAIN}:owner@example.com",
+            data={"email": "owner@example.com", "tokens": {"guid": "original-account"}},
+        )
+        entry.add_to_hass(hass)
+        auth.get_tokens = lambda: {"guid": "different-account"}
+        auth.authorize.return_value = "code"
+
+        result = await self.sign_in(hass, await entry.start_reauth_flow(hass))
+
+        assert result["reason"] == "reauth_wrong_account"
+        assert hass.config_entries.async_entries(DOMAIN) == [entry]
+        assert entry.data == {"email": "owner@example.com", "tokens": {"guid": "original-account"}}
+        setup_entry.assert_not_awaited()
+
+    async def test_reauth_email_fallback_is_case_insensitive(self, hass, auth, setup_entry):
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="OWNER@EXAMPLE.COM",
+            unique_id=f"{DOMAIN}:OWNER@EXAMPLE.COM",
+            data={"email": "OWNER@EXAMPLE.COM", "tokens": {}},
+        )
+        entry.add_to_hass(hass)
+        auth.authorize.return_value = "code"
+
+        result = await self.sign_in(hass, await entry.start_reauth_flow(hass))
+
+        assert result["reason"] == "reauth_successful"
+        assert entry.data["tokens"] == {"access_token": "token"}
+        setup_entry.assert_awaited_once_with(hass, entry)
+
+    async def test_setup_removes_saved_password_even_when_tokens_are_expired(self, hass, caplog):
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                "device_id": "existing-device",
+                "tokens": {"access_token": "expired"},
+                "password": "old-password",
+            },
+        )
+        entry.add_to_hass(hass)
         auth = MagicMock(check_tokens=AsyncMock(side_effect=LoginError()))
         with (
-            patch.object(
-                platform.integration_runtime, "ToyotaOneAuth", return_value=auth
-            ) as auth_type,
-            patch.object(
-                platform.integration_runtime,
-                "ToyotaOneClient",
+            patch("custom_components.toyota_na.ToyotaOneAuth", return_value=auth) as auth_type,
+            patch(
+                "custom_components.toyota_na.ToyotaOneClient",
                 return_value=types.SimpleNamespace(auth=auth),
             ),
-            self.assertLogs(platform.integration_runtime.__name__, level="ERROR"),
-            self.assertRaises(platform.exceptions.ConfigEntryAuthFailed),
         ):
-            await platform.integration_runtime.async_setup_entry(hass, entry)
-        self.assertEqual(
-            {"device_id": "existing-device", "tokens": {"access_token": "expired"}}, entry.data
-        )
-        self.assertEqual(-180, auth_type.call_args.kwargs["refresh_secs"])
+            assert not await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        assert entry.state is ConfigEntryState.SETUP_ERROR
+        assert reauth_flows(hass, entry)
+        assert errors_logged(caplog, "custom_components.toyota_na")
+        assert entry.data == {"device_id": "existing-device", "tokens": {"access_token": "expired"}}
+        assert auth_type.call_args.kwargs["refresh_secs"] == -180
 
 
 class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
