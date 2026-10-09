@@ -23,11 +23,15 @@ async def refresh_after_command(coordinator, vin=None, command=None, *, delay=10
                 for _ in range(4):
                     await asyncio.sleep(min(ENGINE_STATUS_INTERVAL, max(0, deadline - loop.time())))
                     remaining = deadline - loop.time()
-                    vehicle = next((item for item in coordinator.data or [] if item.vin == vin), None)
+                    vehicle = next(
+                        (item for item in coordinator.data or [] if item.vin == vin), None
+                    )
                     if remaining <= 0 or vehicle is None or not vehicle.can_receive_status:
                         return
                     try:
-                        running = await asyncio.wait_for(vehicle.poll_engine_status(), min(20, remaining))
+                        running = await asyncio.wait_for(
+                            vehicle.poll_engine_status(), min(20, remaining)
+                        )
                     except AuthError:
                         await coordinator.async_request_refresh()
                         return

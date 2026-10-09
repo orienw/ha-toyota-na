@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, patch
 import test_button as ha
 import test_vehicle_behavior as behavior
 from custom_components.toyota_na import command_refresh
-from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration, RemoteRequestCommand, VehicleFeatures
+from custom_components.toyota_na.patch_base_vehicle import (
+    ApiVehicleGeneration,
+    RemoteRequestCommand,
+    VehicleFeatures,
+)
 
 
 class CommandRefreshTests(unittest.IsolatedAsyncioTestCase):
@@ -24,8 +28,12 @@ class CommandRefreshTests(unittest.IsolatedAsyncioTestCase):
         hass = ha.FakeHass(coordinator)
         entry = ha.ConfigEntry()
         entity = ha.button.ToyotaCommandButton(
-            RemoteRequestCommand.EngineStart, "mdi:engine", entry,
-            coordinator, "Remote Start", vehicle.vin,
+            RemoteRequestCommand.EngineStart,
+            "mdi:engine",
+            entry,
+            coordinator,
+            "Remote Start",
+            vehicle.vin,
         )
         entity.hass = hass
         with patch.object(command_refresh, "ENGINE_STATUS_INTERVAL", 0):
@@ -51,7 +59,9 @@ class CommandRefreshTests(unittest.IsolatedAsyncioTestCase):
                     coordinator = ha.DataUpdateCoordinator([vehicle])
                     with patch.object(command_refresh, "ENGINE_STATUS_INTERVAL", 0):
                         await ha.integration_runtime._refresh_coordinator_after_command(
-                            coordinator, vehicle.vin, RemoteRequestCommand.EngineStop,
+                            coordinator,
+                            vehicle.vin,
+                            RemoteRequestCommand.EngineStop,
                         )
                     self.assertEqual(count, read.await_count)
                     self.assertEqual(0, coordinator.refreshes)
@@ -62,7 +72,9 @@ class CommandRefreshTests(unittest.IsolatedAsyncioTestCase):
         vehicle._parse_engine_status({"status": "ON"})
         coordinator = ha.DataUpdateCoordinator([vehicle])
         with patch.object(command_refresh, "ENGINE_STATUS_INTERVAL", 0):
-            await command_refresh.refresh_after_command(coordinator, vehicle.vin, RemoteRequestCommand.EngineStart)
+            await command_refresh.refresh_after_command(
+                coordinator, vehicle.vin, RemoteRequestCommand.EngineStart
+            )
         self.assertEqual(4, client.get_engine_status_21mm.await_count)
 
     async def test_missing_vehicle_or_elapsed_deadline_stops_followup(self):
@@ -70,11 +82,15 @@ class CommandRefreshTests(unittest.IsolatedAsyncioTestCase):
         vehicle.poll_engine_status = AsyncMock()
         coordinator = ha.DataUpdateCoordinator([vehicle])
         with patch.object(command_refresh, "ENGINE_STATUS_TIMEOUT", 0):
-            await command_refresh.refresh_after_command(coordinator, vehicle.vin, RemoteRequestCommand.EngineStart)
+            await command_refresh.refresh_after_command(
+                coordinator, vehicle.vin, RemoteRequestCommand.EngineStart
+            )
         # wait_for cancels an expired read before it is awaited, so check for any call.
         vehicle.poll_engine_status.assert_not_called()
         coordinator.data = []
-        await command_refresh.refresh_after_command(coordinator, vehicle.vin, RemoteRequestCommand.EngineStart)
+        await command_refresh.refresh_after_command(
+            coordinator, vehicle.vin, RemoteRequestCommand.EngineStart
+        )
         vehicle.poll_engine_status.assert_not_called()
 
     async def test_unload_cancels_engine_followup(self):
@@ -83,7 +99,9 @@ class CommandRefreshTests(unittest.IsolatedAsyncioTestCase):
         coordinator = ha.DataUpdateCoordinator([vehicle])
         hass = ha.FakeHass(coordinator)
         entry = ha.ConfigEntry()
-        entity = ha.button.ToyotaCommandButton(RemoteRequestCommand.EngineStart, "mdi:engine", entry, coordinator, "Start", vehicle.vin)
+        entity = ha.button.ToyotaCommandButton(
+            RemoteRequestCommand.EngineStart, "mdi:engine", entry, coordinator, "Start", vehicle.vin
+        )
         entity.hass = hass
         await entity.async_press()
         await asyncio.sleep(0)
@@ -109,6 +127,8 @@ class CommandRefreshTests(unittest.IsolatedAsyncioTestCase):
             patch.object(command_refresh, "ENGINE_STATUS_INTERVAL", 0),
             patch.object(command_refresh, "ENGINE_STATUS_TIMEOUT", 0.02),
         ):
-            await command_refresh.refresh_after_command(coordinator, vehicle.vin, RemoteRequestCommand.EngineStop)
+            await command_refresh.refresh_after_command(
+                coordinator, vehicle.vin, RemoteRequestCommand.EngineStop
+            )
         self.assertTrue(cancelled.is_set())
         vehicle.poll_engine_status.assert_awaited_once()

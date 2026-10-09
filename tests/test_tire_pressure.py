@@ -15,7 +15,8 @@ from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration,
 
 
 TIRES = {
-    "vin": "TESTVIN", "tirePressureTimestamp": "2026-09-21T12:00:00Z",
+    "vin": "TESTVIN",
+    "tirePressureTimestamp": "2026-09-21T12:00:00Z",
     "flTirePressure": {"value": 210, "unit": "kPa", "displayLowTirePressureWarning": True},
     "frTirePressure": {"value": 35, "unit": "psi", "displayLowTirePressureWarning": False},
     "rlTirePressure": {"displayLowTirePressureWarning": None},
@@ -28,17 +29,24 @@ class TirePressureTests(unittest.IsolatedAsyncioTestCase):
     async def test_legacy_reads_create_reported_warning_entities_without_a_subscription(self):
         for factory in (behavior.make_17cy_vehicle, behavior.make_vehicle):
             with self.subTest(factory=factory.__name__):
-                client = types.SimpleNamespace(get_tire_pressure=AsyncMock(return_value=deepcopy(TIRES)))
+                client = types.SimpleNamespace(
+                    get_tire_pressure=AsyncMock(return_value=deepcopy(TIRES))
+                )
                 vehicle = factory(client)
                 vehicle._has_remote_subscription = False
                 await vehicle.update_tire_pressure()
                 client.get_tire_pressure.assert_awaited_once_with(
-                    vehicle.vin, vehicle.api_generation, vehicle.region, vehicle.brand,
+                    vehicle.vin,
+                    vehicle.api_generation,
+                    vehicle.region,
+                    vehicle.brand,
                 )
                 entities = []
                 coordinator = ha.DataUpdateCoordinator([vehicle])
                 await binary_sensor.async_setup_entry(
-                    ha.FakeHass(coordinator), ha.ConfigEntry(), lambda added, update: entities.extend(added),
+                    ha.FakeHass(coordinator),
+                    ha.ConfigEntry(),
+                    lambda added, update: entities.extend(added),
                 )
                 by_name = {entity.sensor_name: entity for entity in entities}
                 self.assertTrue(by_name["Front Driver Tire Pressure Warning"].is_on)
@@ -58,7 +66,12 @@ class TirePressureTests(unittest.IsolatedAsyncioTestCase):
             client.get_tire_pressure.assert_not_awaited()
 
     async def test_rest_request_follows_the_tire_pressure_feature_like_toyotas_app(self):
-        for flags, requested in ((None, True), ({"tirePressure": 1}, True), ({"tirePressure": 0}, False), ({}, False)):
+        for flags, requested in (
+            (None, True),
+            ({"tirePressure": 1}, True),
+            ({"tirePressure": 0}, False),
+            ({}, False),
+        ):
             with self.subTest(flags=flags):
                 client = types.SimpleNamespace(get_tire_pressure=AsyncMock(return_value=None))
                 vehicle = behavior.make_vehicle(client)
@@ -74,46 +87,82 @@ class TirePressureTests(unittest.IsolatedAsyncioTestCase):
                 vehicle = factory()
                 vehicle.inherit_state(previous)
                 for payload in (
-                    None, [], {}, {"flTirePressure": []},
+                    None,
+                    [],
+                    {},
+                    {"flTirePressure": []},
                     {**TIRES, "vin": "OTHER"},
-                    {"tirePressureTimestamp": "2026-09-21T11:00:00Z", "flTirePressure": {"value": 35, "displayLowTirePressureWarning": False}},
+                    {
+                        "tirePressureTimestamp": "2026-09-21T11:00:00Z",
+                        "flTirePressure": {"value": 35, "displayLowTirePressureWarning": False},
+                    },
                     {"flTirePressure": {"value": 35, "displayLowTirePressureWarning": False}},
-                    {"tirePressureTimestamp": "2026-09-21T13:00:00Z", "flTirePressure": {"value": None, "displayLowTirePressureWarning": "false"}},
+                    {
+                        "tirePressureTimestamp": "2026-09-21T13:00:00Z",
+                        "flTirePressure": {"value": None, "displayLowTirePressureWarning": "false"},
+                    },
                 ):
                     vehicle._parse_tire_pressure(payload)
-                    self.assertFalse(vehicle.features[VehicleFeatures.FrontDriverTireWarning].closed)
+                    self.assertFalse(
+                        vehicle.features[VehicleFeatures.FrontDriverTireWarning].closed
+                    )
                     self.assertEqual(210, vehicle.features[VehicleFeatures.FrontDriverTire].value)
-                vehicle._parse_tire_pressure({
-                    "tirePressureTimestamp": "2026-09-21T14:00:00Z",
-                    "flTirePressure": {"displayLowTirePressureWarning": False},
-                })
+                vehicle._parse_tire_pressure(
+                    {
+                        "tirePressureTimestamp": "2026-09-21T14:00:00Z",
+                        "flTirePressure": {"displayLowTirePressureWarning": False},
+                    }
+                )
                 self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverTireWarning].closed)
 
     def test_rest_and_push_warnings_share_timestamps_and_entity_features(self):
         vehicle = behavior.make_vehicle()
-        vehicle.apply_graphql_status({"vehicleState": {"tires": {
-            "lastUpdateDateTime": "2026-09-21T13:00:00Z",
-            "frontLeft": {"psi": 35, "displayLowTirePressureWarning": False},
-        }}})
+        vehicle.apply_graphql_status(
+            {
+                "vehicleState": {
+                    "tires": {
+                        "lastUpdateDateTime": "2026-09-21T13:00:00Z",
+                        "frontLeft": {"psi": 35, "displayLowTirePressureWarning": False},
+                    }
+                }
+            }
+        )
         vehicle._parse_tire_pressure(TIRES)
         self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverTireWarning].closed)
         self.assertEqual(35, vehicle.features[VehicleFeatures.FrontDriverTire].value)
         vehicle._parse_tire_pressure({**TIRES, "tirePressureTimestamp": "2026-09-21T14:00:00Z"})
-        vehicle.apply_graphql_status({"vehicleState": {"tires": {
-            "lastUpdateDateTime": "2026-09-21T13:30:00Z",
-            "frontLeft": {"displayLowTirePressureWarning": False},
-        }}})
+        vehicle.apply_graphql_status(
+            {
+                "vehicleState": {
+                    "tires": {
+                        "lastUpdateDateTime": "2026-09-21T13:30:00Z",
+                        "frontLeft": {"displayLowTirePressureWarning": False},
+                    }
+                }
+            }
+        )
         self.assertFalse(vehicle.features[VehicleFeatures.FrontDriverTireWarning].closed)
 
-    async def test_poll_reads_tires_and_tolerates_endpoint_failure_but_propagates_auth_failure(self):
+    async def test_poll_reads_tires_and_tolerates_endpoint_failure_but_propagates_auth_failure(
+        self,
+    ):
         for factory in (behavior.make_17cy_vehicle, behavior.make_vehicle):
             with self.subTest(factory=factory.__name__):
-                client = types.SimpleNamespace(**{
-                    name: AsyncMock(return_value={}) for name in (
-                        "get_vehicle_status_17cy", "get_vehicle_status_21mm", "get_electric_status",
-                        "get_engine_status_17cy", "get_engine_status_21mm", "get_climate_settings", "get_telemetry",
-                    )
-                }, get_tire_pressure=AsyncMock(return_value=deepcopy(TIRES)))
+                client = types.SimpleNamespace(
+                    **{
+                        name: AsyncMock(return_value={})
+                        for name in (
+                            "get_vehicle_status_17cy",
+                            "get_vehicle_status_21mm",
+                            "get_electric_status",
+                            "get_engine_status_17cy",
+                            "get_engine_status_21mm",
+                            "get_climate_settings",
+                            "get_telemetry",
+                        )
+                    },
+                    get_tire_pressure=AsyncMock(return_value=deepcopy(TIRES)),
+                )
                 vehicle = factory(client)
                 await vehicle.update()
                 self.assertFalse(vehicle.features[VehicleFeatures.FrontDriverTireWarning].closed)

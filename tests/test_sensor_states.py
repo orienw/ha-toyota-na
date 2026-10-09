@@ -23,16 +23,24 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
         coordinator = ha.DataUpdateCoordinator([self.vehicle])
         entities = []
         await ha.sensor_platform.async_setup_entry(
-            ha.FakeHass(coordinator), ha.ConfigEntry(),
+            ha.FakeHass(coordinator),
+            ha.ConfigEntry(),
             lambda added, update: entities.extend(added),
         )
         coordinator.notify_listeners()
         self.assertEqual(len(entities), 6)
         self.entities = {entity.sensor_name: entity for entity in entities}
-        self.assertEqual(set(self.entities), {
-            "Plug Status", "Connector Status", "Last Update Timestamp",
-            "Last Tire Pressure Update Timestamp", "Speed", "Fuel Level",
-        })
+        self.assertEqual(
+            set(self.entities),
+            {
+                "Plug Status",
+                "Connector Status",
+                "Last Update Timestamp",
+                "Last Tire Pressure Update Timestamp",
+                "Speed",
+                "Fuel Level",
+            },
+        )
         for name, entity in self.entities.items():
             self.assertEqual(entity.unique_id, f"TESTVIN.{name}")
             self.assertTrue(entity.entity_registry_enabled_default)
@@ -40,14 +48,22 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
     async def test_plug_states_cover_legacy_and_appsync_values(self):
         entity = self.entities["Plug Status"]
         for raw, expected in (
-            (12, "unplugged"), (36, "waiting"), (40, "charging"),
-            (45, "charge_complete"), (56, "fast_charging"), (60, "fast_charge_complete"),
-            ("PLUGGED_IN", "plugged_in"), ("charging", "charging"),
-            ("charge_now", "waiting"), ("resume_charging", "paused"),
+            (12, "unplugged"),
+            (36, "waiting"),
+            (40, "charging"),
+            (45, "charge_complete"),
+            (56, "fast_charging"),
+            (60, "fast_charge_complete"),
+            ("PLUGGED_IN", "plugged_in"),
+            ("charging", "charging"),
+            ("charge_now", "waiting"),
+            ("resume_charging", "paused"),
             ("external_power_active", "power_supply"),
             ("external_power_active_hybrid", "power_supply"),
-            ("no_controls", "unplugged"), ("unavailable", "unplugged"),
-            (987, None), (None, None),
+            ("no_controls", "unplugged"),
+            ("unavailable", "unplugged"),
+            (987, None),
+            (None, None),
         ):
             with self.subTest(raw=raw):
                 self.vehicle.features[F.PlugStatus] = ToyotaNumeric(raw, "")
@@ -62,8 +78,12 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
     async def test_connector_states_leave_unrecognized_codes_unknown(self):
         entity = self.entities["Connector Status"]
         for raw, expected in (
-            (2, "disconnected"), (4, "unlocked"), (5, "locked"),
-            ("connected", "connected"), ("LOCKED", "locked"), (987, None),
+            (2, "disconnected"),
+            (4, "unlocked"),
+            (5, "locked"),
+            ("connected", "connected"),
+            ("LOCKED", "locked"),
+            (987, None),
         ):
             with self.subTest(raw=raw):
                 self.vehicle.features[F.ConnectorStatus] = ToyotaNumeric(raw, "")
@@ -73,7 +93,10 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(entity.state_class)
 
     async def test_timestamps_are_timezone_aware(self):
-        for name, hour in (("Last Update Timestamp", 12), ("Last Tire Pressure Update Timestamp", 11)):
+        for name, hour in (
+            ("Last Update Timestamp", 12),
+            ("Last Tire Pressure Update Timestamp", 11),
+        ):
             with self.subTest(name=name):
                 entity = self.entities[name]
                 expected = datetime(2026, 9, 15, hour, tzinfo=timezone.utc)
@@ -85,8 +108,14 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
     async def test_fuel_level_clamps_display_without_changing_raw_value(self):
         entity = self.entities["Fuel Level"]
         for raw, expected in (
-            (-1, 0), (0, 0), (79, 79), (79.5, 79.5),
-            (100, 100), (104.0, 100), (None, None), ("75", "75"),
+            (-1, 0),
+            (0, 0),
+            (79, 79),
+            (79.5, 79.5),
+            (100, 100),
+            (104.0, 100),
+            (None, None),
+            ("75", "75"),
         ):
             with self.subTest(raw=raw):
                 self.vehicle.features[F.FuelLevel] = ToyotaNumeric(raw, "%")
@@ -111,7 +140,8 @@ class RemoteAccessSensorTests(unittest.IsolatedAsyncioTestCase):
         self.coordinator = ha.DataUpdateCoordinator([self.vehicle, self.other])
         self.entities = []
         await ha.sensor_platform.async_setup_entry(
-            ha.FakeHass(self.coordinator), ha.ConfigEntry(),
+            ha.FakeHass(self.coordinator),
+            ha.ConfigEntry(),
             lambda added, update: self.entities.extend(added),
         )
         self.assertEqual([entity.unique_id for entity in self.entities], ["TESTVIN.Remote Access"])
@@ -119,11 +149,20 @@ class RemoteAccessSensorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_states_follow_the_app_banners(self):
         for raw, expected in (
-            (0, "unsupported"), (1, "authorization_required"),
-            (2, "subscription_cancelled"), (3, "subscription_cancelled"),
-            (4, "activation_failed"), (5, "activation_pending"), (6, "activation_error"),
-            (7, "active"), (8, "subscription_expired"), (9, "subscription_expired"),
-            (10, "stolen"), (11, "stolen_immobilizer"), (12, None), (-1, None),
+            (0, "unsupported"),
+            (1, "authorization_required"),
+            (2, "subscription_cancelled"),
+            (3, "subscription_cancelled"),
+            (4, "activation_failed"),
+            (5, "activation_pending"),
+            (6, "activation_error"),
+            (7, "active"),
+            (8, "subscription_expired"),
+            (9, "subscription_expired"),
+            (10, "stolen"),
+            (11, "stolen_immobilizer"),
+            (12, None),
+            (-1, None),
         ):
             with self.subTest(raw=raw):
                 self.vehicle.remote_display = raw

@@ -53,9 +53,7 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unknown error with username and password")
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {vol.Required("username"): str, vol.Required("password"): str}
-            ),
+            data_schema=vol.Schema({vol.Required("username"): str, vol.Required("password"): str}),
             errors=errors,
         )
 
@@ -99,7 +97,8 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             entry = self._get_reauth_entry()
             guid = entry.data.get("tokens", {}).get("guid")
             same_account = (
-                guid == data["tokens"].get("guid") if guid
+                guid == data["tokens"].get("guid")
+                if guid
                 else entry.data["email"].casefold() == data["email"].casefold()
             )
             if not same_account:
@@ -111,9 +110,7 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if existing_entry:
             entry_data = {**existing_entry.data, **data}
             entry_data.pop("password", None)
-            self.hass.config_entries.async_update_entry(
-                existing_entry, data=entry_data
-            )
+            self.hass.config_entries.async_update_entry(existing_entry, data=entry_data)
             await self.hass.config_entries.async_reload(existing_entry.entry_id)
             return self.async_abort(reason="reauth_successful")
         return self.async_create_entry(title=data["email"], data=data)
@@ -151,9 +148,9 @@ class ToyotaNAOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_WAKE_INTERVAL, default=str(current_interval)
-                    ): vol.In(interval_options)
+                    vol.Required(CONF_WAKE_INTERVAL, default=str(current_interval)): vol.In(
+                        interval_options
+                    )
                 }
             ),
         )

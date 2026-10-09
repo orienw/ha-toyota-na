@@ -146,7 +146,13 @@ def make_vehicle(client=None):
 
 def make_17cy_vehicle(client=None):
     return SeventeenCYToyotaVehicle(
-        client or object(), True, True, "PRIUS PRIME", "2018", "TESTVIN", "CA",
+        client or object(),
+        True,
+        True,
+        "PRIUS PRIME",
+        "2018",
+        "TESTVIN",
+        "CA",
     )
 
 
@@ -162,12 +168,8 @@ def make_24mm_vehicle(client=None):
         generation=ApiVehicleGeneration(TWENTY_FOUR_MM_PHEV["generation"]),
         brand=TWENTY_FOUR_MM_PHEV["brand"],
         backdoor_type=TWENTY_FOUR_MM_PHEV["backdoorType"],
-        remote_capabilities=TWENTY_FOUR_MM_PHEV[
-            "remoteServiceCapabilities"
-        ],
-        extended_capabilities=TWENTY_FOUR_MM_PHEV[
-            "extendedCapabilities"
-        ],
+        remote_capabilities=TWENTY_FOUR_MM_PHEV["remoteServiceCapabilities"],
+        extended_capabilities=TWENTY_FOUR_MM_PHEV["extendedCapabilities"],
     )
 
 
@@ -178,9 +180,7 @@ class VehicleMetadataTests(unittest.TestCase):
         self.assertTrue(vehicle.supports_command(RemoteRequestCommand.DoorLock))
         self.assertTrue(vehicle.supports_command(RemoteRequestCommand.EngineStart))
         self.assertTrue(vehicle.supports_command(RemoteRequestCommand.HazardsOn))
-        self.assertTrue(
-            vehicle.supports_command(RemoteRequestCommand.VehicleFinder)
-        )
+        self.assertTrue(vehicle.supports_command(RemoteRequestCommand.VehicleFinder))
 
         vehicle._remote_capabilities = {"hazardCapable": False}
         vehicle._extended_capabilities = {}
@@ -195,9 +195,7 @@ class VehicleMetadataTests(unittest.TestCase):
         vehicle._remote_capabilities = {}
         vehicle._extended_capabilities = {}
 
-        self.assertFalse(
-            vehicle.supports_command(RemoteRequestCommand.VehicleFinder)
-        )
+        self.assertFalse(vehicle.supports_command(RemoteRequestCommand.VehicleFinder))
 
         legacy = SeventeenCYToyotaVehicle(
             client=object(),
@@ -209,9 +207,7 @@ class VehicleMetadataTests(unittest.TestCase):
             region="US",
             remote_capabilities={"vehicleFinderCapable": True},
         )
-        self.assertFalse(
-            legacy.supports_command(RemoteRequestCommand.VehicleFinder)
-        )
+        self.assertFalse(legacy.supports_command(RemoteRequestCommand.VehicleFinder))
 
     def test_explicit_inactive_subscription_takes_precedence(self):
         metadata = {
@@ -224,9 +220,25 @@ class VehicleMetadataTests(unittest.TestCase):
 
     def test_remote_display_reads_integers_like_the_apps_gson_model(self):
         for value, expected in (
-            (0, 0), (7, 7), (11, 11), (42, 42), (" 7 ", 7), ("10", 10), ("-1", -1),
-            (7.0, 7), ("7.0", 7), ("7e0", 7), (7.5, None), ("7.5", None),
-            (True, None), ("", None), ("seven", None), ("nan", None), ("inf", None), (None, None), ([7], None),
+            (0, 0),
+            (7, 7),
+            (11, 11),
+            (42, 42),
+            (" 7 ", 7),
+            ("10", 10),
+            ("-1", -1),
+            (7.0, 7),
+            ("7.0", 7),
+            ("7e0", 7),
+            (7.5, None),
+            ("7.5", None),
+            (True, None),
+            ("", None),
+            ("seven", None),
+            ("nan", None),
+            ("inf", None),
+            (None, None),
+            ([7], None),
         ):
             with self.subTest(value=value):
                 self.assertEqual(normalize_remote_display(value), expected)
@@ -235,10 +247,14 @@ class VehicleMetadataTests(unittest.TestCase):
 class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_generation_names_are_normalized_for_supported_vehicles(self):
         generations = ("17cy", "17CyPlus", " 21mm ", "24mM", "26bev", "ng86", " gr86 ")
-        client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
-            {"vin": f"TEST{i}", "generation": generation}
-            for i, generation in enumerate(generations)
-        ]))
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(
+                return_value=[
+                    {"vin": f"TEST{i}", "generation": generation}
+                    for i, generation in enumerate(generations)
+                ]
+            )
+        )
         with (
             patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
             patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
@@ -251,36 +267,54 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_unknown_generations_do_not_block_supported_vehicles(self):
-        client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
-            {"vin": f"SKIPPED{i}", "generation": generation}
-            for i, generation in enumerate((None, "", "future", "21MM-new", "GR86-new", "pre17cy", 17, [], {}))
-        ] + [{**LEXUS_21MM_COUPE, "vin": "SUPPORTED"}]))
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(
+                return_value=[
+                    {"vin": f"SKIPPED{i}", "generation": generation}
+                    for i, generation in enumerate(
+                        (None, "", "future", "21MM-new", "GR86-new", "pre17cy", 17, [], {})
+                    )
+                ]
+                + [{**LEXUS_21MM_COUPE, "vin": "SUPPORTED"}]
+            )
+        )
         with patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()) as update:
             vehicles = await get_vehicles(client)
         self.assertEqual(["SUPPORTED"], [vehicle.vin for vehicle in vehicles])
         update.assert_awaited_once()
 
     async def test_missing_vehicle_names_do_not_block_other_vehicles(self):
-        client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
-            {"vin": "MISSING", "generation": "21MM"},
-            {"vin": "NULL", "generation": "17CY", "modelName": None, "modelYear": None},
-            {**LEXUS_21MM_COUPE, "vin": "COMPLETE"},
-        ]))
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(
+                return_value=[
+                    {"vin": "MISSING", "generation": "21MM"},
+                    {"vin": "NULL", "generation": "17CY", "modelName": None, "modelYear": None},
+                    {**LEXUS_21MM_COUPE, "vin": "COMPLETE"},
+                ]
+            )
+        )
         with (
             patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
             patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
         ):
             vehicles = await get_vehicles(client)
         self.assertEqual(["MISSING", "NULL", "COMPLETE"], [vehicle.vin for vehicle in vehicles])
-        self.assertEqual(["Vehicle", "Vehicle", "LC 500 2-DOOR COUPE"], [vehicle.model_name for vehicle in vehicles])
+        self.assertEqual(
+            ["Vehicle", "Vehicle", "LC 500 2-DOOR COUPE"],
+            [vehicle.model_name for vehicle in vehicles],
+        )
         self.assertEqual(["", "", "2024"], [vehicle.model_year for vehicle in vehicles])
 
     async def test_remote_display_is_read_from_every_vehicle_list(self):
-        client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock(return_value=[
-            {**LEXUS_21MM_COUPE, "vin": "ACTIVE", "remoteDisplay": 7},
-            {"vin": "LEGACY", "generation": "17CY", "remoteDisplay": "10"},
-            {"vin": "MISSING", "generation": "24MM"},
-        ]))
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(
+                return_value=[
+                    {**LEXUS_21MM_COUPE, "vin": "ACTIVE", "remoteDisplay": 7},
+                    {"vin": "LEGACY", "generation": "17CY", "remoteDisplay": "10"},
+                    {"vin": "MISSING", "generation": "24MM"},
+                ]
+            )
+        )
         with (
             patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
             patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
@@ -290,7 +324,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
             client.get_user_vehicle_list.return_value = [
                 {**LEXUS_21MM_COUPE, "vin": "ACTIVE", "remoteDisplay": 5},
             ]
-            vehicle, = await get_vehicles(client)
+            (vehicle,) = await get_vehicles(client)
         self.assertEqual(5, vehicle.remote_display)
 
     async def test_missing_vehicle_names_preserve_previous_identity(self):
@@ -303,8 +337,10 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()):
             for generation in ("21MM", "21mm", " 21mM "):
                 with self.subTest(generation=generation):
-                    client.get_user_vehicle_list.return_value = [{"vin": "TESTVIN", "generation": generation}]
-                    vehicle, = await get_vehicles(client)
+                    client.get_user_vehicle_list.return_value = [
+                        {"vin": "TESTVIN", "generation": generation}
+                    ]
+                    (vehicle,) = await get_vehicles(client)
                     self.assertEqual("LC 500 2-DOOR COUPE", vehicle.model_name)
                     self.assertEqual("2024", vehicle.model_year)
                     self.assertEqual(61, vehicle.features[VehicleFeatures.FuelLevel].value)
@@ -377,12 +413,18 @@ class EngineStatusTests(unittest.IsolatedAsyncioTestCase):
     async def test_push_received_during_engine_poll_wins(self):
         for generation in (ApiVehicleGeneration.MM21, ApiVehicleGeneration.CY17PLUS):
             with self.subTest(generation=generation):
+
                 async def get_engine_status(*args):
-                    vehicle.apply_graphql_status({
-                        "vehicleState": {
-                            "engine": {"running": True, "lastUpdateDateTime": "2026-09-14T07:01:00Z"},
-                        },
-                    })
+                    vehicle.apply_graphql_status(
+                        {
+                            "vehicleState": {
+                                "engine": {
+                                    "running": True,
+                                    "lastUpdateDateTime": "2026-09-14T07:01:00Z",
+                                },
+                            },
+                        }
+                    )
                     return {"status": "0", "date": "2026-09-14T07:00:00Z", "timer": 20}
 
                 client = types.SimpleNamespace(
@@ -400,7 +442,9 @@ class EngineStatusTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
 
                 # The date is the engine start time, not the status observation time.
-                vehicle._parse_engine_status({"status": "0", "date": "2026-09-14T07:00:00Z", "timer": 20})
+                vehicle._parse_engine_status(
+                    {"status": "0", "date": "2026-09-14T07:00:00Z", "timer": 20}
+                )
                 self.assertFalse(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
 
     def test_unknown_engine_status_does_not_report_stopped(self):
@@ -445,11 +489,20 @@ class EngineStatusTests(unittest.IsolatedAsyncioTestCase):
     def test_numeric_and_word_engine_statuses(self):
         for make in (make_vehicle, make_17cy_vehicle):
             vehicle = make()
-            for status, expected in [("1", True), ("0", False), ("started", True), ("stopped", False)]:
+            for status, expected in [
+                ("1", True),
+                ("0", False),
+                ("started", True),
+                ("stopped", False),
+            ]:
                 with self.subTest(status=status):
-                    vehicle._parse_engine_status({
-                        "status": status, "date": "2026-09-14T07:00:00Z", "timer": 20,
-                    })
+                    vehicle._parse_engine_status(
+                        {
+                            "status": status,
+                            "date": "2026-09-14T07:00:00Z",
+                            "timer": 20,
+                        }
+                    )
                     feature = vehicle.features[VehicleFeatures.RemoteStartStatus]
                     self.assertEqual(feature.on, expected)
                     self.assertEqual(feature.timer, 20)
@@ -457,18 +510,38 @@ class EngineStatusTests(unittest.IsolatedAsyncioTestCase):
 
 class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_electric_poll_and_refresh_pass_actual_vehicle_generation(self):
-        for generation in (ApiVehicleGeneration.CY17, ApiVehicleGeneration.CY17PLUS, ApiVehicleGeneration.MM21):
+        for generation in (
+            ApiVehicleGeneration.CY17,
+            ApiVehicleGeneration.CY17PLUS,
+            ApiVehicleGeneration.MM21,
+        ):
             with self.subTest(generation=generation):
-                client = types.SimpleNamespace(auth=types.SimpleNamespace(get_guid=AsyncMock(return_value="guid")))
+                client = types.SimpleNamespace(
+                    auth=types.SimpleNamespace(get_guid=AsyncMock(return_value="guid"))
+                )
                 for method in (
-                    "get_telemetry", "get_electric_status", "get_electric_realtime_status",
-                    "graphql_pre_wake", "graphql_confirm_subscription", "graphql_refresh_status",
-                    "get_vehicle_status_17cy", "get_vehicle_status_17cyplus", "get_vehicle_status_21mm",
-                    "get_engine_status_17cy", "get_engine_status_17cyplus", "get_engine_status_21mm",
-                    "send_refresh_request_17cy", "send_refresh_request_17cyplus", "send_refresh_request_21mm",
+                    "get_telemetry",
+                    "get_electric_status",
+                    "get_electric_realtime_status",
+                    "graphql_pre_wake",
+                    "graphql_confirm_subscription",
+                    "graphql_refresh_status",
+                    "get_vehicle_status_17cy",
+                    "get_vehicle_status_17cyplus",
+                    "get_vehicle_status_21mm",
+                    "get_engine_status_17cy",
+                    "get_engine_status_17cyplus",
+                    "get_engine_status_21mm",
+                    "send_refresh_request_17cy",
+                    "send_refresh_request_17cyplus",
+                    "send_refresh_request_21mm",
                 ):
                     setattr(client, method, AsyncMock(return_value=None))
-                vehicle = make_17cy_vehicle(client) if generation == ApiVehicleGeneration.CY17 else make_vehicle(client)
+                vehicle = (
+                    make_17cy_vehicle(client)
+                    if generation == ApiVehicleGeneration.CY17
+                    else make_vehicle(client)
+                )
                 vehicle._generation = generation
                 vehicle._has_electric = True
                 vehicle._region = "CA"
@@ -476,8 +549,12 @@ class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
                 await vehicle.update()
                 await vehicle.poll_vehicle_refresh()
 
-                client.get_electric_status.assert_awaited_once_with("TESTVIN", region="CA", generation=generation.value)
-                client.get_electric_realtime_status.assert_awaited_once_with("TESTVIN", generation.value, "CA")
+                client.get_electric_status.assert_awaited_once_with(
+                    "TESTVIN", region="CA", generation=generation.value
+                )
+                client.get_electric_realtime_status.assert_awaited_once_with(
+                    "TESTVIN", generation.value, "CA"
+                )
 
     class Auth:
         async def get_guid(self):
@@ -595,16 +672,12 @@ class WakePolicyTests(unittest.TestCase):
     def test_missing_or_expired_timestamp_is_due(self):
         self.assertTrue(automatic_wake_due({}, {}, 2 * 3600, now=100_000))
         self.assertTrue(
-            automatic_wake_due(
-                {"last_refreshed_at": 92_800}, {}, 2 * 3600, now=100_000
-            )
+            automatic_wake_due({"last_refreshed_at": 92_800}, {}, 2 * 3600, now=100_000)
         )
 
     def test_recent_timestamp_is_not_due(self):
         self.assertFalse(
-            automatic_wake_due(
-                {"last_refreshed_at": 99_000}, {}, 2 * 3600, now=100_000
-            )
+            automatic_wake_due({"last_refreshed_at": 99_000}, {}, 2 * 3600, now=100_000)
         )
 
     def test_invalid_interval_uses_source_default(self):
@@ -694,10 +767,12 @@ class WakePolicyTests(unittest.TestCase):
 class VehicleStateTests(unittest.TestCase):
     def test_17cy_location_uses_acquisition_time_without_overwriting_newer_readings(self):
         vehicle = make_17cy_vehicle()
-        vehicle._parse_telemetry({
-            "lastTimestamp": "2026-09-21T07:01:00Z",
-            "vehicleLocation": {"latitude": 34.05, "longitude": -118.25},
-        })
+        vehicle._parse_telemetry(
+            {
+                "lastTimestamp": "2026-09-21T07:01:00Z",
+                "vehicleLocation": {"latitude": 34.05, "longitude": -118.25},
+            }
+        )
         for occurrence, acquisition, coordinates, expected in (
             ("2026-09-21T07:02:00Z", "2026-09-21T07:00:00Z", (33, -117), (34.05, -118.25)),
             ("2026-09-21T07:00:00Z", "2026-09-21T07:03:00Z", (35, -119), (35, -119)),
@@ -706,39 +781,60 @@ class VehicleStateTests(unittest.TestCase):
             ("2026-09-21T07:04:00Z", None, (36, -120), (37, -121)),
         ):
             with self.subTest(occurrence=occurrence, acquisition=acquisition):
-                vehicle._parse_vehicle_status({
-                    "occurrenceDate": occurrence,
-                    "locationAcquisitionDatetime": acquisition,
-                    "latitude": coordinates[0], "longitude": coordinates[1],
-                })
+                vehicle._parse_vehicle_status(
+                    {
+                        "occurrenceDate": occurrence,
+                        "locationAcquisitionDatetime": acquisition,
+                        "latitude": coordinates[0],
+                        "longitude": coordinates[1],
+                    }
+                )
                 location = vehicle.features[VehicleFeatures.ParkingLocation]
                 self.assertEqual(expected, (location.lat, location.value))
 
     def test_rest_location_uses_its_own_acquisition_timestamp(self):
         vehicle = make_vehicle()
-        vehicle.apply_graphql_status({
-            "location": {
-                "latitude": 34.05, "longitude": -118.25,
-                "lastUpdateDateTime": "2026-09-14T07:01:00Z",
-            },
-        })
-        vehicle._parse_vehicle_status({
-            "occurrenceDate": "2026-09-14T07:02:00Z",
-            "locationAcquisitionDatetime": "2026-09-14T07:00:00Z",
-            "latitude": 35, "longitude": -119,
-        })
+        vehicle.apply_graphql_status(
+            {
+                "location": {
+                    "latitude": 34.05,
+                    "longitude": -118.25,
+                    "lastUpdateDateTime": "2026-09-14T07:01:00Z",
+                },
+            }
+        )
+        vehicle._parse_vehicle_status(
+            {
+                "occurrenceDate": "2026-09-14T07:02:00Z",
+                "locationAcquisitionDatetime": "2026-09-14T07:00:00Z",
+                "latitude": 35,
+                "longitude": -119,
+            }
+        )
         location = vehicle.features[VehicleFeatures.ParkingLocation]
         self.assertEqual((location.lat, location.value), (34.05, -118.25))
 
     def test_rest_charging_state_distinguishes_waiting_and_completion(self):
         for make in (make_vehicle, make_17cy_vehicle):
-            for plug_status, charging in ((40, True), (56, True), (36, False), (45, False), (60, False)):
+            for plug_status, charging in (
+                (40, True),
+                (56, True),
+                (36, False),
+                (45, False),
+                (60, False),
+            ):
                 with self.subTest(plug_status=plug_status):
                     vehicle = make()
-                    vehicle._parse_electric_status({
-                        "vehicleInfo": {"chargeInfo": {"plugStatus": plug_status, "connectorStatus": 5}},
-                    })
-                    self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
+                    vehicle._parse_electric_status(
+                        {
+                            "vehicleInfo": {
+                                "chargeInfo": {"plugStatus": plug_status, "connectorStatus": 5}
+                            },
+                        }
+                    )
+                    self.assertEqual(
+                        vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging
+                    )
 
     def test_unplugging_clears_charging_without_accepting_older_status(self):
         for make in (make_vehicle, make_17cy_vehicle):
@@ -748,13 +844,17 @@ class VehicleStateTests(unittest.TestCase):
                 ("07:02:00", 12, False),
                 ("07:01:00", 40, False),
             ):
-                vehicle._parse_electric_status({
-                    "vehicleInfo": {
-                        "acquisitionDatetime": f"2026-09-15T{timestamp}Z",
-                        "chargeInfo": {"plugStatus": code},
-                    },
-                })
-                self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
+                vehicle._parse_electric_status(
+                    {
+                        "vehicleInfo": {
+                            "acquisitionDatetime": f"2026-09-15T{timestamp}Z",
+                            "chargeInfo": {"plugStatus": code},
+                        },
+                    }
+                )
+                self.assertEqual(
+                    vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging
+                )
 
     def test_rest_unavailable_charge_time_clears_estimate_and_preserves_order(self):
         for make in (make_vehicle, make_17cy_vehicle):
@@ -767,12 +867,14 @@ class VehicleStateTests(unittest.TestCase):
                 ("07:04:00", 0, 0),
                 ("07:05:00", "65535", None),
             ):
-                vehicle._parse_electric_status({
-                    "vehicleInfo": {
-                        "acquisitionDatetime": f"2026-09-15T{timestamp}Z",
-                        "chargeInfo": {"remainingChargeTime": value},
-                    },
-                })
+                vehicle._parse_electric_status(
+                    {
+                        "vehicleInfo": {
+                            "acquisitionDatetime": f"2026-09-15T{timestamp}Z",
+                            "chargeInfo": {"remainingChargeTime": value},
+                        },
+                    }
+                )
                 feature = vehicle.features[VehicleFeatures.RemainingChargeTime]
                 self.assertEqual(feature.value, expected)
                 self.assertEqual(feature.unit, "min")
@@ -785,10 +887,19 @@ class VehicleStateTests(unittest.TestCase):
                 ("07:02:00", {"connector": {"plugStatus": code}}, False),
                 ("07:01:00", {"chargingState": "charging"}, False),
             ):
-                vehicle.apply_graphql_status({"electric": {"charging": {
-                    "lastUpdateDateTime": f"2026-09-15T{timestamp}Z", **fields,
-                }}})
-                self.assertEqual(vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging)
+                vehicle.apply_graphql_status(
+                    {
+                        "electric": {
+                            "charging": {
+                                "lastUpdateDateTime": f"2026-09-15T{timestamp}Z",
+                                **fields,
+                            }
+                        }
+                    }
+                )
+                self.assertEqual(
+                    vehicle.features[VehicleFeatures.ChargingStatus].closed, not charging
+                )
 
     def test_appsync_unavailable_charge_times_clear_only_newer_estimates(self):
         vehicle = make_24mm_vehicle()
@@ -800,14 +911,21 @@ class VehicleStateTests(unittest.TestCase):
             ("07:04:00", 0, 0),
             ("07:05:00", "65535", None),
         ):
-            vehicle.apply_graphql_status({
-                "electric": {"charging": {
-                    "lastUpdateDateTime": f"2026-09-15T{timestamp}Z",
-                    "remainingChargeTime": {"value": value, "unit": "min"},
-                    "remainingChargeTimeTo80Percent": {"value": value, "unit": "min"},
-                }},
-            })
-            for key in (VehicleFeatures.RemainingChargeTime, VehicleFeatures.RemainingChargeTimeTo80):
+            vehicle.apply_graphql_status(
+                {
+                    "electric": {
+                        "charging": {
+                            "lastUpdateDateTime": f"2026-09-15T{timestamp}Z",
+                            "remainingChargeTime": {"value": value, "unit": "min"},
+                            "remainingChargeTimeTo80Percent": {"value": value, "unit": "min"},
+                        }
+                    },
+                }
+            )
+            for key in (
+                VehicleFeatures.RemainingChargeTime,
+                VehicleFeatures.RemainingChargeTimeTo80,
+            ):
                 self.assertEqual(vehicle.features[key].value, expected)
 
         vehicle.apply_graphql_status({"telemetry": {"odo": {"value": 65535, "unit": "mi"}}})
@@ -816,15 +934,23 @@ class VehicleStateTests(unittest.TestCase):
     def test_partial_electric_status_preserves_existing_values(self):
         for make in (make_vehicle, make_17cy_vehicle):
             vehicle = make()
-            vehicle._parse_electric_status({
-                "vehicleInfo": {"chargeInfo": {
-                    "plugStatus": 40, "chargeRemainingAmount": 65,
-                    "evDistance": 30, "evDistanceUnit": "mi",
-                }},
-            })
-            vehicle._parse_electric_status({
-                "vehicleInfo": {"chargeInfo": {"connectorStatus": 5}},
-            })
+            vehicle._parse_electric_status(
+                {
+                    "vehicleInfo": {
+                        "chargeInfo": {
+                            "plugStatus": 40,
+                            "chargeRemainingAmount": 65,
+                            "evDistance": 30,
+                            "evDistanceUnit": "mi",
+                        }
+                    },
+                }
+            )
+            vehicle._parse_electric_status(
+                {
+                    "vehicleInfo": {"chargeInfo": {"connectorStatus": 5}},
+                }
+            )
             self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 65)
             self.assertEqual(vehicle.features[VehicleFeatures.ChargeDistance].value, 30)
             self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
@@ -832,15 +958,30 @@ class VehicleStateTests(unittest.TestCase):
 
     def test_unknown_charging_state_does_not_create_or_clear_state(self):
         for vehicle, apply in (
-            (make_17cy_vehicle(), lambda vehicle, value: vehicle._parse_electric_status({
-                "vehicleInfo": {"chargeInfo": {"plugStatus": value}},
-            })),
-            (make_vehicle(), lambda vehicle, value: vehicle._parse_electric_status({
-                "vehicleInfo": {"chargeInfo": {"plugStatus": value}},
-            })),
-            (make_24mm_vehicle(), lambda vehicle, value: vehicle._parse_graphql_electric_status({
-                "charging": {"chargingState": value},
-            })),
+            (
+                make_17cy_vehicle(),
+                lambda vehicle, value: vehicle._parse_electric_status(
+                    {
+                        "vehicleInfo": {"chargeInfo": {"plugStatus": value}},
+                    }
+                ),
+            ),
+            (
+                make_vehicle(),
+                lambda vehicle, value: vehicle._parse_electric_status(
+                    {
+                        "vehicleInfo": {"chargeInfo": {"plugStatus": value}},
+                    }
+                ),
+            ),
+            (
+                make_24mm_vehicle(),
+                lambda vehicle, value: vehicle._parse_graphql_electric_status(
+                    {
+                        "charging": {"chargingState": value},
+                    }
+                ),
+            ),
         ):
             with self.subTest(generation=vehicle.api_generation):
                 apply(vehicle, "unknown")
@@ -930,9 +1071,7 @@ class VehicleStateTests(unittest.TestCase):
 
     def test_changed_vehicle_context_does_not_inherit_observations(self):
         previous = make_vehicle()
-        previous._parse_telemetry(
-            {"lastTimestamp": "2026-08-14T12:02:00Z", "fuelLevel": 75}
-        )
+        previous._parse_telemetry({"lastTimestamp": "2026-08-14T12:02:00Z", "fuelLevel": 75})
         for attribute, value in (
             ("_vin", "OTHERVIN"),
             ("_region", "CA"),
@@ -945,9 +1084,7 @@ class VehicleStateTests(unittest.TestCase):
                 vehicle.inherit_state(previous)
                 self.assertEqual(vehicle.features, {})
 
-                vehicle._parse_telemetry(
-                    {"lastTimestamp": "2026-08-14T12:00:00Z", "fuelLevel": 50}
-                )
+                vehicle._parse_telemetry({"lastTimestamp": "2026-08-14T12:00:00Z", "fuelLevel": 50})
                 self.assertEqual(vehicle.features[VehicleFeatures.FuelLevel].value, 50)
                 self.assertEqual(previous.features[VehicleFeatures.FuelLevel].value, 75)
 
@@ -1003,10 +1140,16 @@ class VehicleStateTests(unittest.TestCase):
                 for ordered in (values, list(reversed(values))):
                     with self.subTest(make=make.__name__, values=ordered):
                         vehicle = make()
-                        vehicle._parse_vehicle_status({"vehicleStatus": [{
-                            "category": "Driver Side",
-                            "sections": [{"section": "Door", "values": ordered}],
-                        }]})
+                        vehicle._parse_vehicle_status(
+                            {
+                                "vehicleStatus": [
+                                    {
+                                        "category": "Driver Side",
+                                        "sections": [{"section": "Door", "values": ordered}],
+                                    }
+                                ]
+                            }
+                        )
                         door = vehicle.features.get(VehicleFeatures.FrontDriverDoor)
                         self.assertIs(door.locked if door else None, expected)
 
@@ -1014,27 +1157,44 @@ class VehicleStateTests(unittest.TestCase):
         for make in (make_17cy_vehicle, make_vehicle):
             with self.subTest(make=make.__name__):
                 vehicle = make()
-                vehicle._parse_vehicle_status({"vehicleStatus": [{
-                    "category": "Other",
-                    "sections": [{"section": "Tailgate", "values": [
-                        {"value": "open", "status": 0},
-                        {"value": "unlocked", "status": 1},
-                    ]}],
-                }]})
+                vehicle._parse_vehicle_status(
+                    {
+                        "vehicleStatus": [
+                            {
+                                "category": "Other",
+                                "sections": [
+                                    {
+                                        "section": "Tailgate",
+                                        "values": [
+                                            {"value": "open", "status": 0},
+                                            {"value": "unlocked", "status": 1},
+                                        ],
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                )
                 tailgate = vehicle.features.get(VehicleFeatures.Trunk)
                 self.assertIsNotNone(tailgate)
                 self.assertFalse(tailgate.closed)
                 self.assertFalse(tailgate.locked)
 
     def test_rest_backdoor_sections_combine_like_toyota_app(self):
-        closed_locked = {"section": "Trunk", "values": [
-            {"value": "closed", "status": 0},
-            {"value": "locked", "status": 1},
-        ]}
-        open_unlocked = {"section": "Tailgate", "values": [
-            {"value": "open", "status": 0},
-            {"value": "unlocked", "status": 1},
-        ]}
+        closed_locked = {
+            "section": "Trunk",
+            "values": [
+                {"value": "closed", "status": 0},
+                {"value": "locked", "status": 1},
+            ],
+        }
+        open_unlocked = {
+            "section": "Tailgate",
+            "values": [
+                {"value": "open", "status": 0},
+                {"value": "unlocked", "status": 1},
+            ],
+        }
         position_only = {"section": "Hatch", "values": [{"value": "closed"}]}
         for make in (make_17cy_vehicle, make_vehicle):
             for sections, expected in (
@@ -1045,10 +1205,16 @@ class VehicleStateTests(unittest.TestCase):
             ):
                 with self.subTest(make=make.__name__, sections=[s["section"] for s in sections]):
                     vehicle = make()
-                    vehicle._parse_vehicle_status({"vehicleStatus": [{
-                        "category": "Other",
-                        "sections": sections,
-                    }]})
+                    vehicle._parse_vehicle_status(
+                        {
+                            "vehicleStatus": [
+                                {
+                                    "category": "Other",
+                                    "sections": sections,
+                                }
+                            ]
+                        }
+                    )
                     backdoor = vehicle.features[VehicleFeatures.Trunk]
                     self.assertEqual((backdoor.closed, backdoor.locked), expected)
 
@@ -1056,15 +1222,37 @@ class VehicleStateTests(unittest.TestCase):
         for make in (make_17cy_vehicle, make_vehicle):
             with self.subTest(make=make.__name__):
                 vehicle = make()
-                vehicle._parse_vehicle_status({"vehicleStatus": [
-                    {"category": "DRIVER SIDE", "sections": [{"section": "door", "values": [
-                        {"value": "Open", "status": 0}, {"value": "UNLOCKED", "status": 1},
-                    ]}]},
-                    {"category": "other", "sections": [
-                        {"section": "TAILGATE", "values": [{"value": "closed"}, {"value": "locked", "status": 1}]},
-                        {"section": "Back Window", "values": [{"value": "open"}]},
-                    ]},
-                ]})
+                vehicle._parse_vehicle_status(
+                    {
+                        "vehicleStatus": [
+                            {
+                                "category": "DRIVER SIDE",
+                                "sections": [
+                                    {
+                                        "section": "door",
+                                        "values": [
+                                            {"value": "Open", "status": 0},
+                                            {"value": "UNLOCKED", "status": 1},
+                                        ],
+                                    }
+                                ],
+                            },
+                            {
+                                "category": "other",
+                                "sections": [
+                                    {
+                                        "section": "TAILGATE",
+                                        "values": [
+                                            {"value": "closed"},
+                                            {"value": "locked", "status": 1},
+                                        ],
+                                    },
+                                    {"section": "Back Window", "values": [{"value": "open"}]},
+                                ],
+                            },
+                        ]
+                    }
+                )
                 door = vehicle.features[VehicleFeatures.FrontDriverDoor]
                 backdoor = vehicle.features[VehicleFeatures.Trunk]
                 self.assertEqual((door.closed, door.locked), (False, False))
@@ -1075,27 +1263,80 @@ class VehicleStateTests(unittest.TestCase):
         for make in (make_17cy_vehicle, make_vehicle):
             for categories, expected in (
                 # Lock state only under Other.
-                ([{"category": "Doors", "sections": [{"section": "Trunk", "values": [
-                    {"value": "open"}, {"value": "unlocked", "status": 1},
-                ]}]}], (False, None)),
+                (
+                    [
+                        {
+                            "category": "Doors",
+                            "sections": [
+                                {
+                                    "section": "Trunk",
+                                    "values": [
+                                        {"value": "open"},
+                                        {"value": "unlocked", "status": 1},
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                    (False, None),
+                ),
                 # The first Trunk section decides open state; Other still decides the lock.
-                ([
-                    {"category": "Doors", "sections": [{"section": "Trunk", "values": [{"value": "open"}]}]},
-                    {"category": "Other", "sections": [{"section": "Trunk", "values": [
-                        {"value": "closed"}, {"value": "locked", "status": 1},
-                    ]}]},
-                ], (False, True)),
-                ([
-                    {"category": "Other", "sections": [{"section": "Trunk", "values": [
-                        {"value": "closed"}, {"value": "locked", "status": 1},
-                    ]}]},
-                    {"category": "Doors", "sections": [{"section": "Trunk", "values": [{"value": "open"}]}]},
-                ], (True, True)),
+                (
+                    [
+                        {
+                            "category": "Doors",
+                            "sections": [{"section": "Trunk", "values": [{"value": "open"}]}],
+                        },
+                        {
+                            "category": "Other",
+                            "sections": [
+                                {
+                                    "section": "Trunk",
+                                    "values": [
+                                        {"value": "closed"},
+                                        {"value": "locked", "status": 1},
+                                    ],
+                                }
+                            ],
+                        },
+                    ],
+                    (False, True),
+                ),
+                (
+                    [
+                        {
+                            "category": "Other",
+                            "sections": [
+                                {
+                                    "section": "Trunk",
+                                    "values": [
+                                        {"value": "closed"},
+                                        {"value": "locked", "status": 1},
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "category": "Doors",
+                            "sections": [{"section": "Trunk", "values": [{"value": "open"}]}],
+                        },
+                    ],
+                    (True, True),
+                ),
                 # Different names still combine, as the app ORs trunk, hatch and tailgate.
-                ([
-                    {"category": "Other", "sections": [{"section": "Trunk", "values": [{"value": "closed"}]}]},
-                    {"category": "Rear", "sections": [{"section": "Hatch", "values": [{"value": "open"}]}]},
-                ], (False, None)),
+                (
+                    [
+                        {
+                            "category": "Other",
+                            "sections": [{"section": "Trunk", "values": [{"value": "closed"}]}],
+                        },
+                        {
+                            "category": "Rear",
+                            "sections": [{"section": "Hatch", "values": [{"value": "open"}]}],
+                        },
+                    ],
+                    (False, None),
+                ),
             ):
                 with self.subTest(make=make.__name__, categories=categories):
                     vehicle = make()
@@ -1107,13 +1348,27 @@ class VehicleStateTests(unittest.TestCase):
         for make in (make_17cy_vehicle, make_vehicle):
             with self.subTest(make=make.__name__):
                 vehicle = make()
-                vehicle._parse_vehicle_status({"vehicleStatus": [
-                    {"category": "Roof", "sections": [{"section": "Moonroof", "values": [{"value": "open"}]}]},
-                    {"category": "Front", "sections": [{"section": "Bonnet", "values": [{"value": "closed"}]}]},
-                    "unexpected",
-                    {"category": "Other", "sections": None},
-                    {"category": "Other", "sections": ["unexpected", {"section": None}]},
-                ]})
+                vehicle._parse_vehicle_status(
+                    {
+                        "vehicleStatus": [
+                            {
+                                "category": "Roof",
+                                "sections": [
+                                    {"section": "Moonroof", "values": [{"value": "open"}]}
+                                ],
+                            },
+                            {
+                                "category": "Front",
+                                "sections": [
+                                    {"section": "Bonnet", "values": [{"value": "closed"}]}
+                                ],
+                            },
+                            "unexpected",
+                            {"category": "Other", "sections": None},
+                            {"category": "Other", "sections": ["unexpected", {"section": None}]},
+                        ]
+                    }
+                )
                 self.assertFalse(vehicle.features[VehicleFeatures.Moonroof].closed)
                 self.assertTrue(vehicle.features[VehicleFeatures.Hood].closed)
 
@@ -1121,20 +1376,38 @@ class VehicleStateTests(unittest.TestCase):
         for make in (make_17cy_vehicle, make_vehicle):
             with self.subTest(make=make.__name__):
                 vehicle = make()
-                vehicle._parse_vehicle_status({"vehicleStatus": [
-                    {"category": "Roof", "sections": [{"section": "Moonroof", "values": None}]},
-                    {"category": "Other", "sections": [{"section": "Trunk", "values": ["closed", None]}]},
-                    {"category": "Driver Side", "sections": [{"section": "Door", "values": [
-                        "unexpected", {"value": "open"}, {"value": "unlocked", "status": 1},
-                    ]}]},
-                ]})
+                vehicle._parse_vehicle_status(
+                    {
+                        "vehicleStatus": [
+                            {
+                                "category": "Roof",
+                                "sections": [{"section": "Moonroof", "values": None}],
+                            },
+                            {
+                                "category": "Other",
+                                "sections": [{"section": "Trunk", "values": ["closed", None]}],
+                            },
+                            {
+                                "category": "Driver Side",
+                                "sections": [
+                                    {
+                                        "section": "Door",
+                                        "values": [
+                                            "unexpected",
+                                            {"value": "open"},
+                                            {"value": "unlocked", "status": 1},
+                                        ],
+                                    }
+                                ],
+                            },
+                        ]
+                    }
+                )
                 door = vehicle.features[VehicleFeatures.FrontDriverDoor]
                 self.assertEqual((door.closed, door.locked), (False, False))
 
     def test_24mm_status_parses_state_tires_and_electric_data(self):
-        status = json.loads(
-            (ROOT / "tests/fixtures/vehicle_24mm.json").read_text()
-        )
+        status = json.loads((ROOT / "tests/fixtures/vehicle_24mm.json").read_text())
         vehicle = make_24mm_vehicle()
 
         self.assertTrue(vehicle.apply_graphql_status(status))
@@ -1167,12 +1440,8 @@ class VehicleStateTests(unittest.TestCase):
             48,
             vehicle.features[VehicleFeatures.ChargeDistance].value,
         )
-        self.assertFalse(
-            vehicle.features[VehicleFeatures.ChargingStatus].closed
-        )
-        self.assertFalse(
-            vehicle.features[VehicleFeatures.RemoteStartStatus].on
-        )
+        self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
+        self.assertFalse(vehicle.features[VehicleFeatures.RemoteStartStatus].on)
 
     def test_newer_rest_telemetry_survives_older_graphql_telemetry(self):
         vehicle = make_24mm_vehicle()
@@ -1230,13 +1499,7 @@ class VehicleStateTests(unittest.TestCase):
 
     def test_empty_preferred_backdoor_does_not_hide_reported_trunk(self):
         vehicle = make_24mm_vehicle()
-        vehicle.apply_graphql_status(
-            {
-                "vehicleState": {
-                    "trunk": {"position": {"status": "close"}}
-                }
-            }
-        )
+        vehicle.apply_graphql_status({"vehicleState": {"trunk": {"position": {"status": "close"}}}})
 
         vehicle.apply_graphql_status(
             {
@@ -1260,9 +1523,7 @@ class VehicleStateTests(unittest.TestCase):
                 "vehicleStatus": [
                     {
                         "category": "Driver Side",
-                        "sections": [
-                            {"section": "Door", "values": [{"value": "locked"}]}
-                        ],
+                        "sections": [{"section": "Door", "values": [{"value": "locked"}]}],
                     }
                 ],
             }
@@ -1285,23 +1546,29 @@ class VehicleStateTests(unittest.TestCase):
         for feature in openings.values():
             self.assertNotIn(feature, vehicle.features)
         for value, closed in ((1, False), (2, True)):
-            vehicle._parse_telemetry({
-                "lastTimestamp": f"2026-09-21T07:0{value}:00Z",
-                **{key: value for key in openings},
-            })
+            vehicle._parse_telemetry(
+                {
+                    "lastTimestamp": f"2026-09-21T07:0{value}:00Z",
+                    **{key: value for key in openings},
+                }
+            )
             for feature in openings.values():
                 with self.subTest(value=value, feature=feature):
                     self.assertEqual(closed, vehicle.features[feature].closed)
 
     def test_17cy_window_telemetry_preserves_observation_order(self):
         vehicle = make_17cy_vehicle()
-        vehicle._parse_vehicle_status({
-            "occurrenceDate": "2026-09-21T07:02:00Z",
-            "vehicleStatus": [{
-                "category": "Driver Side",
-                "sections": [{"section": "Window", "values": [{"value": "open"}]}],
-            }],
-        })
+        vehicle._parse_vehicle_status(
+            {
+                "occurrenceDate": "2026-09-21T07:02:00Z",
+                "vehicleStatus": [
+                    {
+                        "category": "Driver Side",
+                        "sections": [{"section": "Window", "values": [{"value": "open"}]}],
+                    }
+                ],
+            }
+        )
         for timestamp, value, closed in (
             ("2026-09-21T07:01:00Z", 2, False),
             (None, 2, False),
@@ -1322,14 +1589,10 @@ class VehicleStateTests(unittest.TestCase):
         vehicle.apply_graphql_status(
             {
                 "lastUpdateDateTime": "2026-08-13T12:00:00Z",
-                "vehicleState": {
-                    "windows": {"driverSide": {"position": {"status": "open"}}}
-                },
+                "vehicleState": {"windows": {"driverSide": {"position": {"status": "open"}}}},
             }
         )
-        vehicle._parse_telemetry(
-            {"lastTimestamp": "2026-08-13T11:59:00Z", "driverWindow": 2}
-        )
+        vehicle._parse_telemetry({"lastTimestamp": "2026-08-13T11:59:00Z", "driverWindow": 2})
 
         window = vehicle.features[VehicleFeatures.FrontDriverWindow]
         self.assertFalse(window.closed)
@@ -1339,14 +1602,10 @@ class VehicleStateTests(unittest.TestCase):
         vehicle.apply_graphql_status(
             {
                 "lastUpdateDateTime": "2026-08-13T12:00:00Z",
-                "vehicleState": {
-                    "windows": {"driverSide": {"position": {"status": "open"}}}
-                },
+                "vehicleState": {"windows": {"driverSide": {"position": {"status": "open"}}}},
             }
         )
-        vehicle._parse_telemetry(
-            {"lastTimestamp": "2026-08-13T12:01:00Z", "driverWindow": 2}
-        )
+        vehicle._parse_telemetry({"lastTimestamp": "2026-08-13T12:01:00Z", "driverWindow": 2})
 
         window = vehicle.features[VehicleFeatures.FrontDriverWindow]
         self.assertTrue(window.closed)
@@ -1429,9 +1688,7 @@ class VehicleStateTests(unittest.TestCase):
     def test_location_only_push_is_applied(self):
         vehicle = make_vehicle()
 
-        applied = vehicle.apply_graphql_status(
-            {"location": {"latitude": 0.0, "longitude": 0.0}}
-        )
+        applied = vehicle.apply_graphql_status({"location": {"latitude": 0.0, "longitude": 0.0}})
 
         self.assertTrue(applied)
         location = vehicle.features[VehicleFeatures.ParkingLocation]
@@ -1445,7 +1702,8 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(websocket_module, "monotonic", return_value=100):
             await handler._handle_message(
                 {"type": "connection_ack", "payload": {"connectionTimeoutMs": 120_000}},
-                "token", "guid",
+                "token",
+                "guid",
             )
         self.assertEqual(handler._keepalive_deadline, 220)
 
@@ -1494,7 +1752,11 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
         handler._subscriptions = {"TESTVIN": "subscription"}
 
         await handler._handle_message(
-            {"type": "data", "id": "subscription", "payload": {"data": {"onVehicleStatusUpdated": status}}},
+            {
+                "type": "data",
+                "id": "subscription",
+                "payload": {"data": {"onVehicleStatusUpdated": status}},
+            },
             None,
             None,
         )
@@ -1520,9 +1782,7 @@ class WebSocketTests(unittest.IsolatedAsyncioTestCase):
             }
         }
 
-        await handler._handle_message(
-            {"type": "start_ack", "id": "subscription"}, None, None
-        )
+        await handler._handle_message({"type": "start_ack", "id": "subscription"}, None, None)
 
         self.assertEqual(calls, [("TESTVIN", "trunk", "CA")])
 
@@ -1563,7 +1823,10 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                     "sections": [
                         {
                             "section": "Door",
-                            "values": [{"value": "closed", "status": 0}, {"value": "locked", "status": 0}],
+                            "values": [
+                                {"value": "closed", "status": 0},
+                                {"value": "locked", "status": 0},
+                            ],
                         },
                     ],
                 },
@@ -1597,11 +1860,13 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
     async def test_malformed_cached_ev_push_does_not_block_polled_status(self):
         status = json.loads((ROOT / "tests/fixtures/vehicle_24mm.json").read_text())
         client = types.SimpleNamespace(
-            get_user_vehicle_list=AsyncMock(return_value=[dict(TWENTY_FOUR_MM_PHEV, vin="TESTVIN24")]),
+            get_user_vehicle_list=AsyncMock(
+                return_value=[dict(TWENTY_FOUR_MM_PHEV, vin="TESTVIN24")]
+            ),
             get_telemetry=AsyncMock(return_value={}),
             graphql_get_vehicle_status=AsyncMock(side_effect=[None, status]),
         )
-        current, = await get_vehicles(client)
+        (current,) = await get_vehicles(client)
         self.assertNotIn(VehicleFeatures.ChargeLevel, current.features)
 
         handler = ToyotaWebSocketHandler(
@@ -1614,22 +1879,31 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
             {
                 "type": "data",
                 "id": "subscription",
-                "payload": {"data": {"onVehicleStatusUpdated": {
-                    "vin": "TESTVIN24", "electric": {"battery": "malformed"},
-                }}},
+                "payload": {
+                    "data": {
+                        "onVehicleStatusUpdated": {
+                            "vin": "TESTVIN24",
+                            "electric": {"battery": "malformed"},
+                        }
+                    }
+                },
             },
             "token",
             "guid",
         )
 
-        recovered, = await get_vehicles(client)
+        (recovered,) = await get_vehicles(client)
 
         self.assertEqual(client.graphql_get_vehicle_status.await_count, 2)
         for feature in (
-            VehicleFeatures.ChargeLevel, VehicleFeatures.ChargeDistance,
-            VehicleFeatures.ChargeDistanceAC, VehicleFeatures.ChargingStatus,
-            VehicleFeatures.PlugStatus, VehicleFeatures.RemainingChargeTime,
-            VehicleFeatures.EvTravelableDistance, VehicleFeatures.ChargeType,
+            VehicleFeatures.ChargeLevel,
+            VehicleFeatures.ChargeDistance,
+            VehicleFeatures.ChargeDistanceAC,
+            VehicleFeatures.ChargingStatus,
+            VehicleFeatures.PlugStatus,
+            VehicleFeatures.RemainingChargeTime,
+            VehicleFeatures.EvTravelableDistance,
+            VehicleFeatures.ChargeType,
             VehicleFeatures.ConnectorStatus,
         ):
             self.assertIn(feature, recovered.features)
@@ -1708,9 +1982,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                             "vin": "TESTVIN",
                             "vehicleState": {
                                 "lastUpdateDateTime": "2026-08-14T12:01:00Z",
-                                "doors": {
-                                    "driverSide": {"lock": {"status": "unlock"}}
-                                },
+                                "doors": {"driverSide": {"lock": {"status": "unlock"}}},
                             },
                         },
                         {
@@ -1812,9 +2084,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                     "vehicleStatus": [
                         {
                             "category": "Driver Side",
-                            "sections": [
-                                {"section": "Window", "values": [{"value": "open"}]}
-                            ],
+                            "sections": [{"section": "Window", "values": [{"value": "open"}]}],
                         }
                     ]
                 }
@@ -1862,9 +2132,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_24mm_update_uses_direct_appsync_status(self):
         calls = []
-        fixture = json.loads(
-            (ROOT / "tests/fixtures/vehicle_24mm.json").read_text()
-        )
+        fixture = json.loads((ROOT / "tests/fixtures/vehicle_24mm.json").read_text())
 
         class Client:
             async def get_telemetry(self, *args):
@@ -1895,9 +2163,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 ("graphql_status", ("TESTVIN24", "hatch", "CA")),
             ],
         )
-        self.assertTrue(
-            vehicle.features[VehicleFeatures.FrontDriverDoor].locked
-        )
+        self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverDoor].locked)
 
     async def test_vehicle_state_survives_a_partial_followup_poll(self):
         payload = dict(LEXUS_21MM_COUPE, vin="TESTVIN")
@@ -1941,12 +2207,8 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         second = (await get_vehicles(client))[0]
 
         self.assertIsNot(first, second)
-        self.assertTrue(
-            second.features[VehicleFeatures.FrontDriverDoor].closed
-        )
-        self.assertTrue(
-            second.features[VehicleFeatures.FrontDriverDoor].locked
-        )
+        self.assertTrue(second.features[VehicleFeatures.FrontDriverDoor].closed)
+        self.assertTrue(second.features[VehicleFeatures.FrontDriverDoor].locked)
 
     async def test_state_cache_preserves_source_timestamp_ordering(self):
         payload = dict(TWENTY_FOUR_MM_PHEV, vin="TESTVIN24")
@@ -2031,15 +2293,14 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 calls.append((args, kwargs))
                 return {}
 
-        await graphql_confirm_subscription(
-            Client(), "TESTVIN", "trunk", "CA"
-        )
+        await graphql_confirm_subscription(Client(), "TESTVIN", "trunk", "CA")
 
         args, kwargs = calls[0]
         _, _, variables = args
         self.assertEqual(variables, {"vin": "TESTVIN", "backdoorType": "trunk"})
         self.assertEqual(kwargs["region"], "CA")
         self.assertEqual(kwargs["backdoor_type"], "trunk")
+
 
 if __name__ == "__main__":
     unittest.main()

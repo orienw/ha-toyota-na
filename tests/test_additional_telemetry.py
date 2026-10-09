@@ -43,12 +43,22 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
                     vehicle._has_remote_subscription = False
 
                     def update(timestamp, values):
-                        vehicle._parse_vehicle_status({
-                            "occurrenceDate": f"2026-09-15T{timestamp}Z",
-                            "vehicleStatus": [{"category": "Other", "sections": [{
-                                "section": section, "values": values,
-                            }]}],
-                        })
+                        vehicle._parse_vehicle_status(
+                            {
+                                "occurrenceDate": f"2026-09-15T{timestamp}Z",
+                                "vehicleStatus": [
+                                    {
+                                        "category": "Other",
+                                        "sections": [
+                                            {
+                                                "section": section,
+                                                "values": values,
+                                            }
+                                        ],
+                                    }
+                                ],
+                            }
+                        )
 
                     update("12:00:00", [{"value": "unknown"}])
                     self.assertNotIn(VehicleFeatures.GlassHatch, vehicle.features)
@@ -56,62 +66,130 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
                     update("12:01:00", [{"value": "closed"}])
                     update("12:03:00", [])
                     self.assertFalse(vehicle.features[VehicleFeatures.GlassHatch].closed)
-                    self.assertNotIsInstance(vehicle.features[VehicleFeatures.GlassHatch], ha.ToyotaLockableOpening)
+                    self.assertNotIsInstance(
+                        vehicle.features[VehicleFeatures.GlassHatch], ha.ToyotaLockableOpening
+                    )
                     entities = []
-                    await binary_sensor.async_setup_entry(ha.FakeHass(ha.DataUpdateCoordinator([vehicle])), ha.ConfigEntry(), lambda added, update: entities.extend(added))
-                    self.assertTrue(next(entity for entity in entities if entity.sensor_name == "Glass Hatch").is_on)
+                    await binary_sensor.async_setup_entry(
+                        ha.FakeHass(ha.DataUpdateCoordinator([vehicle])),
+                        ha.ConfigEntry(),
+                        lambda added, update: entities.extend(added),
+                    )
+                    self.assertTrue(
+                        next(
+                            entity for entity in entities if entity.sensor_name == "Glass Hatch"
+                        ).is_on
+                    )
 
     async def test_rest_ranges_keep_zero_values_and_report_distance_units(self):
         for factory in (behavior.make_17cy_vehicle, behavior.make_vehicle):
-            for extra, unit in (({"evDistanceUnit": "km"}, "km"), ({"evDistanceUnit": "mi"}, "mi"), ({"evDistanceUnit": None}, "mi"), ({}, "mi")):
+            for extra, unit in (
+                ({"evDistanceUnit": "km"}, "km"),
+                ({"evDistanceUnit": "mi"}, "mi"),
+                ({"evDistanceUnit": None}, "mi"),
+                ({}, "mi"),
+            ):
                 with self.subTest(factory=factory.__name__, extra=extra):
                     vehicle = factory()
                     vehicle._has_electric = True
                     vehicle._has_remote_subscription = False
-                    vehicle._parse_electric_status({"vehicleInfo": {"chargeInfo": {
-                        "evDistance": 24, "evDistanceAC": 20,
-                        "evTravelableDistance": 24, "gasolineTravelableDistance": 0, **extra,
-                    }}})
+                    vehicle._parse_electric_status(
+                        {
+                            "vehicleInfo": {
+                                "chargeInfo": {
+                                    "evDistance": 24,
+                                    "evDistanceAC": 20,
+                                    "evTravelableDistance": 24,
+                                    "gasolineTravelableDistance": 0,
+                                    **extra,
+                                }
+                            }
+                        }
+                    )
                     entities = []
-                    await sensor.async_setup_entry(ha.FakeHass(ha.DataUpdateCoordinator([vehicle])), ha.ConfigEntry(), lambda added, update: entities.extend(added))
+                    await sensor.async_setup_entry(
+                        ha.FakeHass(ha.DataUpdateCoordinator([vehicle])),
+                        ha.ConfigEntry(),
+                        lambda added, update: entities.extend(added),
+                    )
                     by_name = {entity.sensor_name: entity for entity in entities}
-                    for name, value in (("EV Range", 24), ("EV Range AC", 20), ("EV Travelable Distance", 24), ("Gasoline Range", 0)):
+                    for name, value in (
+                        ("EV Range", 24),
+                        ("EV Range AC", 20),
+                        ("EV Travelable Distance", 24),
+                        ("Gasoline Range", 0),
+                    ):
                         self.assertEqual(value, by_name[name].native_value)
                         self.assertEqual(unit, by_name[name].native_unit_of_measurement)
 
     async def test_graphql_updates_timestamp_sensors_without_regressing_other_sections(self):
         vehicle = behavior.make_24mm_vehicle()
-        vehicle.apply_graphql_status({
-            "lastUpdateDateTime": "2026-09-15T12:05:00Z",
-            "vehicleState": {"lastUpdateDateTime": "2026-09-15T12:00:00Z", "tires": {
-                "lastUpdateDateTime": "2026-09-15T11:58:00Z", "frontLeft": {"psi": 35},
-            }},
-            "telemetry": {"lastUpdateDateTime": "2026-09-15T12:03:00Z", "odo": {"value": 123}},
-        })
-        vehicle._parse_telemetry({"lastTimestamp": "2026-09-15T12:01:00Z", "tirePressureTimestamp": "2026-09-15T11:57:00Z"})
+        vehicle.apply_graphql_status(
+            {
+                "lastUpdateDateTime": "2026-09-15T12:05:00Z",
+                "vehicleState": {
+                    "lastUpdateDateTime": "2026-09-15T12:00:00Z",
+                    "tires": {
+                        "lastUpdateDateTime": "2026-09-15T11:58:00Z",
+                        "frontLeft": {"psi": 35},
+                    },
+                },
+                "telemetry": {"lastUpdateDateTime": "2026-09-15T12:03:00Z", "odo": {"value": 123}},
+            }
+        )
+        vehicle._parse_telemetry(
+            {
+                "lastTimestamp": "2026-09-15T12:01:00Z",
+                "tirePressureTimestamp": "2026-09-15T11:57:00Z",
+            }
+        )
         coordinator = ha.DataUpdateCoordinator([vehicle])
         entities = []
-        await sensor.async_setup_entry(ha.FakeHass(coordinator), ha.ConfigEntry(), lambda added, update: entities.extend(added))
+        await sensor.async_setup_entry(
+            ha.FakeHass(coordinator), ha.ConfigEntry(), lambda added, update: entities.extend(added)
+        )
         by_name = {entity.sensor_name: entity for entity in entities}
         updated = by_name["Last Update Timestamp"]
         tire_updated = by_name["Last Tire Pressure Update Timestamp"]
         self.assertEqual(datetime(2026, 9, 15, 12, 5, tzinfo=timezone.utc), updated.native_value)
-        self.assertEqual(datetime(2026, 9, 15, 11, 58, tzinfo=timezone.utc), tire_updated.native_value)
+        self.assertEqual(
+            datetime(2026, 9, 15, 11, 58, tzinfo=timezone.utc), tire_updated.native_value
+        )
 
-        vehicle.apply_graphql_status({"location": {"lastUpdateDateTime": "2026-09-15T12:10:00Z", "latitude": 1, "longitude": 2}})
-        vehicle.apply_graphql_status({"lastUpdateDateTime": "2026-09-15T12:04:00Z", "vehicleState": {"tires": {
-            "lastUpdateDateTime": "2026-09-15T12:02:00Z", "frontLeft": {"psi": 36},
-        }}})
+        vehicle.apply_graphql_status(
+            {
+                "location": {
+                    "lastUpdateDateTime": "2026-09-15T12:10:00Z",
+                    "latitude": 1,
+                    "longitude": 2,
+                }
+            }
+        )
+        vehicle.apply_graphql_status(
+            {
+                "lastUpdateDateTime": "2026-09-15T12:04:00Z",
+                "vehicleState": {
+                    "tires": {
+                        "lastUpdateDateTime": "2026-09-15T12:02:00Z",
+                        "frontLeft": {"psi": 36},
+                    }
+                },
+            }
+        )
         replacement = behavior.make_24mm_vehicle()
         replacement.inherit_state(vehicle)
         replacement._parse_telemetry({"lastTimestamp": "2026-09-15T12:07:00Z"})
         coordinator.data = [replacement]
         self.assertEqual(datetime(2026, 9, 15, 12, 10, tzinfo=timezone.utc), updated.native_value)
-        self.assertEqual(datetime(2026, 9, 15, 12, 2, tzinfo=timezone.utc), tire_updated.native_value)
+        self.assertEqual(
+            datetime(2026, 9, 15, 12, 2, tzinfo=timezone.utc), tire_updated.native_value
+        )
 
     async def test_missing_tire_section_does_not_invent_a_tire_timestamp(self):
         vehicle = behavior.make_24mm_vehicle()
-        vehicle.apply_graphql_status({"vehicleState": {"lastUpdateDateTime": "2026-09-15T12:00:00Z", "tires": None}})
+        vehicle.apply_graphql_status(
+            {"vehicleState": {"lastUpdateDateTime": "2026-09-15T12:00:00Z", "tires": None}}
+        )
         self.assertNotIn(VehicleFeatures.LastTirePressureTimeStamp, vehicle.features)
 
     async def test_malformed_graphql_sections_do_not_drop_other_readings(self):
@@ -143,7 +221,9 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
                         if key == section:
                             self.assertNotIn(feature, vehicle.features)
                         else:
-                            self.assertEqual(expected, getattr(vehicle.features[feature], attribute))
+                            self.assertEqual(
+                                expected, getattr(vehicle.features[feature], attribute)
+                            )
                     self.assertEqual(
                         datetime(2026, 9, 15, 12, tzinfo=timezone.utc).timestamp(),
                         vehicle.features[VehicleFeatures.LastTimeStamp].value,
@@ -163,30 +243,38 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIs(cached, vehicle._last_graphql_status)
                     self.assertEqual(features, vehicle.features)
 
-        self.assertTrue(vehicle.apply_graphql_status({
-            "telemetry": ["invalid"], "location": {"latitude": 1, "longitude": 2},
-        }))
+        self.assertTrue(
+            vehicle.apply_graphql_status(
+                {
+                    "telemetry": ["invalid"],
+                    "location": {"latitude": 1, "longitude": 2},
+                }
+            )
+        )
         self.assertEqual(123, vehicle.features[VehicleFeatures.Odometer].value)
         self.assertEqual(1, vehicle.features[VehicleFeatures.ParkingLocation].lat)
 
     async def test_hatch_and_tire_warnings_use_reported_states_without_pressure(self):
         vehicle = behavior.make_24mm_vehicle()
         vehicle._has_remote_subscription = False
-        vehicle.apply_graphql_status({
-            "vehicleState": {
-                "glassHatch": {"position": {"status": "Open"}},
-                "tires": {
-                    "frontLeft": {"displayLowTirePressureWarning": True},
-                    "frontRight": {"displayLowTirePressureWarning": False},
-                    "rearLeft": {"displayLowTirePressureWarning": None},
-                    "rearRight": {"displayLowTirePressureWarning": "unknown"},
+        vehicle.apply_graphql_status(
+            {
+                "vehicleState": {
+                    "glassHatch": {"position": {"status": "Open"}},
+                    "tires": {
+                        "frontLeft": {"displayLowTirePressureWarning": True},
+                        "frontRight": {"displayLowTirePressureWarning": False},
+                        "rearLeft": {"displayLowTirePressureWarning": None},
+                        "rearRight": {"displayLowTirePressureWarning": "unknown"},
+                    },
                 },
-            },
-        })
+            }
+        )
         coordinator = ha.DataUpdateCoordinator([vehicle])
         entities = []
         await binary_sensor.async_setup_entry(
-            ha.FakeHass(coordinator), ha.ConfigEntry(),
+            ha.FakeHass(coordinator),
+            ha.ConfigEntry(),
             lambda added, update: entities.extend(added),
         )
         entities = {entity.sensor_name: entity for entity in entities}
@@ -195,14 +283,22 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(entities["Front Passenger Tire Pressure Warning"].is_on)
         self.assertNotIn("Rear Driver Tire Pressure Warning", entities)
         self.assertNotIn("Rear Passenger Tire Pressure Warning", entities)
-        vehicle.apply_graphql_status({"vehicleState": {"glassHatch": {"position": {"status": None}}}})
+        vehicle.apply_graphql_status(
+            {"vehicleState": {"glassHatch": {"position": {"status": None}}}}
+        )
         self.assertTrue(entities["Glass Hatch"].is_on)
 
     async def test_charging_rate_retains_precision_and_actual_unit(self):
         vehicle = behavior.make_24mm_vehicle()
-        vehicle.apply_graphql_status({"electric": {"charging": {
-            "actualChargingRate": {"value": 7.25, "unit": "kW"},
-        }}})
+        vehicle.apply_graphql_status(
+            {
+                "electric": {
+                    "charging": {
+                        "actualChargingRate": {"value": 7.25, "unit": "kW"},
+                    }
+                }
+            }
+        )
         measurement = vehicle.features[VehicleFeatures.ChargingRate]
         self.assertEqual(7.25, measurement.value)
         self.assertEqual("kW", measurement.unit)
@@ -216,7 +312,8 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
         coordinator = ha.DataUpdateCoordinator([vehicle])
         entities = []
         await sensor.async_setup_entry(
-            ha.FakeHass(coordinator), ha.ConfigEntry(),
+            ha.FakeHass(coordinator),
+            ha.ConfigEntry(),
             lambda added, update: entities.extend(added),
         )
         entities = {entity.sensor_name: entity for entity in entities}
@@ -258,8 +355,12 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_electric_observations_use_root_timestamp_when_section_has_none(self):
         vehicle = behavior.make_24mm_vehicle()
         for timestamp, value in (("12:00:00", 80), ("12:10:00", 81), ("12:05:00", 79)):
-            vehicle.apply_graphql_status({
-                "lastUpdateDateTime": f"2026-09-14T{timestamp}Z",
-                "electric": {"battery": {"stateOfChargeDisplay": {"value": value, "unit": "%"}}},
-            })
+            vehicle.apply_graphql_status(
+                {
+                    "lastUpdateDateTime": f"2026-09-14T{timestamp}Z",
+                    "electric": {
+                        "battery": {"stateOfChargeDisplay": {"value": value, "unit": "%"}}
+                    },
+                }
+            )
         self.assertEqual(81, vehicle.features[VehicleFeatures.ChargeLevel].value)

@@ -49,8 +49,13 @@ async def async_setup_entry(
                 if vehicle.electric is False and config["electric"]:
                     continue
                 yield ToyotaSensor(
-                    config["feature"], config["icon"], config["unit"], config["state_class"],
-                    coordinator, config["name"], vehicle.vin,
+                    config["feature"],
+                    config["icon"],
+                    config["unit"],
+                    config["state_class"],
+                    coordinator,
+                    config["name"],
+                    vehicle.vin,
                     device_class=config.get("device_class"),
                     states=config.get("states"),
                     translation_key=config.get("translation_key"),
@@ -64,7 +69,9 @@ class ToyotaClimateSchedulesSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def available(self):
-        return self.vehicle is not None and isinstance(self.vehicle.climate_schedules.get("airConditioningReservation"), list)
+        return self.vehicle is not None and isinstance(
+            self.vehicle.climate_schedules.get("airConditioningReservation"), list
+        )
 
     @property
     def native_value(self):
@@ -79,7 +86,10 @@ class ToyotaClimateSchedulesSensor(ToyotaNABaseEntity, SensorEntity):
         settings = self.vehicle.climate_schedules
         zone = ZoneInfo(self.hass.config.time_zone)
         return {
-            "schedules": [local_climate_schedule(item, zone) for item in settings["airConditioningReservation"]],
+            "schedules": [
+                local_climate_schedule(item, zone)
+                for item in settings["airConditioningReservation"]
+            ],
             "temperature_unit": settings.get("temperatureUnit"),
             "min_temperature": settings.get("minTemp"),
             "max_temperature": settings.get("maxTemp"),
@@ -161,7 +171,9 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         feature = self.feature(self._vehicle_feature)
         if not isinstance(feature, ToyotaNumeric) or feature.value is None:
             return None
-        if self._vehicle_feature == VehicleFeatures.FuelLevel and isinstance(feature.value, (int, float)):
+        if self._vehicle_feature == VehicleFeatures.FuelLevel and isinstance(
+            feature.value, (int, float)
+        ):
             return min(100, max(0, feature.value))
         if self._states:
             return self._states.get(str(feature.value).lower())

@@ -5,8 +5,14 @@ from zoneinfo import ZoneInfo
 from toyota_na.auth import ToyotaOneAuth
 from toyota_na.client import ToyotaOneClient
 from .patch_auth import (
-    authorize, check_tokens, extract_tokens, get_tokens, logged_in,
-    refresh_tokens, request_tokens, set_tokens,
+    authorize,
+    check_tokens,
+    extract_tokens,
+    get_tokens,
+    logged_in,
+    refresh_tokens,
+    request_tokens,
+    set_tokens,
 )
 
 ToyotaOneAuth.authorize = authorize
@@ -63,6 +69,7 @@ from .patch_client import (
     graphql_send_remote_command,
     remote_request_24mm,
 )
+
 ToyotaOneClient.get_electric_realtime_status = get_electric_realtime_status
 ToyotaOneClient.get_electric_status = get_electric_status
 ToyotaOneClient.get_climate_settings = get_climate_settings
@@ -109,12 +116,16 @@ ToyotaOneClient.remote_request_24mm = remote_request_24mm
 # Patch base_vehicle
 import toyota_na.vehicle.base_vehicle
 from .patch_base_vehicle import ApiVehicleGeneration
+
 toyota_na.vehicle.base_vehicle.ApiVehicleGeneration = ApiVehicleGeneration
 from .patch_base_vehicle import VehicleFeatures
+
 toyota_na.vehicle.base_vehicle.VehicleFeatures = VehicleFeatures
 from .patch_base_vehicle import RemoteRequestCommand
+
 toyota_na.vehicle.base_vehicle.RemoteRequestCommand = RemoteRequestCommand
 from .patch_base_vehicle import ToyotaVehicle
+
 toyota_na.vehicle.base_vehicle.ToyotaVehicle = ToyotaVehicle
 
 # Patch seventeen_cy_plus
@@ -122,19 +133,25 @@ import toyota_na.vehicle.vehicle_generations.seventeen_cy_plus
 from .patch_seventeen_cy_plus import (
     SeventeenCYPlusToyotaVehicle as PatchedSeventeenCYPlusToyotaVehicle,
 )
-toyota_na.vehicle.vehicle_generations.seventeen_cy_plus.SeventeenCYPlusToyotaVehicle = PatchedSeventeenCYPlusToyotaVehicle
+
+toyota_na.vehicle.vehicle_generations.seventeen_cy_plus.SeventeenCYPlusToyotaVehicle = (
+    PatchedSeventeenCYPlusToyotaVehicle
+)
 
 # Patch seventeen_cy
 import toyota_na.vehicle.vehicle_generations.seventeen_cy
 from .patch_seventeen_cy import SeventeenCYToyotaVehicle as PatchedSeventeenCYToyotaVehicle
-toyota_na.vehicle.vehicle_generations.seventeen_cy.SeventeenCYToyotaVehicle = PatchedSeventeenCYToyotaVehicle
+
+toyota_na.vehicle.vehicle_generations.seventeen_cy.SeventeenCYToyotaVehicle = (
+    PatchedSeventeenCYToyotaVehicle
+)
 
 from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
 
-#Patch get_vehicles
+# Patch get_vehicles
 from .patch_vehicle import get_vehicles
-#from toyota_na.vehicle.vehicle import get_vehicles
+# from toyota_na.vehicle.vehicle import get_vehicles
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
@@ -157,7 +174,17 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["binary_sensor", "button", "device_tracker", "event", "lock", "number", "select", "sensor", "switch"]
+PLATFORMS = [
+    "binary_sensor",
+    "button",
+    "device_tracker",
+    "event",
+    "lock",
+    "number",
+    "select",
+    "sensor",
+    "switch",
+]
 
 
 async def _refresh_coordinator_after_command(coordinator, vin=None, command=None) -> None:
@@ -179,11 +206,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             return
 
         vin = next(
-            (
-                identifier[1]
-                for identifier in device.identifiers
-                if identifier[0] == DOMAIN
-            ),
+            (identifier[1] for identifier in device.identifiers if identifier[0] == DOMAIN),
             None,
         )
         if vin is None:
@@ -192,33 +215,55 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
 
         entry_id = device.config_entry_id
         coordinator = hass.data[DOMAIN].get(entry_id, {}).get("coordinator")
-        if coordinator is None or coordinator.data is None or not any(
-            vehicle.vin == vin for vehicle in coordinator.data
+        if (
+            coordinator is None
+            or coordinator.data is None
+            or not any(vehicle.vin == vin for vehicle in coordinator.data)
         ):
             _LOGGER.warning("No loaded coordinator found for device")
             return
         config_entry = hass.config_entries.async_get_entry(entry_id)
 
-        vehicle = next(
-            item for item in coordinator.data if item.vin == vin
-        )
+        vehicle = next(item for item in coordinator.data if item.vin == vin)
         if remote_action in ("set_climate_schedule", "delete_climate_schedule"):
-            fields = {"enabled": "enabled", "start_time": "time", "date": "date", "days": "days", "temperature": "temperature"}
-            changes = {field: service_call.data[key] for key, field in fields.items() if key in service_call.data}
+            fields = {
+                "enabled": "enabled",
+                "start_time": "time",
+                "date": "date",
+                "days": "days",
+                "temperature": "temperature",
+            }
+            changes = {
+                field: service_call.data[key]
+                for key, field in fields.items()
+                if key in service_call.data
+            }
             with translate_service_errors():
                 await vehicle.update_climate_schedule(
-                    service_call.data.get("schedule_id"), zone=ZoneInfo(hass.config.time_zone),
-                    delete=remote_action == "delete_climate_schedule", **changes,
+                    service_call.data.get("schedule_id"),
+                    zone=ZoneInfo(hass.config.time_zone),
+                    delete=remote_action == "delete_climate_schedule",
+                    **changes,
                 )
             coordinator.async_set_updated_data(coordinator.data)
             return
         if remote_action in ("set_charge_schedule", "delete_charge_schedule"):
-            fields = {"enabled": "enabled", "start_time": "startTime", "end_time": "endTime", "days": "daysOfTheWeek"}
-            changes = {field: service_call.data[key] for key, field in fields.items() if key in service_call.data}
+            fields = {
+                "enabled": "enabled",
+                "start_time": "startTime",
+                "end_time": "endTime",
+                "days": "daysOfTheWeek",
+            }
+            changes = {
+                field: service_call.data[key]
+                for key, field in fields.items()
+                if key in service_call.data
+            }
             with translate_service_errors():
                 await vehicle.update_charge_schedule(
                     service_call.data.get("schedule_id"),
-                    delete=remote_action == "delete_charge_schedule", **changes,
+                    delete=remote_action == "delete_charge_schedule",
+                    **changes,
                 )
             if config_entry is not None:
                 record_vehicle_wake(hass, config_entry, vin)
@@ -242,9 +287,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             if config_entry is not None:
                 record_vehicle_wake(hass, config_entry, vin)
 
-        task = hass.async_create_task(
-            _refresh_coordinator_after_command(coordinator, vin, command)
-        )
+        task = hass.async_create_task(_refresh_coordinator_after_command(coordinator, vin, command))
         if config_entry is not None:
             config_entry.async_on_unload(task.cancel)
         _LOGGER.info("Handling service call %s for VIN ...%s", remote_action, vin[-4:])
@@ -252,12 +295,16 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
         return
 
     for action in (
-        *COMMAND_MAP, "set_charge_schedule", "delete_charge_schedule",
-        "set_climate_schedule", "delete_climate_schedule",
+        *COMMAND_MAP,
+        "set_charge_schedule",
+        "delete_charge_schedule",
+        "set_climate_schedule",
+        "delete_climate_schedule",
     ):
         hass.services.async_register(DOMAIN, action, async_service_handle)
 
     return True
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     if "password" in entry.data:
@@ -293,9 +340,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         hass,
         _LOGGER,
         name=DOMAIN,
-        update_method=lambda: update_vehicles_status(
-            hass, client, entry, coordinator
-        ),
+        update_method=lambda: update_vehicles_status(hass, client, entry, coordinator),
         update_interval=timedelta(seconds=UPDATE_INTERVAL),
     )
     ws_handler = None
@@ -354,8 +399,7 @@ def _websocket_contexts(vehicles):
             "backdoor_type": vehicle.backdoor_type,
         }
         for vehicle in vehicles
-        if vehicle.can_receive_status
-        and vehicle.generation in websocket_generations
+        if vehicle.can_receive_status and vehicle.generation in websocket_generations
     }
 
 
@@ -396,9 +440,7 @@ async def update_vehicles_status(
                     _LOGGER.warning("Vehicle refresh failed (%s), continuing without refresh", e)
             vehicles.append(vehicle)
         if wake_requested:
-            task = hass.async_create_task(
-                _refresh_coordinator_after_command(coordinator)
-            )
+            task = hass.async_create_task(_refresh_coordinator_after_command(coordinator))
             entry.async_on_unload(task.cancel)
         sync_remote_access_issues(hass, entry, vehicles)
         return vehicles
@@ -410,7 +452,9 @@ async def update_vehicles_status(
 
 
 async def async_remove_config_entry_device(
-    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry,
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    device_entry: dr.DeviceEntry,
 ) -> bool:
     """Allow removing a vehicle that is no longer in the Toyota account."""
     entry_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {})
@@ -422,9 +466,7 @@ async def async_remove_config_entry_device(
         not isinstance(vehicle, dict) or not vehicle.get("vin") for vehicle in vehicles
     ):
         return False
-    return not any(
-        (DOMAIN, vehicle["vin"]) in device_entry.identifiers for vehicle in vehicles
-    )
+    return not any((DOMAIN, vehicle["vin"]) in device_entry.identifiers for vehicle in vehicles)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):

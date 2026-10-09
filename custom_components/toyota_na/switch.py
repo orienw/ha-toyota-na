@@ -35,7 +35,11 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         for vehicle in coordinator.data or []:
             for schedules, identifier_key, name in (
                 (vehicle.charge_settings.get("schedules"), "settingId", "Charge Schedule "),
-                (vehicle.climate_schedules.get("airConditioningReservation"), "reservationNo", "Climate Schedule "),
+                (
+                    vehicle.climate_schedules.get("airConditioningReservation"),
+                    "reservationNo",
+                    "Climate Schedule ",
+                ),
             ):
                 if not isinstance(schedules, list) or any(
                     not isinstance(schedule, dict) or schedule.get(identifier_key) is None
@@ -45,8 +49,12 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 prefix = vehicle_entity_unique_id(vehicle.vin, name)
                 current_ids = {f"{prefix}{schedule[identifier_key]}" for schedule in schedules}
                 for entry in entries:
-                    if (entry.domain == "switch" and entry.platform == DOMAIN
-                            and entry.unique_id.startswith(prefix) and entry.unique_id not in current_ids):
+                    if (
+                        entry.domain == "switch"
+                        and entry.platform == DOMAIN
+                        and entry.unique_id.startswith(prefix)
+                        and entry.unique_id not in current_ids
+                    ):
                         registry.async_remove(entry.entity_id)
                         yield entry.unique_id
 
@@ -56,7 +64,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             if entity.available:
                 yield entity
             for name, icon, setting in CLIMATE_SWITCHES:
-                entity = ToyotaClimatePreferenceSwitch(setting, icon, coordinator, name, vehicle.vin)
+                entity = ToyotaClimatePreferenceSwitch(
+                    setting, icon, coordinator, name, vehicle.vin
+                )
                 if entity.available:
                     yield entity
             for schedule in vehicle.charge_settings.get("schedules") or []:
@@ -64,7 +74,11 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                     continue
                 identifier = str(schedule["settingId"])
                 entity = ToyotaChargeScheduleSwitch(
-                    identifier, config_entry, coordinator, f"Charge Schedule {identifier}", vehicle.vin,
+                    identifier,
+                    config_entry,
+                    coordinator,
+                    f"Charge Schedule {identifier}",
+                    vehicle.vin,
                 )
                 if entity.available:
                     yield entity
@@ -73,12 +87,17 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 if not isinstance(schedule, dict) or schedule.get("reservationNo") is None:
                     continue
                 identifier = str(schedule["reservationNo"])
-                entity = ToyotaClimateScheduleSwitch(identifier, coordinator, f"Climate Schedule {identifier}", vehicle.vin)
+                entity = ToyotaClimateScheduleSwitch(
+                    identifier, coordinator, f"Climate Schedule {identifier}", vehicle.vin
+                )
                 if entity.available:
                     yield entity
 
     setup_entity_discovery(
-        config_entry, coordinator, async_add_entities, discover_switches,
+        config_entry,
+        coordinator,
+        async_add_entities,
+        discover_switches,
         remove_stale_entities=remove_stale_schedules,
     )
 
@@ -137,7 +156,8 @@ class ToyotaClimatePreferenceSwitch(ToyotaClimateSettingsSwitch):
     @property
     def available(self):
         return (
-            self.vehicle is not None and self.vehicle.supports_climate_settings
+            self.vehicle is not None
+            and self.vehicle.supports_climate_settings
             and isinstance(self.setting.get("enabled"), bool)
         )
 
@@ -161,12 +181,22 @@ class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
 
     @property
     def schedule(self):
-        schedules = self.vehicle.climate_schedules.get("airConditioningReservation") if self.vehicle else None
-        return next((item for item in schedules or [] if str(item["reservationNo"]) == self._identifier), {})
+        schedules = (
+            self.vehicle.climate_schedules.get("airConditioningReservation")
+            if self.vehicle
+            else None
+        )
+        return next(
+            (item for item in schedules or [] if str(item["reservationNo"]) == self._identifier), {}
+        )
 
     @property
     def available(self):
-        return self.vehicle is not None and self.vehicle.supports_climate_schedules and self.is_on is not None
+        return (
+            self.vehicle is not None
+            and self.vehicle.supports_climate_schedules
+            and self.is_on is not None
+        )
 
     @property
     def is_on(self):
@@ -189,7 +219,9 @@ class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
         if not self.available:
             raise ServiceValidationError("This climate schedule is unavailable.")
         with translate_service_errors():
-            await self.vehicle.update_climate_schedule(self._identifier, zone=ZoneInfo(self.hass.config.time_zone), enabled=enabled)
+            await self.vehicle.update_climate_schedule(
+                self._identifier, zone=ZoneInfo(self.hass.config.time_zone), enabled=enabled
+            )
         self.coordinator.async_set_updated_data(self.coordinator.data)
 
 
@@ -207,13 +239,22 @@ class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
         if self.vehicle is None:
             return {}
         schedules = self.vehicle.charge_settings.get("schedules") or []
-        return next((item for item in schedules if isinstance(item, dict)
-                     and str(item.get("settingId")) == self._identifier), {})
+        return next(
+            (
+                item
+                for item in schedules
+                if isinstance(item, dict) and str(item.get("settingId")) == self._identifier
+            ),
+            {},
+        )
 
     @property
     def available(self):
-        return (self.vehicle is not None and self.vehicle.supports_charge_schedules
-                and isinstance(self.schedule.get("enabled"), bool))
+        return (
+            self.vehicle is not None
+            and self.vehicle.supports_charge_schedules
+            and isinstance(self.schedule.get("enabled"), bool)
+        )
 
     @property
     def is_on(self):
@@ -221,7 +262,10 @@ class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
 
     @property
     def extra_state_attributes(self):
-        return {key: self.schedule.get(key) for key in ("startTime", "endTime", "daysOfTheWeek", "settingId")}
+        return {
+            key: self.schedule.get(key)
+            for key in ("startTime", "endTime", "daysOfTheWeek", "settingId")
+        }
 
     async def async_turn_on(self, **kwargs):
         await self._set_enabled(True)

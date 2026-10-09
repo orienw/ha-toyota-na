@@ -1,4 +1,5 @@
 """AppSync subscriptions for 21MM, 24MM, and 26BEV vehicle status updates."""
+
 import asyncio
 import base64
 import json
@@ -23,16 +24,12 @@ _LOGGER = logging.getLogger(__name__)
 
 SUBSCRIBE_VEHICLE_STATUS = (
     "subscription ReceiveVehicleStatus($vin: String!) {"
-    " onVehicleStatusUpdated(vin: $vin) {"
-    + GRAPHQL_VEHICLE_STATUS_FIELDS
-    + "} }"
+    " onVehicleStatusUpdated(vin: $vin) {" + GRAPHQL_VEHICLE_STATUS_FIELDS + "} }"
 )
 
 SUBSCRIBE_BASIC_VEHICLE_STATUS = (
     "subscription ReceiveVehicleStatus($vin: String!) {"
-    " onVehicleStatusUpdated(vin: $vin) {"
-    + GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS
-    + "} }"
+    " onVehicleStatusUpdated(vin: $vin) {" + GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS + "} }"
 )
 
 
@@ -79,9 +76,7 @@ class ToyotaWebSocketHandler:
     async def update_vehicle_contexts(self, vehicle_contexts):
         """Reconcile subscriptions with the account's current vehicles."""
         if isinstance(vehicle_contexts, Mapping):
-            contexts = {
-                vin: dict(context) for vin, context in vehicle_contexts.items()
-            }
+            contexts = {vin: dict(context) for vin, context in vehicle_contexts.items()}
         else:
             contexts = {vin: {} for vin in vehicle_contexts}
         previous_contexts = self._vehicle_contexts
@@ -146,13 +141,9 @@ class ToyotaWebSocketHandler:
             if not self._running or not self._vehicle_contexts:
                 return
 
-            _LOGGER.debug(
-                "WebSocket: reconnecting in %ds", self._reconnect_delay
-            )
+            _LOGGER.debug("WebSocket: reconnecting in %ds", self._reconnect_delay)
             await asyncio.sleep(self._reconnect_delay)
-            self._reconnect_delay = min(
-                self._reconnect_delay * 2, self._max_reconnect_delay
-            )
+            self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
 
     async def _connect_and_listen(self):
         """Connect to AppSync WebSocket, subscribe, and process messages."""
@@ -170,13 +161,9 @@ class ToyotaWebSocketHandler:
             first_context.get("region", "US"),
             device_id,
         )
-        header_b64 = base64.b64encode(
-            json.dumps(auth_header).encode()
-        ).decode()
+        header_b64 = base64.b64encode(json.dumps(auth_header).encode()).decode()
         payload_b64 = base64.b64encode(b"{}").decode()
-        ws_url = (
-            f"{GRAPHQL_WS_ENDPOINT}?header={header_b64}&payload={payload_b64}"
-        )
+        ws_url = f"{GRAPHQL_WS_ENDPOINT}?header={header_b64}&payload={payload_b64}"
 
         self._session = aiohttp.ClientSession(timeout=HTTP_TIMEOUT)
         try:
@@ -193,9 +180,7 @@ class ToyotaWebSocketHandler:
                     timeout=max(0, self._keepalive_deadline - monotonic()),
                 )
                 if msg.type == aiohttp.WSMsgType.TEXT:
-                    await self._handle_message(
-                        json.loads(msg.data), token, guid
-                    )
+                    await self._handle_message(json.loads(msg.data), token, guid)
                 elif msg.type in (
                     aiohttp.WSMsgType.CLOSE,
                     aiohttp.WSMsgType.CLOSED,
@@ -264,9 +249,7 @@ class ToyotaWebSocketHandler:
                             vin[-4:],
                         )
                 except Exception as e:
-                    _LOGGER.debug(
-                        "WebSocket: confirm subscription failed: %s", e
-                    )
+                    _LOGGER.debug("WebSocket: confirm subscription failed: %s", e)
 
         elif msg_type == "data":
             payload = msg.get("payload")
@@ -282,8 +265,7 @@ class ToyotaWebSocketHandler:
                     return
                 self._retry_delays.pop(vin, None)
                 _LOGGER.info(
-                    "WebSocket: received vehicle status for VIN ...%s "
-                    "(updated: %s)",
+                    "WebSocket: received vehicle status for VIN ...%s (updated: %s)",
                     vin[-4:],
                     status.get("lastUpdateDateTime", "?"),
                 )
@@ -316,7 +298,8 @@ class ToyotaWebSocketHandler:
                     self._basic_status_vins.add(vin)
                 _LOGGER.warning(
                     "WebSocket: subscription ended for VIN ...%s (%s); retrying",
-                    vin[-4:], msg_type,
+                    vin[-4:],
+                    msg_type,
                 )
                 _LOGGER.debug("WebSocket subscription response: %s", json.dumps(msg)[:500])
                 self._schedule_retry(vin)
@@ -347,14 +330,13 @@ class ToyotaWebSocketHandler:
                     {
                         "query": (
                             SUBSCRIBE_BASIC_VEHICLE_STATUS
-                            if vin in self._basic_status_vins else SUBSCRIBE_VEHICLE_STATUS
+                            if vin in self._basic_status_vins
+                            else SUBSCRIBE_VEHICLE_STATUS
                         ),
                         "variables": {"vin": vin},
                     }
                 ),
-                "extensions": {
-                    "authorization": authorization
-                },
+                "extensions": {"authorization": authorization},
             },
         }
         self._schedule_retry(vin, delay=30)

@@ -17,12 +17,16 @@ from custom_components.toyota_na.patch_vehicle import get_vehicles
 from toyota_na.exceptions import AuthError
 
 HISTORY = [
-    {"vin": "FIRSTVIN", "modelDesc": "LC 500", "notifications": [
-        {"messageId": "1", "category": "RemoteCommand", "vin": "FIRSTVIN"},
-        {"messageId": "2", "category": "ServiceWarnings"},
-        {"messageId": "3", "category": "RemoteCommand", "vin": "SECONDVIN"},
-        "unexpected",
-    ]},
+    {
+        "vin": "FIRSTVIN",
+        "modelDesc": "LC 500",
+        "notifications": [
+            {"messageId": "1", "category": "RemoteCommand", "vin": "FIRSTVIN"},
+            {"messageId": "2", "category": "ServiceWarnings"},
+            {"messageId": "3", "category": "RemoteCommand", "vin": "SECONDVIN"},
+            "unexpected",
+        ],
+    },
     {"vin": None, "notifications": [{"messageId": "4", "category": "payment_alerts"}]},
     {"vin": "SECONDVIN", "notifications": None},
     "unexpected",
@@ -39,9 +43,11 @@ def message_ids(vehicle):
 class NotificationHistoryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.client = types.SimpleNamespace(
-            get_user_vehicle_list=AsyncMock(return_value=[
-                {**behavior.LEXUS_21MM_COUPE, "vin": vin} for vin in ("FIRSTVIN", "SECONDVIN")
-            ]),
+            get_user_vehicle_list=AsyncMock(
+                return_value=[
+                    {**behavior.LEXUS_21MM_COUPE, "vin": vin} for vin in ("FIRSTVIN", "SECONDVIN")
+                ]
+            ),
             get_notification_history=AsyncMock(return_value=HISTORY),
         )
 
@@ -101,7 +107,9 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
         hass = ha.FakeHass(self.coordinator)
         hass.data[ha.DOMAIN]["entry"]["started"] = STARTED
         self.entities = []
-        await event.async_setup_entry(hass, ha.ConfigEntry(), lambda added, update: self.entities.extend(added))
+        await event.async_setup_entry(
+            hass, ha.ConfigEntry(), lambda added, update: self.entities.extend(added)
+        )
         self.assertEqual([entity.unique_id for entity in self.entities], ["TESTVIN.Notifications"])
         self.entity = self.entities[0]
         await self.entity.async_added_to_hass()
@@ -112,24 +120,56 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_notifications_fire_oldest_first_after_seeding(self):
         self.vehicle.notifications = [
             {"messageId": "old", "category": "RemoteCommand"},
-            {"messageId": 7, "category": "SERVICEWARNINGS", "notificationDate": "2026-10-06T09:00:00Z",
-             "title": "Low oil", "message": "Check oil", "lat": 37.1, "lon": -122.1},
-            {"messageId": "a", "category": "OTA_UPDATES_21MM", "notificationDate": "2026-10-06T08:00:00Z",
-             "displayCategory": "Software", "subcategory": None, "status": "new"},
+            {
+                "messageId": 7,
+                "category": "SERVICEWARNINGS",
+                "notificationDate": "2026-10-06T09:00:00Z",
+                "title": "Low oil",
+                "message": "Check oil",
+                "lat": 37.1,
+                "lon": -122.1,
+            },
+            {
+                "messageId": "a",
+                "category": "OTA_UPDATES_21MM",
+                "notificationDate": "2026-10-06T08:00:00Z",
+                "displayCategory": "Software",
+                "subcategory": None,
+                "status": "new",
+            },
         ]
         self.entity._handle_coordinator_update()
-        self.assertEqual(self.events(), [
-            ("software_update", {
-                "message_id": "a", "category": "OTA_UPDATES_21MM", "display_category": "Software",
-                "subcategory": None, "title": None, "message": None, "status": "new",
-                "date": "2026-10-06T08:00:00Z",
-            }),
-            ("service_warning", {
-                "message_id": "7", "category": "SERVICEWARNINGS", "display_category": None,
-                "subcategory": None, "title": "Low oil", "message": "Check oil", "status": None,
-                "date": "2026-10-06T09:00:00Z",
-            }),
-        ])
+        self.assertEqual(
+            self.events(),
+            [
+                (
+                    "software_update",
+                    {
+                        "message_id": "a",
+                        "category": "OTA_UPDATES_21MM",
+                        "display_category": "Software",
+                        "subcategory": None,
+                        "title": None,
+                        "message": None,
+                        "status": "new",
+                        "date": "2026-10-06T08:00:00Z",
+                    },
+                ),
+                (
+                    "service_warning",
+                    {
+                        "message_id": "7",
+                        "category": "SERVICEWARNINGS",
+                        "display_category": None,
+                        "subcategory": None,
+                        "title": "Low oil",
+                        "message": "Check oil",
+                        "status": None,
+                        "date": "2026-10-06T09:00:00Z",
+                    },
+                ),
+            ],
+        )
         self.entity._handle_coordinator_update()
         self.assertEqual(len(self.events()), 2)
 
@@ -154,19 +194,37 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_notifications_dated_before_startup_never_fire(self):
         self.vehicle.notifications = [
-            {"messageId": "restart", "category": "RemoteCommand", "notificationDate": "2026-10-06T06:59:59Z"},
-            {"messageId": "edge", "category": "RemoteCommand", "notificationDate": "2026-10-06T07:00:00Z"},
-            {"messageId": "new", "category": "RemoteCommand", "notificationDate": "2026-10-06T07:00:01Z"},
+            {
+                "messageId": "restart",
+                "category": "RemoteCommand",
+                "notificationDate": "2026-10-06T06:59:59Z",
+            },
+            {
+                "messageId": "edge",
+                "category": "RemoteCommand",
+                "notificationDate": "2026-10-06T07:00:00Z",
+            },
+            {
+                "messageId": "new",
+                "category": "RemoteCommand",
+                "notificationDate": "2026-10-06T07:00:01Z",
+            },
         ]
         self.entity._handle_coordinator_update()
         self.assertEqual([data["message_id"] for _, data in self.events()], ["new"])
-        self.vehicle.notifications = [{"messageId": "restart", "category": "RemoteCommand", "notificationDate": None}]
+        self.vehicle.notifications = [
+            {"messageId": "restart", "category": "RemoteCommand", "notificationDate": None}
+        ]
         self.entity._handle_coordinator_update()
         self.assertEqual([data["message_id"] for _, data in self.events()], ["new"])
 
     async def test_history_present_at_startup_stays_history_without_its_date(self):
         self.unread.notifications = [
-            {"messageId": "before", "category": "RemoteCommand", "notificationDate": "2026-10-06T06:59:59Z"},
+            {
+                "messageId": "before",
+                "category": "RemoteCommand",
+                "notificationDate": "2026-10-06T06:59:59Z",
+            },
         ]
         self.coordinator.notify_listeners()
         late = self.entities[-1]
@@ -177,8 +235,16 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_late_first_read_still_fires_notifications_after_startup(self):
         self.unread.notifications = [
-            {"messageId": "before", "category": "RemoteCommand", "notificationDate": "2026-10-06T06:00:00Z"},
-            {"messageId": "after", "category": "RemoteCommand", "notificationDate": "2026-10-06T07:05:00Z"},
+            {
+                "messageId": "before",
+                "category": "RemoteCommand",
+                "notificationDate": "2026-10-06T06:00:00Z",
+            },
+            {
+                "messageId": "after",
+                "category": "RemoteCommand",
+                "notificationDate": "2026-10-06T07:05:00Z",
+            },
             {"messageId": "undated", "category": "RemoteCommand"},
         ]
         self.coordinator.notify_listeners()
@@ -191,7 +257,10 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
     async def test_ids_compare_as_text_like_the_app(self):
         self.vehicle.notifications = [{"messageId": 7, "category": "RemoteCommand"}]
         self.entity._handle_coordinator_update()
-        self.vehicle.notifications = [{"messageId": "7", "category": "RemoteCommand"}, {"messageId": ""}]
+        self.vehicle.notifications = [
+            {"messageId": "7", "category": "RemoteCommand"},
+            {"messageId": ""},
+        ]
         self.entity._handle_coordinator_update()
         self.assertEqual([data["message_id"] for _, data in self.events()], ["7"])
 
@@ -207,6 +276,8 @@ class NotificationEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(types, {*NOTIFICATION_EVENT_TYPES.values(), "other"})
         for path in ("strings.json", "translations/en.json"):
             with open(ha.INTEGRATION / path) as file:
-                states = json.load(file)["entity"]["event"]["notification"]["state_attributes"]["event_type"]["state"]
+                states = json.load(file)["entity"]["event"]["notification"]["state_attributes"][
+                    "event_type"
+                ]["state"]
             self.assertEqual(set(states), types)
         self.assertEqual(event.notification_event_type(None), "other")

@@ -20,9 +20,7 @@ WAKE_INTERVAL_OPTIONS = {
 }
 
 
-def automatic_wake_interval(
-    options: Mapping[str, Any], default_interval: int
-) -> int:
+def automatic_wake_interval(options: Mapping[str, Any], default_interval: int) -> int:
     """Return a valid configured wake interval in seconds."""
     interval = options.get(CONF_WAKE_INTERVAL, default_interval)
     if type(interval) is not int or interval < 0:
@@ -84,9 +82,7 @@ def record_vehicle_wake(
                 and record.get("vin") != vin
             ):
                 vehicle_wakes.append(dict(record))
-        vehicle_wakes.append(
-            {"vin": vin, VEHICLE_WAKE_TIMESTAMP: timestamp}
-        )
+        vehicle_wakes.append({"vin": vin, VEHICLE_WAKE_TIMESTAMP: timestamp})
         entry_data[LAST_VEHICLE_WAKES] = vehicle_wakes
 
     hass.config_entries.async_update_entry(entry, data=entry_data)

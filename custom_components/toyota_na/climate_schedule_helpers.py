@@ -8,8 +8,16 @@ from .charging_helpers import WEEKDAYS, schedule_time
 from .climate_helpers import climate_bounds
 
 SCHEDULE_FIELDS = (
-    "status", "reservationType", "date", "days", "time", "settingType",
-    "temperatureUnit", "temperature", "acOptions", "ventilationOptions",
+    "status",
+    "reservationType",
+    "date",
+    "days",
+    "time",
+    "settingType",
+    "temperatureUnit",
+    "temperature",
+    "acOptions",
+    "ventilationOptions",
 )
 
 
@@ -53,7 +61,7 @@ def local_climate_schedule(schedule, zone, *, now=None):
         result["date"] = None if repeating else local.date().isoformat()
         result["time"] = local.strftime("%H:%M")
         result["days"] = _shift_days(schedule.get("days") or [], (local.date() - utc.date()).days)
-    except (TypeError, ValueError, OverflowError):
+    except TypeError, ValueError, OverflowError:
         result.update(date=None, time=None, days=None)
     return result
 
@@ -64,14 +72,28 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
     if "date" in changes and "days" in changes:
         raise ValueError("Choose a date or repeating days, not both.")
     now = now or datetime.now(zone)
-    body = {key: deepcopy(existing[key]) for key in SCHEDULE_FIELDS if existing.get(key) is not None} if existing else {}
+    body = (
+        {key: deepcopy(existing[key]) for key in SCHEDULE_FIELDS if existing.get(key) is not None}
+        if existing
+        else {}
+    )
     if not existing:
-        if not changes.get("time") or "temperature" not in changes or not (changes.get("date") or changes.get("days")):
-            raise ValueError("A new climate schedule needs a time, temperature, and date or repeating days.")
+        if (
+            not changes.get("time")
+            or "temperature" not in changes
+            or not (changes.get("date") or changes.get("days"))
+        ):
+            raise ValueError(
+                "A new climate schedule needs a time, temperature, and date or repeating days."
+            )
         if changes.get("enabled") is False:
             raise ValueError("Create the climate schedule before disabling it.")
         # Toyota's app always sends the defoggers, off for a new schedule.
-        body.update(settingType="CUSTOM", acOptions={"frontDefogger": "off", "rearDefogger": "off"}, ventilationOptions={})
+        body.update(
+            settingType="CUSTOM",
+            acOptions={"frontDefogger": "off", "rearDefogger": "off"},
+            ventilationOptions={},
+        )
     if "enabled" in changes:
         if not isinstance(changes["enabled"], bool):
             raise ValueError("Schedule enabled must be true or false.")
@@ -80,17 +102,23 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
     if not existing or changes.keys() & {"time", "date", "days"}:
         local = local_climate_schedule(existing, zone, now=now) if existing else {}
         saved_start = None
-        if existing and existing.get("reservationType") == "REPETITION" and not changes.keys() & {"time", "date"}:
+        if (
+            existing
+            and existing.get("reservationType") == "REPETITION"
+            and not changes.keys() & {"time", "date"}
+        ):
             # Changing only the days keeps the saved start, even in a repeated hour.
             try:
                 saved_start = _reservation_datetime(existing).astimezone(zone)
-            except (ValueError, OverflowError):
+            except ValueError, OverflowError:
                 pass
         try:
             selected_time = schedule_time(changes.get("time", local.get("time")))
         except ValueError as err:
             if "time" in changes:
-                raise ValueError("Climate schedule time must use HH:MM in Home Assistant's timezone.") from err
+                raise ValueError(
+                    "Climate schedule time must use HH:MM in Home Assistant's timezone."
+                ) from err
             raise RuntimeError("Toyota did not return a valid climate schedule time.") from err
         if selected_time is None:
             if "time" in changes:
@@ -106,21 +134,29 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
             days = changes.get("days", local.get("days"))
             # A repeating time set now is saved on today's date, so setting it
             # again after a clock change moves it to the current offset.
-            selected_date = now.date().isoformat() if body.get("reservationType") == "REPETITION" else local.get("date")
+            selected_date = (
+                now.date().isoformat()
+                if body.get("reservationType") == "REPETITION"
+                else local.get("date")
+            )
         if body.get("reservationType") not in ("ONE_TIME", "REPETITION"):
             raise RuntimeError("Toyota did not return a valid climate reservation type.")
         if saved_start is not None:
             local_time = saved_start
         else:
             try:
-                local_time = datetime.combine(date.fromisoformat(selected_date), time.fromisoformat(selected_time), zone)
+                local_time = datetime.combine(
+                    date.fromisoformat(selected_date), time.fromisoformat(selected_time), zone
+                )
             except (TypeError, ValueError) as err:
                 if "date" in changes:
                     raise ValueError("Climate schedule date must use YYYY-MM-DD.") from err
                 raise RuntimeError("Toyota did not return a valid climate schedule date.") from err
         utc = local_time.astimezone(timezone.utc)
         if utc.astimezone(zone).replace(tzinfo=None) != local_time.replace(tzinfo=None):
-            raise ValueError("This local time does not exist because the clocks move forward. Choose another time.")
+            raise ValueError(
+                "This local time does not exist because the clocks move forward. Choose another time."
+            )
         body["date"] = utc.strftime("%m-%d-%Y")
         body["time"] = utc.strftime("%H:%M")
         if body["reservationType"] == "REPETITION":
@@ -128,7 +164,9 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
                 if "days" not in changes:
                     raise RuntimeError("Toyota did not return valid climate schedule days.")
                 raise ValueError("Choose at least one valid day of the week.")
-            body["days"] = _shift_days(list(dict.fromkeys(days)), (utc.date() - local_time.date()).days)
+            body["days"] = _shift_days(
+                list(dict.fromkeys(days)), (utc.date() - local_time.date()).days
+            )
         else:
             body.pop("days", None)
     if "temperature" in changes:
@@ -140,7 +178,9 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
         if type(value) not in (int, float) or not math.isfinite(value):
             raise ValueError("Climate temperature must be a finite number.")
         minimum, maximum, step = bounds
-        if not minimum <= value <= maximum or not math.isclose((value - minimum) / step, round((value - minimum) / step), abs_tol=1e-6):
+        if not minimum <= value <= maximum or not math.isclose(
+            (value - minimum) / step, round((value - minimum) / step), abs_tol=1e-6
+        ):
             raise ValueError("Climate temperature does not match the vehicle's range and step.")
         body.update(temperature=format(value, "g"), temperatureUnit=unit, settingType="CUSTOM")
     elif body.get("temperature") is not None:
@@ -149,7 +189,9 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
         try:
             scheduled = _reservation_datetime(body)
         except ValueError as err:
-            raise RuntimeError("Toyota did not return a valid climate schedule date and time.") from err
+            raise RuntimeError(
+                "Toyota did not return a valid climate schedule date and time."
+            ) from err
         if scheduled <= now:
             raise ValueError("A one-time climate schedule must be in the future.")
     return body
@@ -162,16 +204,26 @@ def climate_schedule_matches(schedule, desired, zone, *, now=None):
             # only where it changes the time or days the schedule shows. The
             # UTC time must match too, as setting the same time again after a
             # clock change saves it at the current offset.
-            if _reservation_datetime(schedule, "01-01-2000").time() != _reservation_datetime(desired, "01-01-2000").time():
+            if (
+                _reservation_datetime(schedule, "01-01-2000").time()
+                != _reservation_datetime(desired, "01-01-2000").time()
+            ):
                 return False
-            shown, wanted = (local_climate_schedule(item, zone, now=now) for item in (schedule, desired))
-            if shown["time"] is None or (shown["time"], set(shown["days"])) != (wanted["time"], set(wanted["days"])):
+            shown, wanted = (
+                local_climate_schedule(item, zone, now=now) for item in (schedule, desired)
+            )
+            if shown["time"] is None or (shown["time"], set(shown["days"])) != (
+                wanted["time"],
+                set(wanted["days"]),
+            ):
                 return False
         elif _reservation_datetime(schedule) != _reservation_datetime(desired):
             return False
         # A new schedule is sent without a status, as Toyota's app does, and
         # like the app only "active" is on.
-        if "status" in desired and (schedule.get("status") == "active") != (desired["status"] == "active"):
+        if "status" in desired and (schedule.get("status") == "active") != (
+            desired["status"] == "active"
+        ):
             return False
         for key, value in desired.items():
             if key in ("date", "time", "status"):
@@ -184,17 +236,21 @@ def climate_schedule_matches(schedule, desired, zone, *, now=None):
                     return False
             elif key in ("temperatureUnit", "settingType"):
                 # Checked in any case, and only when Toyota reports it.
-                if schedule.get(key) is not None and str(schedule[key]).lower() != str(value).lower():
+                if (
+                    schedule.get(key) is not None
+                    and str(schedule[key]).lower() != str(value).lower()
+                ):
                     return False
             elif isinstance(value, dict):
                 reported = schedule.get(key) or {}
                 # Like Toyota's app, an option is on only when reported as "on".
                 if not isinstance(reported, dict) or any(
-                    (reported.get(name) == "on") != (setting == "on") for name, setting in value.items()
+                    (reported.get(name) == "on") != (setting == "on")
+                    for name, setting in value.items()
                 ):
                     return False
             elif schedule.get(key) != value:
                 return False
         return True
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False

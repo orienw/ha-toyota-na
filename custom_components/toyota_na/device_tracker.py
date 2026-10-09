@@ -1,4 +1,5 @@
 """Device tracker platform for Toyota Connected Services"""
+
 import logging
 from typing import Any, cast
 
@@ -36,9 +37,7 @@ async def async_setup_entry(
     def discover_locations():
         for vehicle in coordinator.data or []:
             for entity_config in features_sensors:
-                vehicle_feature = cast(
-                    VehicleFeatures, entity_config["feature"]
-                )
+                vehicle_feature = cast(VehicleFeatures, entity_config["feature"])
                 feature = vehicle.features.get(vehicle_feature)
                 if isinstance(feature, ToyotaLocation):
                     yield ToyotaDeviceTracker(

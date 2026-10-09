@@ -336,7 +336,8 @@ async def get_user_vehicle_list(self):
         messages = []
     message = next(
         (
-            item for item in messages
+            item
+            for item in messages
             if isinstance(item, dict) and item.get("responseCode") is not None
         ),
         {},
@@ -363,6 +364,7 @@ async def get_telemetry(self, vin, region="US", generation="17CYPLUS"):
         _LOGGER.debug("v2/telemetry failed: %s", e)
         return None
 
+
 async def get_tire_pressure(self, vin, generation, region="US", brand="T"):
     return await self.api_get(
         "v1/telemetry/tires/pressure",
@@ -373,7 +375,8 @@ async def get_tire_pressure(self, vin, generation, region="US", brand="T"):
 async def _vehicle_health(self, endpoint, vin, generation, region, brand):
     """Return only the payload; Toyota can answer errors with a 2xx body and no payload."""
     body = await self.api_request(
-        "GET", endpoint,
+        "GET",
+        endpoint,
         _vehicle_headers(vin, region, GENERATION=generation, **{"X-BRAND": brand}),
         envelope=True,
     )
@@ -399,7 +402,9 @@ async def get_software_update(self, vin):
 
     The app's shared interceptor adds X-APIVERSION v1 to every /oa24mm request.
     """
-    body = await self.api_request("GET", OTA_UPDATE_CHECK, {"vin": vin, "X-APIVERSION": "v1"}, envelope=True)
+    body = await self.api_request(
+        "GET", OTA_UPDATE_CHECK, {"vin": vin, "X-APIVERSION": "v1"}, envelope=True
+    )
     return body.get("payload") if isinstance(body, dict) else None
 
 
@@ -420,6 +425,7 @@ async def _auth_headers(self):
         "Accept": "application/json",
     }
 
+
 async def get_vehicle_status_17cyplus(self, vin, region="US"):
     """Vehicle status for 17CYPLUS vehicles."""
     try:
@@ -435,6 +441,7 @@ async def get_vehicle_status_17cyplus(self, vin, region="US"):
         _LOGGER.debug("vehicle_status v1/global/remote/status failed: %s", e)
     return None
 
+
 async def get_vehicle_status_21mm(self, vin, region="US"):
     return await get_vehicle_status_route(self, vin, "21MM", region)
 
@@ -445,6 +452,7 @@ async def get_vehicle_status_route(self, vin, generation, region="US", brand="T"
         _vehicle_headers(vin, region, **{"X-GENERATION": generation, "X-BRAND": brand}),
     )
     return res.get("status", res) if res else res
+
 
 async def get_engine_status_17cyplus(self, vin, region="US"):
     """Engine status for 17CYPLUS vehicles."""
@@ -461,6 +469,7 @@ async def get_engine_status_17cyplus(self, vin, region="US"):
         _LOGGER.debug("engine_status v1/global/remote/engine-status failed: %s", e)
     return None
 
+
 async def get_engine_status_21mm(self, vin, region="US"):
     return await get_engine_status_route(self, vin, "21MM", region)
 
@@ -470,6 +479,7 @@ async def get_engine_status_route(self, vin, generation, region="US", brand="T")
         REMOTE_ROUTE + "engine-status",
         _vehicle_headers(vin, region, **{"X-GENERATION": generation, "X-BRAND": brand}),
     )
+
 
 async def send_refresh_request_17cyplus(self, vin, region="US"):
     """Refresh status via v1/global/remote/refresh-status."""
@@ -482,6 +492,7 @@ async def send_refresh_request_17cyplus(self, vin, region="US"):
         },
         _vehicle_headers(vin, region),
     )
+
 
 async def send_refresh_request_21mm(self, vin, region="US"):
     return await send_refresh_request_route(self, vin, "21MM", region)
@@ -502,6 +513,7 @@ async def send_refresh_request_route(self, vin, generation, region="US", brand="
         ),
     )
 
+
 async def remote_request_17cyplus(self, vin, command, region="US"):
     """Remote command (lock, unlock, engine start, etc.) via v1/global/remote."""
     return await self.api_post(
@@ -509,6 +521,7 @@ async def remote_request_17cyplus(self, vin, command, region="US"):
         {"command": command},
         _vehicle_headers(vin, region),
     )
+
 
 async def remote_request_21mm(self, vin, command, region="US"):
     return await remote_request_route(self, vin, "21MM", command, region)
@@ -554,17 +567,17 @@ async def electric_command(self, vin, generation, command, region="US", brand="T
     result = await self.api_post(
         "v2/electric/command",
         {"command": command},
-        _vehicle_headers(vin, region, **{
-            "X-GENERATION": generation,
-            "X-BRAND": brand,
-            "device-id": self.auth.get_device_id(),
-        }),
+        _vehicle_headers(
+            vin,
+            region,
+            **{
+                "X-GENERATION": generation,
+                "X-BRAND": brand,
+                "device-id": self.auth.get_device_id(),
+            },
+        ),
     )
-    if (
-        not result
-        or result.get("returnCode") != "ONE-RES-10000"
-        or not result.get("appRequestNo")
-    ):
+    if not result or result.get("returnCode") != "ONE-RES-10000" or not result.get("appRequestNo"):
         code = (result or {}).get("returnCode")
         raise RuntimeError(
             f"Toyota did not accept the charging command ({code or 'no request number'})."
@@ -585,9 +598,15 @@ async def electric_command(self, vin, generation, command, region="US", brand="T
         if completion.get("status") == 0 and completion.get("result") == 0:
             return status
         # Like Toyota's app, a finished command with a non-zero result was refused.
-        state, outcome, error = completion.get("status"), completion.get("result"), completion.get("errorCode")
+        state, outcome, error = (
+            completion.get("status"),
+            completion.get("result"),
+            completion.get("errorCode"),
+        )
         if type(state) is int and state == 0 and type(outcome) is int and outcome != 0:
-            detail = f"result {outcome}" + (f", error {error}" if isinstance(error, (str, int)) and error != "" else "")
+            detail = f"result {outcome}" + (
+                f", error {error}" if isinstance(error, (str, int)) and error != "" else ""
+            )
             raise RuntimeError(f"Toyota refused the charging command ({detail}).")
         await asyncio.sleep(min(2, max(0, deadline - loop.time())))
     raise RuntimeError("Toyota accepted the charging command but did not confirm completion.")
@@ -606,6 +625,7 @@ async def get_vehicle_status_17cy(self, vin, region="US"):
         _LOGGER.debug("v2/legacy/remote/status failed: %s", e)
         return None
 
+
 async def get_engine_status_17cy(self, vin, region="US"):
     """Legacy engine status."""
     try:
@@ -618,6 +638,7 @@ async def get_engine_status_17cy(self, vin, region="US"):
     except Exception as e:
         _LOGGER.debug("v1/legacy/remote/engine-status failed: %s", e)
         return None
+
 
 async def send_refresh_request_17cy(self, vin, region="US"):
     """Legacy refresh status."""
@@ -647,9 +668,8 @@ async def remote_request_17cy(self, vin, command, value, region="US"):
         _vehicle_headers(vin, region),
     )
 
-async def get_electric_realtime_status(
-    self, vin, generation="17CYPLUS", region="US"
-):
+
+async def get_electric_realtime_status(self, vin, generation="17CYPLUS", region="US"):
     try:
         headers = _vehicle_headers(vin, region, vin=vin)
         headers["device-id"] = self.auth.get_device_id()
@@ -675,6 +695,7 @@ async def get_electric_realtime_status(
         _LOGGER.debug("Electric realtime status failed: %s", e)
         return None
 
+
 async def get_electric_status(self, vin, realtime_status=None, region="US", generation="17CYPLUS"):
     """Read EV status, retrying the legacy request if v3 has no readings."""
     versions = ("v2",) if generation == "17CY" else ("v3", "v2")
@@ -688,26 +709,41 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
             if version == "v3" or generation == "17CY":
                 headers["X-GENERATION"] = generation
             electric_status = await self.api_get(url, headers)
-            vehicle_info = electric_status.get("vehicleInfo") if isinstance(electric_status, dict) else None
+            vehicle_info = (
+                electric_status.get("vehicleInfo") if isinstance(electric_status, dict) else None
+            )
             if not isinstance(vehicle_info, dict):
                 _LOGGER.debug("Electric status %s returned no vehicle info", version)
                 continue
             charge_info = vehicle_info.get("chargeInfo")
             if version == "v2" or (
                 isinstance(charge_info, dict)
-                and any(charge_info.get(key) is not None for key in (
-                    "evDistance", "evDistanceAC", "chargeRemainingAmount", "plugStatus",
-                    "remainingChargeTime", "evTravelableDistance", "chargeType", "connectorStatus",
-                ))
+                and any(
+                    charge_info.get(key) is not None
+                    for key in (
+                        "evDistance",
+                        "evDistanceAC",
+                        "chargeRemainingAmount",
+                        "plugStatus",
+                        "remainingChargeTime",
+                        "evTravelableDistance",
+                        "chargeType",
+                        "connectorStatus",
+                    )
+                )
             ):
                 if primary is not None:
                     primary_info = primary["vehicleInfo"]
                     vehicle_info = dict(vehicle_info)
                     if isinstance(primary_info.get("timerChargeInfo"), list):
                         vehicle_info["timerChargeInfo"] = primary_info["timerChargeInfo"]
-                        vehicle_info["_schedule_acquisition_datetime"] = primary_info.get("acquisitionDatetime")
+                        vehicle_info["_schedule_acquisition_datetime"] = primary_info.get(
+                            "acquisitionDatetime"
+                        )
                     if isinstance(primary_info.get("maxNoOfChargeSchedules"), int):
-                        vehicle_info["maxNoOfChargeSchedules"] = primary_info["maxNoOfChargeSchedules"]
+                        vehicle_info["maxNoOfChargeSchedules"] = primary_info[
+                            "maxNoOfChargeSchedules"
+                        ]
                     return {**electric_status, "vehicleInfo": vehicle_info}
                 return electric_status
             primary = electric_status
@@ -718,15 +754,21 @@ async def get_electric_status(self, vin, realtime_status=None, region="US", gene
             _LOGGER.debug("Electric status %s failed: %s", version, e)
     return primary
 
+
 def graphql_schema_errors(errors):
     """Recognize rejected query fields separately from auth and resolver errors."""
     # AppSync reports schema errors in the message; a resolver can use a
     # ValidationError type for bad input, which must not drop fields.
     return isinstance(errors, list) and any(
-        (isinstance(err.get("extensions"), dict)
-            and err["extensions"].get("code") == "GRAPHQL_VALIDATION_FAILED")
-        or str(err.get("message", "")).lower().startswith(("validation error", "cannot query field"))
-        for err in errors if isinstance(err, dict)
+        (
+            isinstance(err.get("extensions"), dict)
+            and err["extensions"].get("code") == "GRAPHQL_VALIDATION_FAILED"
+        )
+        or str(err.get("message", ""))
+        .lower()
+        .startswith(("validation error", "cannot query field"))
+        for err in errors
+        if isinstance(err, dict)
     )
 
 
@@ -738,11 +780,21 @@ def _failed_status_sections(data, errors):
         path = err.get("path")
         if not isinstance(path, list) or len(path) < 3 or path[0] != "getVehicleStatus":
             continue
-        if any(tuple(path[1:len(optional) + 1]) == optional for optional in _OPTIONAL_STATUS_PATHS):
+        if any(
+            tuple(path[1 : len(optional) + 1]) == optional for optional in _OPTIONAL_STATUS_PATHS
+        ):
             section = status.get(path[1]) if isinstance(status, dict) else None
-            if status is None or (isinstance(status, dict) and (
-                section is None or (path[1] == "electric" and isinstance(section, dict) and section.get("charging") is None)
-            )):
+            if status is None or (
+                isinstance(status, dict)
+                and (
+                    section is None
+                    or (
+                        path[1] == "electric"
+                        and isinstance(section, dict)
+                        and section.get("charging") is None
+                    )
+                )
+            ):
                 sections.add(path[1])
     return sections
 
@@ -766,16 +818,26 @@ def _merge_status_fallback(original_data, fallback_data, sections):
         if not isinstance(charging, dict):
             recovered.pop("electric")
         else:
-            mixed_electric = {**electric, "lastUpdateDateTime": None, "charging": {
-                **charging, "lastUpdateDateTime": charging.get("lastUpdateDateTime")
-                or fallback_electric.get("lastUpdateDateTime") or fallback.get("lastUpdateDateTime"),
-            }}
+            mixed_electric = {
+                **electric,
+                "lastUpdateDateTime": None,
+                "charging": {
+                    **charging,
+                    "lastUpdateDateTime": charging.get("lastUpdateDateTime")
+                    or fallback_electric.get("lastUpdateDateTime")
+                    or fallback.get("lastUpdateDateTime"),
+                },
+            }
             # Battery/range readings still belong to the first response.
             for key in ("battery", "gasoline"):
                 value = electric.get(key)
                 if isinstance(value, dict):
-                    mixed_electric[key] = {**value, "lastUpdateDateTime": value.get("lastUpdateDateTime")
-                                          or electric.get("lastUpdateDateTime") or original.get("lastUpdateDateTime")}
+                    mixed_electric[key] = {
+                        **value,
+                        "lastUpdateDateTime": value.get("lastUpdateDateTime")
+                        or electric.get("lastUpdateDateTime")
+                        or original.get("lastUpdateDateTime"),
+                    }
     if not recovered:
         return original_data
     status = {**original, **recovered}
@@ -832,7 +894,9 @@ async def graphql_request(
             token = await self.auth.get_access_token()
             headers["Authorization"] = "Bearer " + token
             try:
-                async with session.post(GRAPHQL_ENDPOINT, headers=headers, data=json.dumps(payload)) as resp:
+                async with session.post(
+                    GRAPHQL_ENDPOINT, headers=headers, data=json.dumps(payload)
+                ) as resp:
                     body = await resp.text()
                     status = resp.status
                 try:
@@ -841,7 +905,7 @@ async def graphql_request(
                     if status < 400:
                         raise
                     result = {}
-            except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError):
+            except aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError:
                 if original_data is not None and not raise_errors:
                     return original_data
                 raise
@@ -866,11 +930,13 @@ async def graphql_request(
                     raise TokenExpired("Toyota rejected the refreshed access token.")
                 await self.auth.check_tokens(rejected_token=token)
                 if not read_only:
-                    raise RuntimeError("Toyota could not authenticate the request. Credentials were refreshed; retry the action.")
+                    raise RuntimeError(
+                        "Toyota could not authenticate the request. Credentials were refreshed; retry the action."
+                    )
                 auth_retried = True
                 continue
             if read_only and (status == 429 or status >= 500) and retries < 2:
-                await asyncio.sleep(2 ** retries)
+                await asyncio.sleep(2**retries)
                 retries += 1
                 continue
             data = result.get("data")
@@ -884,7 +950,10 @@ async def graphql_request(
                     graphql_schema_errors(errors)
                     and all(value is None for value in (data or {}).values())
                 ):
-                    _LOGGER.debug("GraphQL %s failed on optional status fields; retrying the basic query", operation_name)
+                    _LOGGER.debug(
+                        "GraphQL %s failed on optional status fields; retrying the basic query",
+                        operation_name,
+                    )
                     original_data = data
                     payload["query"] = fallback_query
                     fallback_query = None
@@ -898,8 +967,7 @@ async def graphql_request(
                 )
                 if raise_errors:
                     raise RuntimeError(
-                        "Toyota GraphQL %s failed with HTTP %d"
-                        % (operation_name, status)
+                        "Toyota GraphQL %s failed with HTTP %d" % (operation_name, status)
                     )
                 return original_data
             if errors:
@@ -941,9 +1009,7 @@ async def graphql_pre_wake(self, guid, region="US"):
     )
 
 
-async def graphql_confirm_subscription(
-    self, vin, backdoor_type="hatch", region="US"
-):
+async def graphql_confirm_subscription(self, vin, backdoor_type="hatch", region="US"):
     """Confirm subscription is active for this VIN."""
     backdoor_type = backdoor_type or "hatch"
     return await self.graphql_request(
@@ -967,9 +1033,7 @@ async def graphql_refresh_status(self, vin, region="US"):
     )
 
 
-async def graphql_get_vehicle_status(
-    self, vin, backdoor_type="hatch", region="US"
-):
+async def graphql_get_vehicle_status(self, vin, backdoor_type="hatch", region="US"):
     """Read current AppSync state before subscription updates arrive."""
     backdoor_type = backdoor_type or "hatch"
     data = await self.graphql_request(
@@ -985,9 +1049,7 @@ async def graphql_get_vehicle_status(
     return status if isinstance(status, dict) else None
 
 
-async def graphql_send_remote_command(
-    self, vin, command, region="US"
-):
+async def graphql_send_remote_command(self, vin, command, region="US"):
     """Submit an AppSync command after its callback subscription is ready."""
     data = await self.graphql_request(
         "SendRemoteCommand",
@@ -1002,9 +1064,7 @@ async def graphql_send_remote_command(
 
 
 def _require_remote_execution(execution):
-    correlation_id = ((execution or {}).get("payload") or {}).get(
-        "correlationId"
-    )
+    correlation_id = ((execution or {}).get("payload") or {}).get("correlationId")
     if correlation_id:
         return execution
 
@@ -1043,21 +1103,15 @@ async def _receive_remote_socket_message(ws, timeout):
         aiohttp.WSMsgType.CLOSED,
         aiohttp.WSMsgType.ERROR,
     ):
-        raise RuntimeError(
-            "Toyota closed the AppSync remote-command connection."
-        )
+        raise RuntimeError("Toyota closed the AppSync remote-command connection.")
     return {}
 
 
-async def _wait_for_remote_socket_event(
-    ws, expected_type, subscription_id=None
-):
+async def _wait_for_remote_socket_event(ws, expected_type, subscription_id=None):
     loop = asyncio.get_running_loop()
     deadline = loop.time() + 15
     while loop.time() < deadline:
-        message = await _receive_remote_socket_message(
-            ws, max(1, deadline - loop.time())
-        )
+        message = await _receive_remote_socket_message(ws, max(1, deadline - loop.time()))
         message_type = message.get("type")
         if message_type == "ka":
             continue
@@ -1076,9 +1130,7 @@ async def _wait_for_remote_command_result(
     loop = asyncio.get_running_loop()
     deadline = loop.time() + 60
     while loop.time() < deadline:
-        message = await _receive_remote_socket_message(
-            ws, max(1, deadline - loop.time())
-        )
+        message = await _receive_remote_socket_message(ws, max(1, deadline - loop.time()))
         message_type = message.get("type")
         if message_type == "ka":
             continue
@@ -1087,12 +1139,9 @@ async def _wait_for_remote_command_result(
         if message_type != "data" or message.get("id") != subscription_id:
             continue
 
-        callback = (
-            ((message.get("payload") or {}).get("data") or {}).get(
-                "onPostRemoteCallback"
-            )
-            or {}
-        )
+        callback = ((message.get("payload") or {}).get("data") or {}).get(
+            "onPostRemoteCallback"
+        ) or {}
         if callback.get("vin") != vin:
             continue
         callback_request_no = callback.get("appRequestNo")
@@ -1109,49 +1158,70 @@ async def _wait_for_remote_command_result(
             return callback
         if status == "in_progress":
             continue
-        if fail_on_unknown or status in ("error", "timeout") or callback.get("commandEnded") is True:
-            raise RuntimeError(
-                detail
-                or f"Toyota ended the remote command with status {status}."
-            )
+        if (
+            fail_on_unknown
+            or status in ("error", "timeout")
+            or callback.get("commandEnded") is True
+        ):
+            raise RuntimeError(detail or f"Toyota ended the remote command with status {status}.")
     raise RuntimeError(
-        "Toyota accepted the command but did not report completion within "
-        "60 seconds."
+        "Toyota accepted the command but did not report completion within 60 seconds."
     )
 
 
 async def remote_request_24mm(self, vin, command, region="US"):
     """Run an AppSync command and await Toyota's callback."""
     return await _run_appsync_operation(
-        self, vin, lambda: self.graphql_send_remote_command(vin, command, region), region,
-        fail_on_unknown=command not in (
-            "immediate-charge", "resume-charge", "charge-stop", "power-supply-stop",
+        self,
+        vin,
+        lambda: self.graphql_send_remote_command(vin, command, region),
+        region,
+        fail_on_unknown=command
+        not in (
+            "immediate-charge",
+            "resume-charge",
+            "charge-stop",
+            "power-supply-stop",
         ),
     )
 
 
 async def update_charge_settings(self, vin, variable, value, region="US"):
     """Change one charging preference and await Toyota's completion callback."""
+
     async def submit():
         if variable == "minimumElectricSupply":
             operation, document, key = (
-                "PostPowerSupplyModeLimit", GRAPHQL_POWER_SUPPLY_LIMIT, "executeRemoteCommand",
+                "PostPowerSupplyModeLimit",
+                GRAPHQL_POWER_SUPPLY_LIMIT,
+                "executeRemoteCommand",
             )
             variables = {"command": "set-power-supply", variable: str(value)}
         elif variable in ("chargingTargetLimit", "quickChargePowerLimit", "currentCharge"):
-            operation, document, key = "PostChargeSettings", GRAPHQL_CHARGE_SETTINGS, "postChargeSettings"
+            operation, document, key = (
+                "PostChargeSettings",
+                GRAPHQL_CHARGE_SETTINGS,
+                "postChargeSettings",
+            )
             variables = {variable: value}
         else:
             raise ValueError("Unknown charging preference.")
         data = await self.graphql_request(
-            operation, document, variables, vin=vin, region=region, raise_errors=True,
+            operation,
+            document,
+            variables,
+            vin=vin,
+            region=region,
+            raise_errors=True,
         )
         return _require_remote_execution(data.get(key) if data else None)
 
     return await _run_appsync_operation(self, vin, submit, region)
 
 
-async def save_charge_schedule(self, vin, generation, schedule, region="US", brand="T", *, delete=False):
+async def save_charge_schedule(
+    self, vin, generation, schedule, region="US", brand="T", *, delete=False
+):
     """Submit a schedule using its generation's time format and confirmation."""
     appsync = generation in ("24MM", "26BEV")
     body = dict(schedule)
@@ -1168,17 +1238,25 @@ async def save_charge_schedule(self, vin, generation, schedule, region="US", bra
 
     async def submit():
         result = await self.api_request(
-            method, endpoint,
-            _vehicle_headers(vin, region, **{
-                "X-GENERATION": generation, "X-BRAND": brand,
-                "device-id": str(uuid.uuid4()),
-            }),
+            method,
+            endpoint,
+            _vehicle_headers(
+                vin,
+                region,
+                **{
+                    "X-GENERATION": generation,
+                    "X-BRAND": brand,
+                    "device-id": str(uuid.uuid4()),
+                },
+            ),
             **({} if delete else {"json": body}),
         )
         result = result or {}
         request_no = result.get("appRequestNo") or result.get("correlationId")
         if result.get("returnCode") != "ONE-RES-10000" or not request_no:
-            raise RuntimeError(result.get("message") or "Toyota did not accept the charge schedule change.")
+            raise RuntimeError(
+                result.get("message") or "Toyota did not accept the charge schedule change."
+            )
         return {"payload": {"requestNo": request_no}}
 
     if appsync:
@@ -1193,16 +1271,25 @@ async def get_climate_schedules(self, vin, generation, region="US", brand="T"):
     )
 
 
-async def save_climate_schedule(self, vin, generation, schedule, region="US", brand="T", *, identifier=None, delete=False):
-    headers = _vehicle_headers(vin, region, **{
-        "X-GENERATION": generation, "X-BRAND": brand,
-        "device-id": self.auth.get_device_id(),
-    })
+async def save_climate_schedule(
+    self, vin, generation, schedule, region="US", brand="T", *, identifier=None, delete=False
+):
+    headers = _vehicle_headers(
+        vin,
+        region,
+        **{
+            "X-GENERATION": generation,
+            "X-BRAND": brand,
+            "device-id": self.auth.get_device_id(),
+        },
+    )
     if identifier is not None:
         headers["ReservationNo"] = str(identifier)
     method = "DELETE" if delete else "PUT" if identifier is not None else "POST"
     result = await self.api_request(
-        method, REMOTE_ROUTE + "ac-reservation", headers,
+        method,
+        REMOTE_ROUTE + "ac-reservation",
+        headers,
         **({} if delete else {"json": schedule}),
     )
     # Toyota's app treats any successful response as accepted and never reads
@@ -1220,7 +1307,11 @@ async def _run_appsync_operation(self, vin, submit, region, *, fail_on_unknown=F
     lock = self._remote_locks.setdefault(vin, asyncio.Lock())
     async with lock:
         return await _execute_appsync_operation(
-            self, vin, submit, region, fail_on_unknown=fail_on_unknown,
+            self,
+            vin,
+            submit,
+            region,
+            fail_on_unknown=fail_on_unknown,
         )
 
 
@@ -1236,18 +1327,14 @@ async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unkno
     )
     query = urlencode(
         {
-            "header": base64.b64encode(
-                json.dumps(authorization).encode()
-            ).decode(),
+            "header": base64.b64encode(json.dumps(authorization).encode()).decode(),
             "payload": base64.b64encode(b"{}").decode(),
         }
     )
     websocket_url = f"{GRAPHQL_WS_ENDPOINT}?{query}"
 
     async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
-        async with session.ws_connect(
-            websocket_url, protocols=["graphql-ws"], heartbeat=30
-        ) as ws:
+        async with session.ws_connect(websocket_url, protocols=["graphql-ws"], heartbeat=30) as ws:
             await ws.send_json({"type": "connection_init"})
             await _wait_for_remote_socket_event(ws, "connection_ack")
 
@@ -1267,16 +1354,16 @@ async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unkno
                     },
                 }
             )
-            await _wait_for_remote_socket_event(
-                ws, "start_ack", subscription_id
-            )
+            await _wait_for_remote_socket_event(ws, "start_ack", subscription_id)
             execution = await submit()
-            request_no = ((execution or {}).get("payload") or {}).get(
-                "requestNo"
-            )
+            request_no = ((execution or {}).get("payload") or {}).get("requestNo")
             try:
                 return await _wait_for_remote_command_result(
-                    ws, vin, subscription_id, request_no, fail_on_unknown=fail_on_unknown,
+                    ws,
+                    vin,
+                    subscription_id,
+                    request_no,
+                    fail_on_unknown=fail_on_unknown,
                 )
             except asyncio.TimeoutError as err:
                 raise RuntimeError(
@@ -1295,21 +1382,23 @@ async def api_request(self, method, endpoint, header_params=None, *, envelope=Fa
     url = urljoin(API_GATEWAY, endpoint)
 
     async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
-        async with session.request(
-                method, url, headers=headers, **kwargs
-        ) as resp:
+        async with session.request(method, url, headers=headers, **kwargs) as resp:
             if resp.status >= 400:
                 body = await resp.text()
                 _LOGGER.debug(
                     "Toyota API error: %s %s -> %d %s | Response: %s",
-                    method, url, resp.status, resp.reason, body[:500]
+                    method,
+                    url,
+                    resp.status,
+                    resp.reason,
+                    body[:500],
                 )
                 try:
                     resp.raise_for_status()
                 except aiohttp.ClientResponseError as err:
                     try:
                         message = json.loads(body)["status"]["messages"][0]
-                    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    except json.JSONDecodeError, KeyError, IndexError, TypeError:
                         message = {}
                     if isinstance(message, dict):
                         detail = message.get("detailedDescription") or message.get("description")

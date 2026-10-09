@@ -22,7 +22,8 @@ from toyota_na.exceptions import LoginError, TokenExpired
 class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
     def token_response(self):
         return {
-            "access_token": "access", "refresh_token": "refresh",
+            "access_token": "access",
+            "refresh_token": "refresh",
             "id_token": jwt.encode({"sub": "guid"}, key="", algorithm="none"),
             "expires_in": 3600,
         }
@@ -32,6 +33,7 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
         async def refresh():
             await asyncio.sleep(0)
             auth._extract_tokens(response)
+
         return AsyncMock(side_effect=refresh)
 
     async def test_expiry_is_independent_of_local_timezone(self):
@@ -63,7 +65,9 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
         tokens = auth.get_tokens()
         del tokens["clock"]
         migrated = patch_auth.ToyotaOneAuth(initial_tokens=tokens)
-        migrated.refresh_tokens = AsyncMock(side_effect=lambda: migrated._extract_tokens(self.token_response()))
+        migrated.refresh_tokens = AsyncMock(
+            side_effect=lambda: migrated._extract_tokens(self.token_response())
+        )
         await migrated.check_tokens()
         await migrated.check_tokens()
         migrated.refresh_tokens.assert_awaited_once()
@@ -84,7 +88,9 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("refresh", auth._refresh_token)
         self.assertEqual(identity, auth._id_token)
         self.assertEqual("guid", auth._guid)
-        auth._extract_tokens({"access_token": "third-access", "refresh_token": "rotated", "expires_in": 1800})
+        auth._extract_tokens(
+            {"access_token": "third-access", "refresh_token": "rotated", "expires_in": 1800}
+        )
         self.assertEqual("rotated", callback.call_args.args[0]["refresh_token"])
         self.assertEqual("unix", callback.call_args.args[0]["clock"])
 
@@ -99,14 +105,19 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
             {"access_token": "new", "expires_in": -1},
             {"access_token": "new", "expires_in": 3600, "id_token": "invalid"},
         ):
-            with self.subTest(response=response), self.assertRaises((RuntimeError, jwt.InvalidTokenError)):
+            with (
+                self.subTest(response=response),
+                self.assertRaises((RuntimeError, jwt.InvalidTokenError)),
+            ):
                 auth._extract_tokens(response)
             self.assertEqual(before, auth.get_tokens())
 
     async def test_concurrent_rejections_of_one_token_share_a_refresh(self):
         auth = patch_auth.ToyotaOneAuth()
         auth._extract_tokens(self.token_response())
-        auth.refresh_tokens = self.refresh_with(auth, {**self.token_response(), "access_token": "replacement"})
+        auth.refresh_tokens = self.refresh_with(
+            auth, {**self.token_response(), "access_token": "replacement"}
+        )
         await asyncio.gather(*(auth.check_tokens(rejected_token="access") for _ in range(4)))
         auth.refresh_tokens.assert_awaited_once()
         await auth.check_tokens(rejected_token="access")
@@ -136,7 +147,9 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
                     await auth.check_tokens()
                     await auth.check_tokens()
                 auth.refresh_tokens.assert_not_awaited()
-                with patch.object(patch_auth.time, "time", return_value=1800000000 + lifetime * 0.9):
+                with patch.object(
+                    patch_auth.time, "time", return_value=1800000000 + lifetime * 0.9
+                ):
                     await asyncio.gather(*(auth.check_tokens() for _ in range(4)))
                     await auth.check_tokens()
                 auth.refresh_tokens.assert_awaited_once()
@@ -155,7 +168,8 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         self.flow.async_set_unique_id = AsyncMock(return_value=None)
         self.flow.async_create_entry = lambda **kwargs: {"type": "create_entry", **kwargs}
         client_patch = patch.object(
-            platform.config_flow, "ToyotaOneClient",
+            platform.config_flow,
+            "ToyotaOneClient",
             return_value=types.SimpleNamespace(auth=self.auth),
         )
         client_patch.start()
@@ -243,12 +257,19 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(platform.exceptions.ConfigEntryAuthFailed):
                 await platform.integration_runtime.update_vehicles_status(
-                    None, client, entry, None,
+                    None,
+                    client,
+                    entry,
+                    None,
                 )
 
     async def test_reauthentication_keeps_device_id_and_updates_existing_entry(self):
         entry = platform.ConfigEntry()
-        entry.data = {"device_id": "existing-device", "tokens": {"access_token": "expired"}, "password": "old-password"}
+        entry.data = {
+            "device_id": "existing-device",
+            "tokens": {"access_token": "expired"},
+            "password": "old-password",
+        }
         self.auth.authorize.return_value = "code"
         self.flow.async_set_unique_id.return_value = entry
         entries = types.SimpleNamespace(async_update_entry=MagicMock(), async_reload=AsyncMock())
@@ -264,13 +285,19 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("password", saved)
         entries.async_reload.assert_awaited_once_with(entry.entry_id)
 
-
     async def test_reauth_updates_original_entry_when_account_email_changes(self):
         entry = platform.ConfigEntry()
-        entry.data = {"email": "old@example.com", "device_id": "existing-device", "tokens": {"guid": "same-account"}, "password": "old-password"}
+        entry.data = {
+            "email": "old@example.com",
+            "device_id": "existing-device",
+            "tokens": {"guid": "same-account"},
+            "password": "old-password",
+        }
         self.flow.context = {"source": "reauth", "entry_id": entry.entry_id}
         self.flow._get_reauth_entry = lambda: entry
-        self.flow.async_update_reload_and_abort = MagicMock(return_value={"type": "abort", "reason": "reauth_successful"})
+        self.flow.async_update_reload_and_abort = MagicMock(
+            return_value={"type": "abort", "reason": "reauth_successful"}
+        )
         self.auth.get_tokens = lambda: {"guid": "same-account", "access_token": "new"}
         self.auth.authorize.return_value = "code"
 
@@ -306,7 +333,9 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
         entry.data = {"email": "OWNER@EXAMPLE.COM", "tokens": {}}
         self.flow.context = {"source": "reauth", "entry_id": entry.entry_id}
         self.flow._get_reauth_entry = lambda: entry
-        self.flow.async_update_reload_and_abort = MagicMock(return_value={"type": "abort", "reason": "reauth_successful"})
+        self.flow.async_update_reload_and_abort = MagicMock(
+            return_value={"type": "abort", "reason": "reauth_successful"}
+        )
         self.auth.authorize.return_value = "code"
         result = await self.flow.async_step_user(self.credentials)
         self.assertEqual("reauth_successful", result["reason"])
@@ -314,17 +343,29 @@ class AuthFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_setup_removes_saved_password_even_when_tokens_are_expired(self):
         entry = platform.ConfigEntry()
-        entry.data = {"device_id": "existing-device", "tokens": {"access_token": "expired"}, "password": "old-password"}
+        entry.data = {
+            "device_id": "existing-device",
+            "tokens": {"access_token": "expired"},
+            "password": "old-password",
+        }
         hass = platform.FakeHass(None)
         auth = MagicMock(check_tokens=AsyncMock(side_effect=LoginError()))
         with (
-            patch.object(platform.integration_runtime, "ToyotaOneAuth", return_value=auth) as auth_type,
-            patch.object(platform.integration_runtime, "ToyotaOneClient", return_value=types.SimpleNamespace(auth=auth)),
+            patch.object(
+                platform.integration_runtime, "ToyotaOneAuth", return_value=auth
+            ) as auth_type,
+            patch.object(
+                platform.integration_runtime,
+                "ToyotaOneClient",
+                return_value=types.SimpleNamespace(auth=auth),
+            ),
             self.assertLogs(platform.integration_runtime.__name__, level="ERROR"),
             self.assertRaises(platform.exceptions.ConfigEntryAuthFailed),
         ):
             await platform.integration_runtime.async_setup_entry(hass, entry)
-        self.assertEqual({"device_id": "existing-device", "tokens": {"access_token": "expired"}}, entry.data)
+        self.assertEqual(
+            {"device_id": "existing-device", "tokens": {"access_token": "expired"}}, entry.data
+        )
         self.assertEqual(-180, auth_type.call_args.kwargs["refresh_secs"])
 
 
@@ -367,7 +408,8 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(status=status):
                 redirect.status = status
                 self.assertEqual(
-                    "encoded+code=", await patch_auth.authorize(self.auth, "owner", "secret"),
+                    "encoded+code=",
+                    await patch_auth.authorize(self.auth, "owner", "secret"),
                 )
                 self.assertFalse(self.session.get.call_args.kwargs["allow_redirects"])
 
@@ -431,9 +473,13 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
                 challenge = {"callbacks": [self.callback("PasswordCallback", prompt)]}
                 self.response.json.side_effect = [challenge, {"tokenId": "session"}]
 
-                self.assertEqual(challenge, await patch_auth.authorize(self.auth, "owner", "secret"))
+                self.assertEqual(
+                    challenge, await patch_auth.authorize(self.auth, "owner", "secret")
+                )
                 self.assertEqual([{}], self.sent)
-                self.assertEqual("code", await patch_auth.authorize(self.auth, "owner", "secret", "123456"))
+                self.assertEqual(
+                    "code", await patch_auth.authorize(self.auth, "owner", "secret", "123456")
+                )
                 self.assertEqual("123456", self.sent[-1]["callbacks"][0]["input"][0]["value"])
 
     async def test_repeated_challenges_stop_even_when_auth_id_changes(self):
@@ -521,9 +567,14 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(verifier), 86)
                 self.assertEqual(form["code"], "code")
                 self.assertEqual(query["code_challenge_method"], ["S256"])
-                self.assertEqual(query["code_challenge"], [
-                    base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode(),
-                ])
+                self.assertEqual(
+                    query["code_challenge"],
+                    [
+                        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+                        .rstrip(b"=")
+                        .decode(),
+                    ],
+                )
                 self.assertIsNone(auth._code_verifier)
                 verifiers.append(verifier)
         self.assertNotEqual(*verifiers)
@@ -570,15 +621,20 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         async def refresh():
             await asyncio.sleep(0)
-            auth._extract_tokens({
-                "access_token": "new-token", "refresh_token": "new-refresh",
-                "id_token": jwt.encode({"sub": "guid"}, key="", algorithm="none"),
-                "expires_in": 3600,
-            })
+            auth._extract_tokens(
+                {
+                    "access_token": "new-token",
+                    "refresh_token": "new-refresh",
+                    "id_token": jwt.encode({"sub": "guid"}, key="", algorithm="none"),
+                    "expires_in": 3600,
+                }
+            )
 
         auth.refresh_tokens = AsyncMock(side_effect=refresh)
         results = await asyncio.gather(
-            auth.get_access_token(), auth.get_access_token(), auth.get_guid(),
+            auth.get_access_token(),
+            auth.get_access_token(),
+            auth.get_guid(),
         )
         self.assertEqual(results, ["new-token", "new-token", "guid"])
         auth.refresh_tokens.assert_awaited_once()
@@ -630,22 +686,28 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         def challenge(auth_id):
             return {
                 "authId": auth_id,
-                "callbacks": [{
-                    "type": "PasswordCallback",
-                    "output": [{"name": "prompt", "value": "One Time Password"}],
-                    "input": [{"name": "IDToken1", "value": ""}],
-                }],
+                "callbacks": [
+                    {
+                        "type": "PasswordCallback",
+                        "output": [{"name": "prompt", "value": "One Time Password"}],
+                        "input": [{"name": "IDToken1", "value": ""}],
+                    }
+                ],
             }
 
         rejected = challenge("retry-auth-id")
-        rejected["callbacks"].append({
-            "type": "TextOutputCallback",
-            "output": [{"name": "message", "value": " iNvAlId OtP "}],
-        })
+        rejected["callbacks"].append(
+            {
+                "type": "TextOutputCallback",
+                "output": [{"name": "message", "value": " iNvAlId OtP "}],
+            }
+        )
         response = AsyncMock()
         response.status = 200
         response.json.side_effect = [
-            challenge("first-auth-id"), rejected, {"tokenId": "session"},
+            challenge("first-auth-id"),
+            rejected,
+            {"tokenId": "session"},
             {"access_token": "new-token"},
         ]
         response.__aenter__.return_value = response
@@ -688,18 +750,28 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
             "input": [{"name": "IDToken1", "value": ""}],
         }
         for callbacks in (
-            [{"type": "TextOutputCallback", "output": [{"name": "message", "value": "invalid otp"}]}],
+            [
+                {
+                    "type": "TextOutputCallback",
+                    "output": [{"name": "message", "value": "invalid otp"}],
+                }
+            ],
             [{"type": "TextOutputCallback", "output": [{"name": "messageType", "value": 2}]}],
             [{"type": "UnknownCallback", "input": [{"value": ""}]}],
         ):
             with self.subTest(callbacks=callbacks):
                 response = AsyncMock(status=200)
-                response.json.return_value = {"authId": "next", "callbacks": copy.deepcopy(callbacks)}
+                response.json.return_value = {
+                    "authId": "next",
+                    "callbacks": copy.deepcopy(callbacks),
+                }
                 response.__aenter__.return_value = response
                 session = MagicMock()
                 session.__aenter__.return_value = session
                 session.post.return_value = response
-                auth = types.SimpleNamespace(otp_callbacks={"authId": "first", "callbacks": [copy.deepcopy(otp_callback)]})
+                auth = types.SimpleNamespace(
+                    otp_callbacks={"authId": "first", "callbacks": [copy.deepcopy(otp_callback)]}
+                )
                 with (
                     patch.object(patch_auth.aiohttp, "ClientSession", return_value=session),
                     patch.object(patch_auth._LOGGER, "error"),
@@ -711,14 +783,16 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_login_method_choice_is_selected_by_name(self):
         challenge = {
             "authId": "method-auth-id",
-            "callbacks": [{
-                "type": "ChoiceCallback",
-                "output": [
-                    {"name": "prompt", "value": "Choose a login method"},
-                    {"name": "choices", "value": ["Google", "Email", "Local"]},
-                ],
-                "input": [{"name": "IDToken1", "value": 0}],
-            }],
+            "callbacks": [
+                {
+                    "type": "ChoiceCallback",
+                    "output": [
+                        {"name": "prompt", "value": "Choose a login method"},
+                        {"name": "choices", "value": ["Google", "Email", "Local"]},
+                    ],
+                    "input": [{"name": "IDToken1", "value": 0}],
+                }
+            ],
         }
         response = AsyncMock()
         response.status = 200
@@ -747,14 +821,16 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_login_method_choice_falls_back_to_first_password_option(self):
         challenge = {
             "authId": "fallback-auth-id",
-            "callbacks": [{
-                "type": "ChoiceCallback",
-                "output": [
-                    {"name": "prompt", "value": "Choose a login method"},
-                    {"name": "choices", "value": ["Google", "Email"]},
-                ],
-                "input": [{"name": "IDToken1", "value": 0}],
-            }],
+            "callbacks": [
+                {
+                    "type": "ChoiceCallback",
+                    "output": [
+                        {"name": "prompt", "value": "Choose a login method"},
+                        {"name": "choices", "value": ["Google", "Email"]},
+                    ],
+                    "input": [{"name": "IDToken1", "value": 0}],
+                }
+            ],
         }
         response = AsyncMock()
         response.status = 200
@@ -783,11 +859,13 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_identity_provider_only_account_raises_sso_error(self):
         challenge = {
             "authId": "sso-auth-id",
-            "callbacks": [{
-                "type": "ChoiceCallback",
-                "output": [{"name": "choices", "value": ["Google", "Apple"]}],
-                "input": [{"name": "IDToken1", "value": 0}],
-            }],
+            "callbacks": [
+                {
+                    "type": "ChoiceCallback",
+                    "output": [{"name": "choices", "value": ["Google", "Apple"]}],
+                    "input": [{"name": "IDToken1", "value": 0}],
+                }
+            ],
         }
         response = AsyncMock()
         response.status = 200
@@ -809,11 +887,13 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_login_method_without_published_choices_keeps_default(self):
         challenge = {
             "authId": "legacy-auth-id",
-            "callbacks": [{
-                "type": "ChoiceCallback",
-                "output": [{"name": "prompt", "value": "Choose a login method"}],
-                "input": [{"name": "IDToken1", "value": 0}],
-            }],
+            "callbacks": [
+                {
+                    "type": "ChoiceCallback",
+                    "output": [{"name": "prompt", "value": "Choose a login method"}],
+                    "input": [{"name": "IDToken1", "value": 0}],
+                }
+            ],
         }
         response = AsyncMock()
         response.status = 200

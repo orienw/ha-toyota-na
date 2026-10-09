@@ -58,7 +58,8 @@ class ToyotaClimateSelect(ToyotaNABaseEntity, SelectEntity):
     @property
     def available(self):
         return (
-            self.vehicle is not None and self.vehicle.supports_climate_settings
+            self.vehicle is not None
+            and self.vehicle.supports_climate_settings
             and (bool(self.options) if self._setting == "airflow" else len(self.options) > 1)
         )
 
@@ -67,7 +68,11 @@ class ToyotaClimateSelect(ToyotaNABaseEntity, SelectEntity):
         if self._setting == "airflow":
             parameters = climate_parameters(self.settings, "airflow")
             return next(
-                (label for key, label in AIRFLOWS.items() if parameters.get(key, {}).get("enabled")),
+                (
+                    label
+                    for key, label in AIRFLOWS.items()
+                    if parameters.get(key, {}).get("enabled")
+                ),
                 None,
             )
         heat = climate_parameters(self.settings, "seatHeat").get(self._setting, {})
@@ -101,22 +106,35 @@ class ToyotaChargeSelect(ToyotaNABaseEntity, SelectEntity):
     def options(self):
         if self.vehicle is None:
             return []
-        return list(charge_options(
-            self.vehicle.charge_settings, self._field,
-            allow_missing_target=self.vehicle.feature_enabled("chargeSetting", default=False),
-        ))
+        return list(
+            charge_options(
+                self.vehicle.charge_settings,
+                self._field,
+                allow_missing_target=self.vehicle.feature_enabled("chargeSetting", default=False),
+            )
+        )
 
     @property
     def available(self):
-        return self.vehicle is not None and self.vehicle.supports_charge_setting(self._field) and bool(self.options)
+        return (
+            self.vehicle is not None
+            and self.vehicle.supports_charge_setting(self._field)
+            and bool(self.options)
+        )
 
     @property
     def current_option(self):
-        return current_charge_option(self.vehicle.charge_settings, self._field) if self.vehicle else None
+        return (
+            current_charge_option(self.vehicle.charge_settings, self._field)
+            if self.vehicle
+            else None
+        )
 
     async def async_select_option(self, option):
         if not self.available or option not in self.options:
-            raise ServiceValidationError("This charging preference is unavailable for this vehicle.")
+            raise ServiceValidationError(
+                "This charging preference is unavailable for this vehicle."
+            )
         with translate_service_errors():
             await self.vehicle.set_charge_setting(self._field, option)
         record_vehicle_wake(self.hass, self._config_entry, self.vin)

@@ -26,26 +26,41 @@ class DeviceRemovalTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(vehicles=vehicles):
                 self.client.get_user_vehicle_list.return_value = vehicles
-                self.assertEqual(await ha.integration_runtime.async_remove_config_entry_device(
-                    self.hass, self.entry, self.device,
-                ), allowed)
+                self.assertEqual(
+                    await ha.integration_runtime.async_remove_config_entry_device(
+                        self.hass,
+                        self.entry,
+                        self.device,
+                    ),
+                    allowed,
+                )
 
     async def test_failed_lookup_does_not_authorize_removal(self):
         for error in (TimeoutError(), RuntimeError("[ONE-VL-10002]")):
             self.client.get_user_vehicle_list.side_effect = error
             with self.assertRaises(type(error)):
                 await ha.integration_runtime.async_remove_config_entry_device(
-                    self.hass, self.entry, self.device,
+                    self.hass,
+                    self.entry,
+                    self.device,
                 )
 
     async def test_unloaded_account_and_foreign_device_cannot_be_removed(self):
         self.device.identifiers = {("other", "SOLDVIN")}
-        self.assertFalse(await ha.integration_runtime.async_remove_config_entry_device(
-            self.hass, self.entry, self.device,
-        ))
+        self.assertFalse(
+            await ha.integration_runtime.async_remove_config_entry_device(
+                self.hass,
+                self.entry,
+                self.device,
+            )
+        )
         self.device.identifiers = {(ha.DOMAIN, "SOLDVIN")}
         del self.hass.data[ha.DOMAIN][self.entry.entry_id]
-        self.assertFalse(await ha.integration_runtime.async_remove_config_entry_device(
-            self.hass, self.entry, self.device,
-        ))
+        self.assertFalse(
+            await ha.integration_runtime.async_remove_config_entry_device(
+                self.hass,
+                self.entry,
+                self.device,
+            )
+        )
         self.client.get_user_vehicle_list.assert_not_awaited()

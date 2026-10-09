@@ -41,15 +41,14 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
             "client": client,
             "has_remote_subscription": has_remote_subscription(api_vehicle),
             "has_electric": is_electric_vehicle(api_vehicle),
-            "model_name": api_vehicle.get("modelName") or (previous.model_name if previous else "Vehicle"),
+            "model_name": api_vehicle.get("modelName")
+            or (previous.model_name if previous else "Vehicle"),
             "model_year": api_vehicle.get("modelYear") or (previous.model_year if previous else ""),
             "vin": vin,
             "region": region.upper() if isinstance(region, str) and region else "US",
             "brand": brand.upper() if isinstance(brand, str) and brand else "T",
             "backdoor_type": (
-                backdoor_type.lower()
-                if isinstance(backdoor_type, str) and backdoor_type
-                else None
+                backdoor_type.lower() if isinstance(backdoor_type, str) and backdoor_type else None
             ),
             "remote_capabilities": api_vehicle.get("remoteServiceCapabilities"),
             "extended_capabilities": api_vehicle.get("extendedCapabilities"),
@@ -85,7 +84,9 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
     return vehicles
 
 
-async def _read_notification_history(client: ToyotaOneClient, vehicles: list[ToyotaVehicle]) -> None:
+async def _read_notification_history(
+    client: ToyotaOneClient, vehicles: list[ToyotaVehicle]
+) -> None:
     """Give each vehicle its notifications, keeping the last list when the read fails."""
     try:
         history = await client.get_notification_history()
@@ -98,8 +99,10 @@ async def _read_notification_history(client: ToyotaOneClient, vehicles: list[Toy
         return
     items = [
         (item.get("vin") or group.get("vin"), item)
-        for group in history if isinstance(group, dict) and isinstance(group.get("notifications"), list)
-        for item in group["notifications"] if isinstance(item, dict)
+        for group in history
+        if isinstance(group, dict) and isinstance(group.get("notifications"), list)
+        for item in group["notifications"]
+        if isinstance(item, dict)
     ]
     for vehicle in vehicles:
         # Items without a VIN are account notices, such as payments.

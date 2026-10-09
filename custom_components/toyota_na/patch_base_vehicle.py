@@ -16,8 +16,13 @@ from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .vehicle_helpers import (
-    can_extend_remote_runtime, endpoint_generation, first_capability, is_appsync_generation,
-    merge_opening_states, opening_state_from_values, parse_api_timestamp,
+    can_extend_remote_runtime,
+    endpoint_generation,
+    first_capability,
+    is_appsync_generation,
+    merge_opening_states,
+    opening_state_from_values,
+    parse_api_timestamp,
 )
 from .climate_helpers import apply_climate_changes
 from .climate_schedule_helpers import build_climate_schedule, climate_schedule_matches
@@ -72,7 +77,7 @@ class VehicleFeatures(Enum):
     # Charging Status
     ChargingStatus = auto()
     ChargingState = auto()
-    
+
     # Numeric values
     DistanceToEmpty = auto()
     FrontDriverTire = auto()
@@ -107,7 +112,7 @@ class VehicleFeatures(Enum):
     ChargingRate = auto()
     ChargeScheduleCount = auto()
 
-    #Times
+    # Times
     OccurrenceDate = auto()
 
     # Engine status
@@ -173,10 +178,12 @@ class ToyotaVehicle(ABC):
         RemoteRequestCommand.HeadlightsOn: ("headlight-on", ("lightsCapable",)),
         RemoteRequestCommand.SoundBuzzer: ("buzzer-warning", ("buzzerCapable",)),
         RemoteRequestCommand.TrunkLock: (
-            "trunk-lock", ("trunkLockUnlockCapable", "powerTailgateCapable"),
+            "trunk-lock",
+            ("trunkLockUnlockCapable", "powerTailgateCapable"),
         ),
         RemoteRequestCommand.TrunkUnlock: (
-            "trunk-unlock", ("trunkLockUnlockCapable", "powerTailgateCapable"),
+            "trunk-unlock",
+            ("trunkLockUnlockCapable", "powerTailgateCapable"),
         ),
         RemoteRequestCommand.WindowsOpen: ("power-window-open", ("powerWindowsOpenCapable",)),
         RemoteRequestCommand.WindowsClose: ("power-window-close", ("powerWindowsCloseCapable",)),
@@ -312,7 +319,10 @@ class ToyotaVehicle(ABC):
         previous = self._features.get(VehicleFeatures.RemoteStartStatus)
         if self._generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86):
             status = await self._client.get_engine_status_route(
-                self.vin, self.api_generation, self.region, self.brand,
+                self.vin,
+                self.api_generation,
+                self.region,
+                self.brand,
             )
         elif self._generation == ApiVehicleGeneration.MM21:
             status = await self._client.get_engine_status_21mm(self.vin, self.region)
@@ -345,7 +355,7 @@ class ToyotaVehicle(ABC):
     @property
     def subscribed(self):
         return self._has_remote_subscription
-    
+
     @property
     def electric(self):
         return self._has_electric
@@ -399,9 +409,13 @@ class ToyotaVehicle(ABC):
     @property
     def can_receive_status(self) -> bool:
         return self.generation in (
-            ApiVehicleGeneration.CY17, ApiVehicleGeneration.CY17PLUS,
-            ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24, ApiVehicleGeneration.BEV26,
-            ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86,
+            ApiVehicleGeneration.CY17,
+            ApiVehicleGeneration.CY17PLUS,
+            ApiVehicleGeneration.MM21,
+            ApiVehicleGeneration.MM24,
+            ApiVehicleGeneration.BEV26,
+            ApiVehicleGeneration.NG86,
+            ApiVehicleGeneration.GR86,
         )
 
     @property
@@ -409,15 +423,15 @@ class ToyotaVehicle(ABC):
         if self._extended_capabilities.get("remoteEConnectCapable") is True:
             return True
         return self.generation == ApiVehicleGeneration.CY17 and any(
-            isinstance(item, dict)
-            and str(item.get("name", "")).lower() == "evremoteservice"
+            isinstance(item, dict) and str(item.get("name", "")).lower() == "evremoteservice"
             for item in self._legacy_capabilities
         )
 
     @property
     def supports_climate_settings(self) -> bool:
         return (
-            self.subscribed and not self.stolen
+            self.subscribed
+            and not self.stolen
             and self._extended_capabilities.get("climateCapable") is True
             and self.feature_enabled("remoteClimate")
         )
@@ -451,7 +465,8 @@ class ToyotaVehicle(ABC):
         # Toyota's app shows schedules for climate-capable 24MM and newer
         # vehicles, and for electric vehicles other than 17CY and NG86.
         return self._extended_capabilities.get("climateCapable") is True and (
-            self.uses_appsync or (
+            self.uses_appsync
+            or (
                 self.electric
                 and self.generation not in (ApiVehicleGeneration.CY17, ApiVehicleGeneration.NG86)
             )
@@ -461,18 +476,24 @@ class ToyotaVehicle(ABC):
     def supports_climate_schedules(self):
         return (
             self._offers_climate_schedules
-            and self.subscribed and not self.stolen and self.feature_enabled("remoteClimate")
+            and self.subscribed
+            and not self.stolen
+            and self.feature_enabled("remoteClimate")
         )
 
     async def _read_climate_schedules(self):
         settings = await self._client.get_climate_schedules(
-            self.vin, self.api_generation, self.region, self.brand,
+            self.vin,
+            self.api_generation,
+            self.region,
+            self.brand,
         )
         # Like Toyota's app, a successful response without a list has no
         # schedules, and reservations without an ID are skipped. A failure
         # code is rejected so it can't clear schedules and remove switches.
         if (
-            isinstance(settings, dict) and settings.get("returnCode") == "ONE-RES-10000"
+            isinstance(settings, dict)
+            and settings.get("returnCode") == "ONE-RES-10000"
             and settings.get("airConditioningReservation") is None
         ):
             settings["airConditioningReservation"] = []
@@ -483,11 +504,17 @@ class ToyotaVehicle(ABC):
             or any(not isinstance(item, dict) for item in settings["airConditioningReservation"])
         ):
             raise RuntimeError("Toyota did not return current climate schedules.")
-        reservations = [item for item in settings["airConditioningReservation"] if item.get("reservationNo") is not None]
+        reservations = [
+            item
+            for item in settings["airConditioningReservation"]
+            if item.get("reservationNo") is not None
+        ]
         for item in reservations:
             # Toyota's app matches day names in any case.
             if isinstance(item.get("days"), list):
-                item["days"] = [day.capitalize() if isinstance(day, str) else day for day in item["days"]]
+                item["days"] = [
+                    day.capitalize() if isinstance(day, str) else day for day in item["days"]
+                ]
         self._climate_schedules.clear()
         self._climate_schedules.update(settings, airConditioningReservation=reservations)
         return reservations, len(settings["airConditioningReservation"]) - len(reservations)
@@ -518,28 +545,48 @@ class ToyotaVehicle(ABC):
             existing = None
             if identifier is not None:
                 identifier = schedule_identifier(identifier)
-                existing = next((item for item in schedules if str(item["reservationNo"]) == str(identifier)), None)
+                existing = next(
+                    (item for item in schedules if str(item["reservationNo"]) == str(identifier)),
+                    None,
+                )
                 if existing is None:
                     raise ValueError("This climate schedule no longer exists.")
             if delete and identifier is None:
                 raise ValueError("Choose a climate schedule to delete.")
             previous_ids = {str(item["reservationNo"]) for item in schedules}
-            body = {} if delete else build_climate_schedule(self.climate_schedules, existing, changes, zone)
+            body = (
+                {}
+                if delete
+                else build_climate_schedule(self.climate_schedules, existing, changes, zone)
+            )
             result = await self._client.save_climate_schedule(
-                self.vin, self.api_generation, body, self.region, self.brand,
-                identifier=identifier, delete=delete,
+                self.vin,
+                self.api_generation,
+                body,
+                self.region,
+                self.brand,
+                identifier=identifier,
+                delete=delete,
             )
             saved_id = result.get("reservationNo")
 
             def confirmed(reading):
                 schedules, now_unidentified = reading
                 if identifier is not None:
-                    candidates = [item for item in schedules if str(item["reservationNo"]) == str(identifier)]
+                    candidates = [
+                        item for item in schedules if str(item["reservationNo"]) == str(identifier)
+                    ]
                 elif saved_id is not None:
-                    candidates = [item for item in schedules if str(item["reservationNo"]) == str(saved_id)
-                                  and str(item["reservationNo"]) not in previous_ids]
+                    candidates = [
+                        item
+                        for item in schedules
+                        if str(item["reservationNo"]) == str(saved_id)
+                        and str(item["reservationNo"]) not in previous_ids
+                    ]
                 else:
-                    candidates = [item for item in schedules if str(item["reservationNo"]) not in previous_ids]
+                    candidates = [
+                        item for item in schedules if str(item["reservationNo"]) not in previous_ids
+                    ]
                 # A reservation that newly lacks an ID may be the deleted one.
                 if delete:
                     return not candidates and now_unidentified <= unidentified
@@ -552,7 +599,9 @@ class ToyotaVehicle(ABC):
 
     def _rest_openings(self, categories) -> dict:
         """Opening states from REST vehicle status, matched like Toyota's app."""
-        category_map = {key.lower(): feature for key, feature in self._vehicle_status_category_map.items()}
+        category_map = {
+            key.lower(): feature for key, feature in self._vehicle_status_category_map.items()
+        }
         openings, named = {}, set()
         for category in categories:
             if not isinstance(category, dict) or not isinstance(category.get("sections"), list):
@@ -568,7 +617,11 @@ class ToyotaVehicle(ABC):
                     continue
                 values = section.get("values")
                 # A malformed section must not cost the rest of the response its update.
-                values = [value for value in values if isinstance(value, dict)] if isinstance(values, list) else []
+                values = (
+                    [value for value in values if isinstance(value, dict)]
+                    if isinstance(values, list)
+                    else []
+                )
                 closed, locked = opening_state_from_values(values)
                 if any_category is not None:
                     # The app reads open state from the first section with each
@@ -608,15 +661,30 @@ class ToyotaVehicle(ABC):
         now = time.monotonic()
         read_at = self._health.setdefault("read_at", {})
         reads = (
-            ("report", dict, ("vehicleHealthReport", "scheduleMaintenance", "safetyRecall", "serviceCampaign"),
-             lambda: self._client.get_vehicle_health_report(self.vin, self.api_generation, self.region, self.brand)),
-            ("status", dict, ("vehicleDiagnostic",),
-             lambda: self._client.get_vehicle_health_status(self.vin, self.api_generation, self.region, self.brand)),
-            ("campaigns", list, ("safetyRecall", "serviceCampaign"),
-             lambda: self._client.get_service_campaigns(self.vin)),
+            (
+                "report",
+                dict,
+                ("vehicleHealthReport", "scheduleMaintenance", "safetyRecall", "serviceCampaign"),
+                lambda: self._client.get_vehicle_health_report(
+                    self.vin, self.api_generation, self.region, self.brand
+                ),
+            ),
+            (
+                "status",
+                dict,
+                ("vehicleDiagnostic",),
+                lambda: self._client.get_vehicle_health_status(
+                    self.vin, self.api_generation, self.region, self.brand
+                ),
+            ),
+            (
+                "campaigns",
+                list,
+                ("safetyRecall", "serviceCampaign"),
+                lambda: self._client.get_service_campaigns(self.vin),
+            ),
             # The app checks for software updates behind the autoDrive flag.
-            ("software", dict, ("autoDrive",),
-             lambda: self._client.get_software_update(self.vin)),
+            ("software", dict, ("autoDrive",), lambda: self._client.get_software_update(self.vin)),
         )
         for key, shape, features, read in reads:
             if key in read_at and now - read_at[key] < HEALTH_READ_INTERVAL:
@@ -638,10 +706,17 @@ class ToyotaVehicle(ABC):
 
     async def update_tire_pressure(self) -> None:
         # Toyota's app reads this endpoint only when tire pressure is enabled.
-        if self.uses_appsync or not self.can_receive_status or not self.feature_enabled("tirePressure"):
+        if (
+            self.uses_appsync
+            or not self.can_receive_status
+            or not self.feature_enabled("tirePressure")
+        ):
             return
         status = await self._client.get_tire_pressure(
-            self.vin, self.api_generation, self.region, self.brand,
+            self.vin,
+            self.api_generation,
+            self.region,
+            self.brand,
         )
         self._parse_tire_pressure(status)
 
@@ -665,11 +740,16 @@ class ToyotaVehicle(ABC):
             value = tire.get("value")
             if type(value) in (int, float):
                 self._store_numeric(
-                    self._vehicle_telemetry_map[key], value, tire.get("unit") or "psi", observed_at,
+                    self._vehicle_telemetry_map[key],
+                    value,
+                    tire.get("unit") or "psi",
+                    observed_at,
                 )
         if observed_at is not None:
             self._store_numeric(
-                VehicleFeatures.LastTirePressureTimeStamp, observed_at.timestamp(), observed_at=observed_at,
+                VehicleFeatures.LastTirePressureTimeStamp,
+                observed_at.timestamp(),
+                observed_at=observed_at,
             )
 
     async def update_climate(self) -> None:
@@ -705,14 +785,20 @@ class ToyotaVehicle(ABC):
     def supports_charge_setting(self, field):
         feature = "powerSupply" if field == "electricSupplyModeLimit" else "chargeSetting"
         return (
-            field in CHARGE_SETTINGS and self.uses_appsync and self.electric
-            and self.subscribed and not self.stolen and self.feature_enabled(feature)
+            field in CHARGE_SETTINGS
+            and self.uses_appsync
+            and self.electric
+            and self.subscribed
+            and not self.stolen
+            and self.feature_enabled(feature)
         )
 
     @property
     def supports_charge_schedules(self):
         return (
-            self.electric and self.subscribed and not self.stolen
+            self.electric
+            and self.subscribed
+            and not self.stolen
             and self.feature_enabled("multiDayCharging")
             and (self.uses_appsync or (self._feature_flags or {}).get("multiDayCharging") == 1)
             and isinstance(self.charge_settings.get("schedules"), list)
@@ -732,13 +818,17 @@ class ToyotaVehicle(ABC):
 
     async def _read_charge_schedules(self):
         if self.uses_appsync:
-            status = await self._client.graphql_get_vehicle_status(self.vin, self.backdoor_type, self.region)
+            status = await self._client.graphql_get_vehicle_status(
+                self.vin, self.backdoor_type, self.region
+            )
             self.apply_graphql_status(status)
             electric = (status or {}).get("electric") or {}
             charging = electric.get("charging") or {}
             schedules = (charging.get("chargeSettings") or {}).get("schedules")
         else:
-            status = await self._client.get_electric_status(self.vin, region=self.region, generation=self.api_generation)
+            status = await self._client.get_electric_status(
+                self.vin, region=self.region, generation=self.api_generation
+            )
             self._parse_electric_status(status)
             schedules = ((status or {}).get("vehicleInfo") or {}).get("timerChargeInfo")
         if not isinstance(schedules, list) or any(not isinstance(item, dict) for item in schedules):
@@ -757,7 +847,9 @@ class ToyotaVehicle(ABC):
             previous_ids = {
                 str(item.get("settingId")) for item in schedules if isinstance(item, dict)
             }
-            unidentified = sum(isinstance(item, dict) and item.get("settingId") is None for item in schedules)
+            unidentified = sum(
+                isinstance(item, dict) and item.get("settingId") is None for item in schedules
+            )
             if delete:
                 if identifier is None or str(identifier) not in previous_ids:
                     raise ValueError("This charge schedule no longer exists.")
@@ -768,24 +860,41 @@ class ToyotaVehicle(ABC):
                 if identifier is None and isinstance(maximum, int) and len(schedules) >= maximum:
                     raise ValueError("The vehicle has reached its charge schedule limit.")
             await self._client.save_charge_schedule(
-                self.vin, self.api_generation, body, self.region, self.brand, delete=delete,
+                self.vin,
+                self.api_generation,
+                body,
+                self.region,
+                self.brand,
+                delete=delete,
             )
 
             def confirmed(schedules):
                 candidates = [item for item in schedules if isinstance(item, dict)]
                 if identifier is None:
-                    candidates = [item for item in candidates if str(item.get("settingId")) not in previous_ids]
+                    candidates = [
+                        item
+                        for item in candidates
+                        if str(item.get("settingId")) not in previous_ids
+                    ]
                 else:
-                    candidates = [item for item in candidates if str(item.get("settingId")) == str(identifier)]
+                    candidates = [
+                        item for item in candidates if str(item.get("settingId")) == str(identifier)
+                    ]
                 # A schedule that newly lacks an ID may be the deleted one.
                 if delete:
-                    return not candidates and sum(
-                        isinstance(item, dict) and item.get("settingId") is None for item in schedules
-                    ) <= unidentified
+                    return (
+                        not candidates
+                        and sum(
+                            isinstance(item, dict) and item.get("settingId") is None
+                            for item in schedules
+                        )
+                        <= unidentified
+                    )
                 return any(schedule_matches(item, body) for item in candidates)
 
             await self._wait_for_schedules(
-                self._read_charge_schedules, confirmed,
+                self._read_charge_schedules,
+                confirmed,
                 "Toyota accepted the schedule change but did not return the updated schedule.",
             )
 
@@ -820,19 +929,29 @@ class ToyotaVehicle(ABC):
     async def set_charge_setting(self, field, option):
         if not self.supports_charge_setting(field):
             raise ValueError("Charging preferences are unavailable for this vehicle.")
-        status = await self._client.graphql_get_vehicle_status(self.vin, self.backdoor_type, self.region)
+        status = await self._client.graphql_get_vehicle_status(
+            self.vin, self.backdoor_type, self.region
+        )
         if not status:
             raise RuntimeError("Toyota did not return charging preferences.")
         self.apply_graphql_status(status)
-        charging = ((status.get("electric") or {}).get("charging") or {})
-        options = charge_options({
-            **(charging.get("chargeSettings") or {}),
-            "limitSelectionValues": charging.get("limitSelectionValues"),
-        }, field, allow_missing_target=bool(charging) and self.feature_enabled("chargeSetting", default=False))
+        charging = (status.get("electric") or {}).get("charging") or {}
+        options = charge_options(
+            {
+                **(charging.get("chargeSettings") or {}),
+                "limitSelectionValues": charging.get("limitSelectionValues"),
+            },
+            field,
+            allow_missing_target=bool(charging)
+            and self.feature_enabled("chargeSetting", default=False),
+        )
         if option not in options:
             raise ValueError("This charging option is unavailable for this vehicle.")
         await self._client.update_charge_settings(
-            self.vin, CHARGE_SETTINGS[field][3], options[option], self.region,
+            self.vin,
+            CHARGE_SETTINGS[field][3],
+            options[option],
+            self.region,
         )
         self.apply_graphql_status(
             await self._client.graphql_get_vehicle_status(self.vin, self.backdoor_type, self.region)
@@ -844,7 +963,11 @@ class ToyotaVehicle(ABC):
             await self._client.remote_request_24mm(self.vin, command_name, self.region)
         else:
             await self._client.remote_request_route(
-                self.vin, self.api_generation, command_name, self.region, self.brand,
+                self.vin,
+                self.api_generation,
+                command_name,
+                self.region,
+                self.brand,
             )
 
     def supports_command(self, command: RemoteRequestCommand) -> bool:
@@ -862,7 +985,8 @@ class ToyotaVehicle(ABC):
                 return False
             _, keys = self._EXTENDED_COMMANDS[command]
             return any(
-                first_capability(self._remote_capabilities, self._extended_capabilities, (key,)) is True
+                first_capability(self._remote_capabilities, self._extended_capabilities, (key,))
+                is True
                 for key in keys
             )
         if command in (
@@ -877,7 +1001,10 @@ class ToyotaVehicle(ABC):
                 RemoteRequestCommand.ChargeStart: ("36", "charge_now"),
                 RemoteRequestCommand.ChargeResume: ("resume_charging",),
                 RemoteRequestCommand.ChargeStop: ("charging",),
-                RemoteRequestCommand.PowerSupplyStop: ("external_power_active", "external_power_active_hybrid"),
+                RemoteRequestCommand.PowerSupplyStop: (
+                    "external_power_active",
+                    "external_power_active_hybrid",
+                ),
             }
             state = self.features.get(VehicleFeatures.ChargingState)
             state = str(state.value).lower() if state is not None else None
@@ -900,7 +1027,8 @@ class ToyotaVehicle(ABC):
             keys,
         )
         if command in self._COMMANDS_REQUIRING_EXPLICIT_CAPABILITY or self.generation in (
-            ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86,
+            ApiVehicleGeneration.NG86,
+            ApiVehicleGeneration.GR86,
         ):
             return supported is True
         return supported is not False

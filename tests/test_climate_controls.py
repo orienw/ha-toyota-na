@@ -19,7 +19,8 @@ from custom_components.toyota_na.climate_helpers import climate_parameters
 
 def operation(category, *parameters):
     return {
-        "categoryName": category, "available": True,
+        "categoryName": category,
+        "available": True,
         "acParameters": [
             {"name": name, "available": available, "enabled": enabled}
             for name, available, enabled in parameters
@@ -28,16 +29,32 @@ def operation(category, *parameters):
 
 
 SETTINGS = {
-    "temperature": 22.0, "temperatureUnit": "C", "minTemp": 18, "maxTemp": 30,
-    "tempInterval": 0.5, "settingsOn": True, "isCustomerSettings": True,
-    "airFlowVolume": 2, "minAirFlow": 0, "maxAirFlow": 5,
+    "temperature": 22.0,
+    "temperatureUnit": "C",
+    "minTemp": 18,
+    "maxTemp": 30,
+    "tempInterval": 0.5,
+    "settingsOn": True,
+    "isCustomerSettings": True,
+    "airFlowVolume": 2,
+    "minAirFlow": 0,
+    "maxAirFlow": 5,
     "extendedRuntime": {"available": True, "enabled": False},
     "acOperations": [
-        operation("airflow", ("upperBody", True, True), ("feet", True, False),
-                  ("upperBodyFeet", False, False), ("frontDefrostFeet", True, False)),
+        operation(
+            "airflow",
+            ("upperBody", True, True),
+            ("feet", True, False),
+            ("upperBodyFeet", False, False),
+            ("frontDefrostFeet", True, False),
+        ),
         operation("seatHeat", ("frontDriver", True, True), ("frontPassenger", True, False)),
-        operation("seatVent", ("ventFrontDriver", True, False),
-                  ("ventFrontPassenger", False, False), ("ventRearDriver", True, True)),
+        operation(
+            "seatVent",
+            ("ventFrontDriver", True, False),
+            ("ventFrontPassenger", False, False),
+            ("ventRearDriver", True, True),
+        ),
         operation("defrost", ("frontDefrost", True, True), ("rearDefrost", True, False)),
         operation("steeringHeaterCat", ("steeringWheel", True, True)),
         operation("airCirculate", ("insideAirCirculate", True, False)),
@@ -80,11 +97,19 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.entities["Passenger Seat Climate"].options, ["Off", "Heat"])
         self.assertEqual(self.entities["Rear Driver Seat Climate"].options, ["Off", "Ventilate"])
         self.assertNotIn("Rear Passenger Seat Climate", self.entities)
-        self.assertEqual(self.entities["Climate Airflow"].options, [
-            "Upper body", "Feet", "Windshield and feet",
-        ])
+        self.assertEqual(
+            self.entities["Climate Airflow"].options,
+            [
+                "Upper body",
+                "Feet",
+                "Windshield and feet",
+            ],
+        )
         fan = self.entities["Climate Fan Speed"]
-        self.assertEqual((fan.native_value, fan.native_min_value, fan.native_max_value, fan.native_step), (2, 0, 5, 1))
+        self.assertEqual(
+            (fan.native_value, fan.native_min_value, fan.native_max_value, fan.native_step),
+            (2, 0, 5, 1),
+        )
 
     async def test_airflow_change_preserves_seats_defrosters_and_unknown_settings(self):
         await self.entities["Climate Airflow"].async_select_option("Feet")
@@ -162,7 +187,10 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.server = {**deepcopy(SETTINGS), **changes}
             value = 23 if name == "Climate Temperature" else 4
-            with self.subTest(changes=changes), self.assertRaises(ha.exceptions.HomeAssistantError) as raised:
+            with (
+                self.subTest(changes=changes),
+                self.assertRaises(ha.exceptions.HomeAssistantError) as raised,
+            ):
                 await self.entities[name].async_set_native_value(value)
             self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
             self.assertEqual("Toyota did not provide a valid climate range.", str(raised.exception))
@@ -215,7 +243,10 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.client.update_climate_settings.side_effect = error
             for action, args in actions:
-                with self.subTest(error=type(error), action=action), self.assertRaises(ha.exceptions.HomeAssistantError) as raised:
+                with (
+                    self.subTest(error=type(error), action=action),
+                    self.assertRaises(ha.exceptions.HomeAssistantError) as raised,
+                ):
                     await action(*args)
                 self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
                 self.assertEqual(message, str(raised.exception))
@@ -230,14 +261,19 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
             (self.entities["Climate Airflow"].async_select_option, ("Feet",)),
             (self.entities["Use Climate Settings"].async_turn_off, ()),
         ):
-            with self.subTest(action=action), self.assertRaisesRegex(ha.exceptions.ServiceValidationError, "unavailable"):
+            with (
+                self.subTest(action=action),
+                self.assertRaisesRegex(ha.exceptions.ServiceValidationError, "unavailable"),
+            ):
                 await action(*args)
         self.client.update_climate_settings.assert_not_awaited()
 
     async def test_missing_climate_response_is_an_operational_error(self):
         self.client.get_climate_settings.side_effect = None
         self.client.get_climate_settings.return_value = {}
-        with self.assertRaisesRegex(ha.exceptions.HomeAssistantError, "Toyota did not return climate settings") as raised:
+        with self.assertRaisesRegex(
+            ha.exceptions.HomeAssistantError, "Toyota did not return climate settings"
+        ) as raised:
             await self.entities["Climate Fan Speed"].async_set_native_value(4)
         self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
         self.client.update_climate_settings.assert_not_awaited()

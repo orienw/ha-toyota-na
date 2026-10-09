@@ -12,7 +12,11 @@ import test_vehicle_behavior as behavior
 
 from custom_components.toyota_na import select
 from custom_components.toyota_na.charging_helpers import charge_options, current_charge_option
-from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration, RemoteRequestCommand, VehicleFeatures
+from custom_components.toyota_na.patch_base_vehicle import (
+    ApiVehicleGeneration,
+    RemoteRequestCommand,
+    VehicleFeatures,
+)
 
 
 CHARGING = {
@@ -24,8 +28,10 @@ CHARGING = {
         "maxDCPower": {"value": "50kW", "setting": "50"},
         "electricSupplyModeLimit": {"value": "30%", "setting": "30"},
         "acCurrentSelections": [
-            {"key": "Max", "enabled": True}, {"key": "8A", "enabled": True},
-            {"key": "16A", "enabled": False}, {"key": "Broken", "enabled": True},
+            {"key": "Max", "enabled": True},
+            {"key": "8A", "enabled": True},
+            {"key": "16A", "enabled": False},
+            {"key": "Broken", "enabled": True},
         ],
         "dcPowerSelections": [{"key": "Max", "enabled": True}, {"key": "50kW", "enabled": True}],
         "electricSupplyLimitSelections": [{"key": "30%", "enabled": True}],
@@ -44,11 +50,19 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         vehicle.set_charge_setting = AsyncMock()
         coordinator = ha.DataUpdateCoordinator([vehicle])
         entry = ha.ConfigEntry()
-        entity = select.ToyotaChargeSelect("targetLimit", entry, coordinator, "Charge Limit", vehicle.vin)
+        entity = select.ToyotaChargeSelect(
+            "targetLimit", entry, coordinator, "Charge Limit", vehicle.vin
+        )
         entity.hass = ha.FakeHass(coordinator)
         for error, expected_type in (
-            (ValueError("This charging option is unavailable for this vehicle."), ha.exceptions.ServiceValidationError),
-            (RuntimeError("Toyota rejected the charging change."), ha.exceptions.HomeAssistantError),
+            (
+                ValueError("This charging option is unavailable for this vehicle."),
+                ha.exceptions.ServiceValidationError,
+            ),
+            (
+                RuntimeError("Toyota rejected the charging change."),
+                ha.exceptions.HomeAssistantError,
+            ),
         ):
             vehicle.set_charge_setting.side_effect = error
             with self.subTest(error=type(error)), self.assertRaises(expected_type) as raised:
@@ -66,8 +80,16 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         )
         vehicle = behavior.make_24mm_vehicle(client)
         vehicle.apply_graphql_status(status())
-        entity = select.ToyotaChargeSelect("targetLimit", ha.ConfigEntry(), ha.DataUpdateCoordinator([vehicle]), "Charge Limit", vehicle.vin)
-        with self.assertRaisesRegex(ha.exceptions.HomeAssistantError, "Toyota did not return charging preferences") as raised:
+        entity = select.ToyotaChargeSelect(
+            "targetLimit",
+            ha.ConfigEntry(),
+            ha.DataUpdateCoordinator([vehicle]),
+            "Charge Limit",
+            vehicle.vin,
+        )
+        with self.assertRaisesRegex(
+            ha.exceptions.HomeAssistantError, "Toyota did not return charging preferences"
+        ) as raised:
             await entity.async_select_option("90%")
         self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
         client.update_charge_settings.assert_not_awaited()
@@ -76,7 +98,9 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         vehicle = behavior.make_24mm_vehicle()
         vehicle.apply_graphql_status(status())
         settings = vehicle.charge_settings
-        self.assertEqual({"100%": 100, "90%": 90, "80%": 80}, charge_options(settings, "targetLimit"))
+        self.assertEqual(
+            {"100%": 100, "90%": 90, "80%": 80}, charge_options(settings, "targetLimit")
+        )
         self.assertEqual({"Max": 127, "8 A": 8}, charge_options(settings, "maxACCurrent"))
         self.assertEqual({"Max": 1, "50 kW": 50}, charge_options(settings, "maxDCPower"))
         self.assertEqual({"30%": 30}, charge_options(settings, "electricSupplyModeLimit"))
@@ -95,8 +119,17 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_target_uses_explicit_support_and_preserves_unknown_state(self):
         vehicle = behavior.make_24mm_vehicle()
         coordinator = ha.DataUpdateCoordinator([vehicle])
-        entity = select.ToyotaChargeSelect("targetLimit", ha.ConfigEntry(), coordinator, "Charge Limit", vehicle.vin)
-        for flags in (None, {}, {"chargeSetting": 0}, {"chargeSetting": 2}, {"chargeSetting": True}, {"chargeSetting": "1"}):
+        entity = select.ToyotaChargeSelect(
+            "targetLimit", ha.ConfigEntry(), coordinator, "Charge Limit", vehicle.vin
+        )
+        for flags in (
+            None,
+            {},
+            {"chargeSetting": 0},
+            {"chargeSetting": 2},
+            {"chargeSetting": True},
+            {"chargeSetting": "1"},
+        ):
             with self.subTest(flags=flags):
                 vehicle._feature_flags = flags
                 self.assertFalse(entity.available)
@@ -105,14 +138,20 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         vehicle._feature_flags = {"chargeSetting": 1}
         entities = []
         await select.async_setup_entry(
-            ha.FakeHass(coordinator), ha.ConfigEntry(), lambda added, update: entities.extend(added),
+            ha.FakeHass(coordinator),
+            ha.ConfigEntry(),
+            lambda added, update: entities.extend(added),
         )
         self.assertEqual(["Charge Limit"], [item.sensor_name for item in entities])
         self.assertTrue(entity.available)
         self.assertEqual([f"{value}%" for value in range(100, 39, -10)], entity.options)
         self.assertIsNone(entity.current_option)
 
-        vehicle.apply_graphql_status(status({"limitSelectionValues": ["Full", "80%"], "chargeSettings": {"targetLimit": None}}))
+        vehicle.apply_graphql_status(
+            status(
+                {"limitSelectionValues": ["Full", "80%"], "chargeSettings": {"targetLimit": None}}
+            )
+        )
         self.assertEqual(["100%", "80%"], entity.options)
         self.assertIsNone(entity.current_option)
         self.assertNotIn(VehicleFeatures.ChargeTargetLimit, vehicle.features)
@@ -132,7 +171,9 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         vehicle = behavior.make_24mm_vehicle(client)
         vehicle._feature_flags = {"chargeSetting": 1}
         await vehicle.set_charge_setting("targetLimit", "90%")
-        client.update_charge_settings.assert_awaited_once_with(vehicle.vin, "chargingTargetLimit", 90, vehicle.region)
+        client.update_charge_settings.assert_awaited_once_with(
+            vehicle.vin, "chargingTargetLimit", 90, vehicle.region
+        )
         self.assertIsNone(current_charge_option(vehicle.charge_settings, "targetLimit"))
         self.assertNotIn(VehicleFeatures.ChargeTargetLimit, vehicle.features)
 
@@ -146,9 +187,12 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         await vehicle.set_charge_setting("targetLimit", "90%")
         self.assertEqual("90%", current_charge_option(vehicle.charge_settings, "targetLimit"))
 
-    async def test_missing_target_cannot_be_written_without_explicit_support_or_fresh_charging(self):
+    async def test_missing_target_cannot_be_written_without_explicit_support_or_fresh_charging(
+        self,
+    ):
         client = types.SimpleNamespace(
-            graphql_get_vehicle_status=AsyncMock(), update_charge_settings=AsyncMock(),
+            graphql_get_vehicle_status=AsyncMock(),
+            update_charge_settings=AsyncMock(),
         )
         vehicle = behavior.make_24mm_vehicle(client)
         for flags, response in (
@@ -168,7 +212,8 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         coordinator = ha.DataUpdateCoordinator([vehicle])
         entities = []
         await select.async_setup_entry(
-            ha.FakeHass(coordinator), ha.ConfigEntry(),
+            ha.FakeHass(coordinator),
+            ha.ConfigEntry(),
             lambda added, update: entities.extend(added),
         )
         self.assertFalse(entities)
@@ -194,7 +239,9 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         vehicle = behavior.make_24mm_vehicle(client)
         vehicle.apply_graphql_status(status())
         await vehicle.set_charge_setting("targetLimit", "90%")
-        client.update_charge_settings.assert_awaited_once_with(vehicle.vin, "chargingTargetLimit", 90, vehicle.region)
+        client.update_charge_settings.assert_awaited_once_with(
+            vehicle.vin, "chargingTargetLimit", 90, vehicle.region
+        )
         self.assertEqual("90%", current_charge_option(vehicle.charge_settings, "targetLimit"))
 
         fresh = status()
@@ -219,10 +266,17 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
             ("maxDCPower", "chargeSetting", "Max"),
             ("electricSupplyModeLimit", "powerSupply", "30%"),
         ):
-            entity = select.ToyotaChargeSelect(field, ha.ConfigEntry(), coordinator, field, vehicle.vin)
+            entity = select.ToyotaChargeSelect(
+                field, ha.ConfigEntry(), coordinator, field, vehicle.vin
+            )
             for value in (0, 2, None, True, "1"):
                 with self.subTest(field=field, value=value):
-                    vehicle._feature_flags = {"remoteCommands": 1, "chargeSetting": 1, "powerSupply": 1, feature: value}
+                    vehicle._feature_flags = {
+                        "remoteCommands": 1,
+                        "chargeSetting": 1,
+                        "powerSupply": 1,
+                        feature: value,
+                    }
                     self.assertFalse(entity.available)
                     with self.assertRaisesRegex(ValueError, "unavailable"):
                         await vehicle.set_charge_setting(field, option)
@@ -237,7 +291,11 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         vehicle._feature_flags = {"remoteCommands": 1, "chargeSetting": 2, "powerSupply": 2}
         vehicle.apply_graphql_status(status())
         entities = []
-        await select.async_setup_entry(ha.FakeHass(ha.DataUpdateCoordinator([vehicle])), ha.ConfigEntry(), lambda added, update: entities.extend(added))
+        await select.async_setup_entry(
+            ha.FakeHass(ha.DataUpdateCoordinator([vehicle])),
+            ha.ConfigEntry(),
+            lambda added, update: entities.extend(added),
+        )
         self.assertEqual([], entities)
         self.assertEqual("80%", current_charge_option(vehicle.charge_settings, "targetLimit"))
         self.assertEqual("80", vehicle.features[VehicleFeatures.ChargeTargetLimit].value)
@@ -254,7 +312,9 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_read_without_fresh_settings_cannot_change_cached_choices(self):
         client = types.SimpleNamespace(
-            graphql_get_vehicle_status=AsyncMock(return_value={"telemetry": {"odo": {"value": 100}}}),
+            graphql_get_vehicle_status=AsyncMock(
+                return_value={"telemetry": {"odo": {"value": 100}}}
+            ),
             update_charge_settings=AsyncMock(),
         )
         vehicle = behavior.make_24mm_vehicle(client)
@@ -270,7 +330,9 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         old["electric"]["charging"]["lastUpdateDateTime"] = "2026-09-14T11:00:00Z"
         old["electric"]["charging"]["limitSelectionValues"] = ["100"]
         vehicle.apply_graphql_status(old)
-        vehicle.apply_graphql_status({"electric": {"charging": {"chargeSettings": {"targetLimit": None}}}})
+        vehicle.apply_graphql_status(
+            {"electric": {"charging": {"chargeSettings": {"targetLimit": None}}}}
+        )
         self.assertEqual(3, len(charge_options(vehicle.charge_settings, "targetLimit")))
         replacement = behavior.make_24mm_vehicle()
         replacement.inherit_state(vehicle)
@@ -282,7 +344,9 @@ class ChargingSettingTests(unittest.IsolatedAsyncioTestCase):
         for state in ("external_power_active", "external_power_active_hybrid"):
             vehicle.apply_graphql_status({"electric": {"charging": {"chargingState": state}}})
             await vehicle.send_command(RemoteRequestCommand.PowerSupplyStop)
-            client.remote_request_24mm.assert_awaited_with(vehicle.vin, "power-supply-stop", vehicle.region)
+            client.remote_request_24mm.assert_awaited_with(
+                vehicle.vin, "power-supply-stop", vehicle.region
+            )
         vehicle.apply_graphql_status({"electric": {"charging": {"chargingState": "charging"}}})
         self.assertFalse(vehicle.supports_command(RemoteRequestCommand.PowerSupplyStop))
 
@@ -291,23 +355,46 @@ class ChargingTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_setting_mutations_wait_for_callback_after_subscription(self):
         # PostChargeSettings never selects requestNo, so its first callback completes it.
         for variable, value, operation, key, variables, payload, stage in (
-            ("currentCharge", 127, "PostChargeSettings", "postChargeSettings", {"currentCharge": 127},
-             {"correlationId": "correlation"}, 3),
-            ("minimumElectricSupply", 30, "PostPowerSupplyModeLimit", "executeRemoteCommand",
-             {"command": "set-power-supply", "minimumElectricSupply": "30"},
-             {"correlationId": "correlation", "requestNo": 42}, 4),
+            (
+                "currentCharge",
+                127,
+                "PostChargeSettings",
+                "postChargeSettings",
+                {"currentCharge": 127},
+                {"correlationId": "correlation"},
+                3,
+            ),
+            (
+                "minimumElectricSupply",
+                30,
+                "PostPowerSupplyModeLimit",
+                "executeRemoteCommand",
+                {"command": "set-power-supply", "minimumElectricSupply": "30"},
+                {"correlationId": "correlation", "requestNo": 42},
+                4,
+            ),
         ):
             with self.subTest(variable=variable):
                 websocket = transport._WebSocket()
+
                 async def mutate(*args, **kwargs):
                     self.assertEqual(2, websocket.stage)
                     self.assertEqual(operation, args[0])
                     self.assertEqual(variables, args[2])
                     self.assertEqual("CA", kwargs["region"])
                     return {key: {"payload": payload}}
-                client = types.SimpleNamespace(auth=transport._Auth(), graphql_request=AsyncMock(side_effect=mutate))
-                with patch.object(transport.patch_client.aiohttp, "ClientSession", return_value=transport._WebSocketSession(websocket)):
-                    result = await transport.patch_client.update_charge_settings(client, "TESTVIN24", variable, value, "CA")
+
+                client = types.SimpleNamespace(
+                    auth=transport._Auth(), graphql_request=AsyncMock(side_effect=mutate)
+                )
+                with patch.object(
+                    transport.patch_client.aiohttp,
+                    "ClientSession",
+                    return_value=transport._WebSocketSession(websocket),
+                ):
+                    result = await transport.patch_client.update_charge_settings(
+                        client, "TESTVIN24", variable, value, "CA"
+                    )
                 self.assertEqual("COMPLETED", result["status"])
                 self.assertEqual(stage, websocket.stage)
 
@@ -315,15 +402,21 @@ class ChargingTransportTests(unittest.IsolatedAsyncioTestCase):
         client = types.SimpleNamespace()
         active = 0
         peak = 0
+
         async def execute(*args, **kwargs):
             nonlocal active, peak
             active += 1
             peak = max(active, peak)
             await asyncio.sleep(0)
             active -= 1
-        with patch.object(transport.patch_client, "_execute_appsync_operation", side_effect=execute):
-            await asyncio.gather(*(
-                transport.patch_client._run_appsync_operation(client, "TESTVIN", None, "CA")
-                for _ in range(3)
-            ))
+
+        with patch.object(
+            transport.patch_client, "_execute_appsync_operation", side_effect=execute
+        ):
+            await asyncio.gather(
+                *(
+                    transport.patch_client._run_appsync_operation(client, "TESTVIN", None, "CA")
+                    for _ in range(3)
+                )
+            )
         self.assertEqual(1, peak)

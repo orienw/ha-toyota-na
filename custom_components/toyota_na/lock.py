@@ -61,7 +61,6 @@ async def async_setup_entry(
 
 
 class ToyotaLock(ToyotaNABaseEntity, LockEntity):
-
     _state_changing = False
 
     @property
@@ -90,9 +89,12 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
         lock_states = [
             feature.locked
             for key, feature in self.vehicle.features.items()
-            if key in (
-                VehicleFeatures.FrontDriverDoor, VehicleFeatures.FrontPassengerDoor,
-                VehicleFeatures.RearDriverDoor, VehicleFeatures.RearPassengerDoor,
+            if key
+            in (
+                VehicleFeatures.FrontDriverDoor,
+                VehicleFeatures.FrontPassengerDoor,
+                VehicleFeatures.RearDriverDoor,
+                VehicleFeatures.RearPassengerDoor,
             )
             and isinstance(feature, ToyotaLockableOpening)
             and feature.locked is not None
@@ -127,7 +129,7 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
             try:
                 with translate_service_errors():
                     await self.vehicle.send_command(COMMAND_MAP[command])
-            except (Exception, asyncio.CancelledError):
+            except Exception, asyncio.CancelledError:
                 self._state_changing = False
                 self.async_write_ha_state()
                 raise

@@ -42,8 +42,11 @@ async def check_tokens(self, *, rejected_token=None):
             or (self._refresh_secs > 0 and now >= self._updated_at + self._refresh_secs)
             or (
                 self._refresh_secs < 0
-                and now >= self._expires_at - min(
-                    -self._refresh_secs, (self._expires_at - self._updated_at) / 10,
+                and now
+                >= self._expires_at
+                - min(
+                    -self._refresh_secs,
+                    (self._expires_at - self._updated_at) / 10,
                 )
             )
         ):
@@ -79,12 +82,17 @@ def extract_tokens(self, response):
     except (KeyError, TypeError, ValueError) as err:
         raise RuntimeError("Toyota returned an invalid token lifetime.") from err
     if (
-        not all(isinstance(token, str) and token for token in (access_token, refresh_token, id_token))
-        or not math.isfinite(lifetime) or lifetime <= 0
+        not all(
+            isinstance(token, str) and token for token in (access_token, refresh_token, id_token)
+        )
+        or not math.isfinite(lifetime)
+        or lifetime <= 0
     ):
         raise RuntimeError("Toyota returned an incomplete token response.")
     guid = jwt.decode(
-        id_token, algorithms=["RS256"], options={"verify_signature": False},
+        id_token,
+        algorithms=["RS256"],
+        options={"verify_signature": False},
         audience="oneappsdkclient",
     )["sub"]
     now = time.time()
@@ -137,20 +145,23 @@ async def authorize(self, username, password, otp=None):
         otp_submitted = False
         password_submitted = False
         previous_callbacks = None
-        if otp is not None:    # Retrieve callbacks if we have the otp code
+        if otp is not None:  # Retrieve callbacks if we have the otp code
             data = self.otp_callbacks
-            
+
         for _ in range(15):
             if "callbacks" in data:
                 for cb in data["callbacks"]:
                     cb_type = cb["type"]
                     _LOGGER.debug("Toyota authentication callback: %s", cb_type)
                     if cb_type in ("NameCallback", "PasswordCallback"):
-                        prompt = next((
-                            str(output.get("value", "")).strip().casefold()
-                            for output in cb.get("output", [])
-                            if output.get("name") == "prompt"
-                        ), "")
+                        prompt = next(
+                            (
+                                str(output.get("value", "")).strip().casefold()
+                                for output in cb.get("output", [])
+                                if output.get("name") == "prompt"
+                            ),
+                            "",
+                        )
 
                     if cb_type == "NameCallback":
                         if prompt in ("ui_locales", "ui locale"):
@@ -180,8 +191,7 @@ async def authorize(self, username, password, otp=None):
                         labels = [str(choice).strip().lower() for choice in choices]
                         local = [i for i, label in enumerate(labels) if label == "local"]
                         other = [
-                            i for i, label in enumerate(labels)
-                            if label not in SSO_PROVIDER_CHOICES
+                            i for i, label in enumerate(labels) if label not in SSO_PROVIDER_CHOICES
                         ]
                         if labels and not other:
                             _LOGGER.error(
@@ -202,7 +212,9 @@ async def authorize(self, username, password, otp=None):
                         raise LoginError("Unsupported authentication challenge.")
 
             if otp_brake:
-                self.otp_callbacks = data # Store callback to restart auth loop when we have the otp
+                self.otp_callbacks = (
+                    data  # Store callback to restart auth loop when we have the otp
+                )
                 _LOGGER.debug("Fetching otp...")
                 return data
 
@@ -211,7 +223,9 @@ async def authorize(self, username, password, otp=None):
                     raise LoginError("Toyota repeated an authentication challenge.")
                 previous_callbacks = deepcopy(data["callbacks"])
 
-            async with session.post(f"{ToyotaOneAuth.AUTHENTICATE_URL}", json=data, headers=headers) as resp:
+            async with session.post(
+                f"{ToyotaOneAuth.AUTHENTICATE_URL}", json=data, headers=headers
+            ) as resp:
                 if resp.status != 200:
                     _LOGGER.info("Toyota authentication failed with HTTP %s", resp.status)
                     raise LoginError()
@@ -238,9 +252,11 @@ async def authorize(self, username, password, otp=None):
             raise LoginError()
         headers["Cookie"] = f"iPlanetDirectoryPro={data['tokenId']}"
         self._code_verifier = secrets.token_urlsafe(64)
-        challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(self._code_verifier.encode("ascii")).digest()
-        ).rstrip(b"=").decode("ascii")
+        challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(self._code_verifier.encode("ascii")).digest())
+            .rstrip(b"=")
+            .decode("ascii")
+        )
         auth_params = {
             "client_id": "oneappsdkclient",
             "scope": "openid profile write",
@@ -268,7 +284,8 @@ async def authorize(self, username, password, otp=None):
             if "error" in query or len(codes) != 1 or not codes[0].strip():
                 raise LoginError("Toyota authentication redirect did not contain a valid code.")
             return codes[0]
-            
+
+
 async def request_tokens(self, code):
     verifier = getattr(self, "_code_verifier", None)
     if not verifier:

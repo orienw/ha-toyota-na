@@ -27,7 +27,8 @@ def climate_parameters(settings: dict, category: str) -> dict:
             return {
                 parameter["name"]: parameter
                 for parameter in operation.get("acParameters") or []
-                if isinstance(parameter, dict) and parameter.get("available") is True
+                if isinstance(parameter, dict)
+                and parameter.get("available") is True
                 and isinstance(parameter.get("enabled"), bool)
                 and isinstance(parameter.get("name"), str)
             }
@@ -37,7 +38,9 @@ def climate_parameters(settings: dict, category: str) -> dict:
 def climate_bounds(settings: dict, key: str) -> tuple | None:
     if key == "temperature":
         values = (
-            settings.get("minTemp"), settings.get("maxTemp"), settings.get("tempInterval"),
+            settings.get("minTemp"),
+            settings.get("maxTemp"),
+            settings.get("tempInterval"),
         )
     else:
         minimum, maximum = settings.get("minAirFlow"), settings.get("maxAirFlow")
@@ -66,7 +69,8 @@ def apply_climate_changes(settings: dict, changes: dict) -> dict:
         if key in ("temperature", "airFlowVolume"):
             bounds = climate_bounds(settings, key)
             if (
-                bounds is None or type(settings.get(key)) not in (int, float)
+                bounds is None
+                or type(settings.get(key)) not in (int, float)
                 or not math.isfinite(settings[key])
             ):
                 raise RuntimeError("Toyota did not provide a valid climate range.")
@@ -74,7 +78,9 @@ def apply_climate_changes(settings: dict, changes: dict) -> dict:
                 raise ValueError("Climate value must be a finite number.")
             minimum, maximum, step = bounds
             if not minimum <= value <= maximum or not math.isclose(
-                (value - minimum) / step, round((value - minimum) / step), abs_tol=1e-6,
+                (value - minimum) / step,
+                round((value - minimum) / step),
+                abs_tol=1e-6,
             ):
                 raise ValueError("Climate value does not match the vehicle's range and step.")
             settings[key] = int(value) if key == "airFlowVolume" else value

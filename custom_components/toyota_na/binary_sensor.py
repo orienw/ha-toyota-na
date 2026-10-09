@@ -49,9 +49,7 @@ async def async_setup_entry(
                 {},
             )
             for entity_config in BINARY_SENSORS:
-                if vehicle.electric is False and cast(
-                    bool, entity_config["electric"]
-                ):
+                if vehicle.electric is False and cast(bool, entity_config["electric"]):
                     continue
                 feature = cast(VehicleFeatures, entity_config["feature"])
                 name = cast(str, entity_config["name"])
@@ -143,7 +141,6 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
                 and remote_start.time_left is not None
                 and remote_start.start_time is not None
             ):
-
                 return {
                     "end_time": remote_start.end_time,
                     "minutes_remaining": remote_start.time_left,
@@ -157,14 +154,8 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
         if sensor is None:
             return False
         if self.device_class == BinarySensorDeviceClass.LOCK:
-            return (
-                isinstance(sensor, ToyotaLockableOpening)
-                and sensor.locked is not None
-            )
-        if (
-            self.device_class == BinarySensorDeviceClass.DOOR
-            and isinstance(sensor, ToyotaOpening)
-        ):
+            return isinstance(sensor, ToyotaLockableOpening) and sensor.locked is not None
+        if self.device_class == BinarySensorDeviceClass.DOOR and isinstance(sensor, ToyotaOpening):
             return sensor.closed is not None
         return True
 
@@ -191,4 +182,8 @@ class ToyotaHealthBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
     @property
     def extra_state_attributes(self):
         attributes = self._config.get("attributes")
-        return health_reading(self.vehicle, self._config["features"], attributes) if attributes else None
+        return (
+            health_reading(self.vehicle, self._config["features"], attributes)
+            if attributes
+            else None
+        )

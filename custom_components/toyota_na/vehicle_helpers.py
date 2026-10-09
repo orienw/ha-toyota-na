@@ -136,7 +136,8 @@ def can_extend_remote_runtime(engine: Mapping[str, Any]) -> bool:
         and str(engine.get("lastUpdateBy", "")).lower() == "remote"
         and bool(engine.get("status"))
         and str(engine["status"]).lower() not in ("pending", "extendedrunning")
-        and stop_time is not None and stop_time > datetime.now(timezone.utc)
+        and stop_time is not None
+        and stop_time > datetime.now(timezone.utc)
     )
 
 
@@ -146,8 +147,17 @@ def normalize_charging_state(value: Any) -> bool | None:
     if normalized in ("charging", "40", "56", "active", "in_progress", "in-progress"):
         return True
     if normalized in (
-        "12", "36", "45", "60", "unplugged", "charge_now", "resume_charging", "no_controls",
-        "unavailable", "external_power_active", "external_power_active_hybrid",
+        "12",
+        "36",
+        "45",
+        "60",
+        "unplugged",
+        "charge_now",
+        "resume_charging",
+        "no_controls",
+        "unavailable",
+        "external_power_active",
+        "external_power_active_hybrid",
     ):
         return False
     return None
@@ -197,9 +207,7 @@ def opening_state_from_graphql(
     """Extract position and lock state from an AppSync opening object."""
     position = opening.get("position") or {}
     lock = opening.get("lock") or {}
-    return normalize_position(position.get("status")), normalize_lock(
-        lock.get("status")
-    )
+    return normalize_position(position.get("status")), normalize_lock(lock.get("status"))
 
 
 def backdoor_candidates(backdoor_type: str | None) -> tuple[str, ...]:
@@ -220,8 +228,6 @@ def parse_api_timestamp(value: Any) -> datetime | None:
     normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
         parsed = datetime.fromisoformat(normalized)
-        return (
-            parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
-        )
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
     except ValueError:
         return None

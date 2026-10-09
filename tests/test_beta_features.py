@@ -12,7 +12,9 @@ import test_vehicle_behavior as behavior
 from custom_components.toyota_na import number, switch
 from custom_components.toyota_na.charging_helpers import CHARGE_SETTINGS
 from custom_components.toyota_na.patch_base_vehicle import (
-    ApiVehicleGeneration, RemoteRequestCommand, VehicleFeatures,
+    ApiVehicleGeneration,
+    RemoteRequestCommand,
+    VehicleFeatures,
 )
 from custom_components.toyota_na.patch_vehicle import get_vehicles
 from toyota_na.exceptions import LoginError
@@ -35,13 +37,19 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
     def test_feature_states_and_legacy_fallback(self):
         vehicle = behavior.make_vehicle()
         for flags, available in (
-            (None, True), ({}, False), ({"remoteCommands": 1}, True),
-            ({"remoteCommands": 0}, False), ({"remoteCommands": 2}, False),
-            ({"remoteCommands": None}, False), ({"remoteCommands": True}, False),
+            (None, True),
+            ({}, False),
+            ({"remoteCommands": 1}, True),
+            ({"remoteCommands": 0}, False),
+            ({"remoteCommands": 2}, False),
+            ({"remoteCommands": None}, False),
+            ({"remoteCommands": True}, False),
         ):
             with self.subTest(flags=flags):
                 vehicle._feature_flags = flags
-                self.assertEqual(vehicle.supports_command(RemoteRequestCommand.EngineStart), available)
+                self.assertEqual(
+                    vehicle.supports_command(RemoteRequestCommand.EngineStart), available
+                )
         vehicle._feature_flags = None
         vehicle._has_remote_subscription = False
         self.assertFalse(vehicle.supports_command(RemoteRequestCommand.EngineStart))
@@ -50,14 +58,21 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         for generation in ApiVehicleGeneration:
             if generation == ApiVehicleGeneration.PRE17CY:
                 continue
-            vehicle = behavior.make_17cy_vehicle() if generation == ApiVehicleGeneration.CY17 else behavior.make_vehicle()
+            vehicle = (
+                behavior.make_17cy_vehicle()
+                if generation == ApiVehicleGeneration.CY17
+                else behavior.make_vehicle()
+            )
             vehicle._generation = generation
             vehicle._remote_capabilities = {"estartStopCapable": False}
             vehicle._extended_capabilities = {"remoteEConnectCapable": True}
             self.assertTrue(vehicle.supports_command(RemoteRequestCommand.EngineStart))
             vehicle._extended_capabilities = {}
             vehicle._legacy_capabilities = [{"name": "evremoteservice"}]
-            self.assertEqual(vehicle.supports_command(RemoteRequestCommand.EngineStart), generation == ApiVehicleGeneration.CY17)
+            self.assertEqual(
+                vehicle.supports_command(RemoteRequestCommand.EngineStart),
+                generation == ApiVehicleGeneration.CY17,
+            )
 
     async def test_26bev_discovery_routes_poll_commands_refresh_and_push(self):
         metadata = {**behavior.TWENTY_FOUR_MM_PHEV, "vin": "SYNTHETIC26BEV", "generation": "26BEV"}
@@ -66,11 +81,12 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
             get_telemetry=AsyncMock(return_value={}),
             graphql_get_vehicle_status=AsyncMock(return_value={}),
             remote_request_24mm=AsyncMock(),
-            graphql_pre_wake=AsyncMock(), graphql_confirm_subscription=AsyncMock(),
+            graphql_pre_wake=AsyncMock(),
+            graphql_confirm_subscription=AsyncMock(),
             graphql_refresh_status=AsyncMock(),
             auth=types.SimpleNamespace(get_guid=AsyncMock(return_value="guid")),
         )
-        vehicle, = await get_vehicles(client)
+        (vehicle,) = await get_vehicles(client)
         self.assertEqual(vehicle.api_generation, "26BEV")
         self.assertEqual(vehicle.endpoint_generation, "17CYPLUS")
         client.graphql_get_vehicle_status.assert_awaited_once_with("SYNTHETIC26BEV", "hatch", "CA")
@@ -78,17 +94,24 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         client.remote_request_24mm.assert_awaited_once_with("SYNTHETIC26BEV", "engine-start", "CA")
         await vehicle.poll_vehicle_refresh()
         client.graphql_refresh_status.assert_awaited_once_with("SYNTHETIC26BEV", "CA")
-        self.assertEqual(ha.integration_runtime._websocket_contexts([vehicle]), {
-            "SYNTHETIC26BEV": {"region": "CA", "backdoor_type": "hatch"},
-        })
+        self.assertEqual(
+            ha.integration_runtime._websocket_contexts([vehicle]),
+            {
+                "SYNTHETIC26BEV": {"region": "CA", "backdoor_type": "hatch"},
+            },
+        )
 
     async def test_unsubscribed_appsync_ev_can_read_but_cannot_command_or_wake(self):
         for generation in (ApiVehicleGeneration.MM24, ApiVehicleGeneration.BEV26):
             client = types.SimpleNamespace(
                 get_telemetry=AsyncMock(return_value={}),
-                graphql_get_vehicle_status=AsyncMock(return_value={"electric": {
-                    "battery": {"chargeRemainingAmount": {"value": 63, "unit": "%"}},
-                }}),
+                graphql_get_vehicle_status=AsyncMock(
+                    return_value={
+                        "electric": {
+                            "battery": {"chargeRemainingAmount": {"value": 63, "unit": "%"}},
+                        }
+                    }
+                ),
             )
             vehicle = behavior.make_24mm_vehicle(client)
             vehicle._generation = generation
@@ -101,7 +124,9 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(vehicle.vin, ha.integration_runtime._websocket_contexts([vehicle]))
             vehicle._feature_flags["evBattery"] = 2
             client.graphql_get_vehicle_status.reset_mock()
-            client.graphql_get_vehicle_status.return_value["electric"]["battery"]["chargeRemainingAmount"]["value"] = 64
+            client.graphql_get_vehicle_status.return_value["electric"]["battery"][
+                "chargeRemainingAmount"
+            ]["value"] = 64
             await vehicle.update()
             client.graphql_get_vehicle_status.assert_awaited_once()
             self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 64)
@@ -112,8 +137,13 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         vehicle.features[VehicleFeatures.ChargeLevel] = ha.ToyotaNumeric(80, "%")
         coordinator = ha.DataUpdateCoordinator([vehicle])
         sensor = ha.sensor_platform.ToyotaSensor(
-            VehicleFeatures.ChargeLevel, "mdi:battery", "%", "measurement",
-            coordinator, "Charge Level", vehicle.vin,
+            VehicleFeatures.ChargeLevel,
+            "mdi:battery",
+            "%",
+            "measurement",
+            coordinator,
+            "Charge Level",
+            vehicle.vin,
         )
         self.assertEqual(sensor.state, 80)
         for flags in ({}, {"evBattery": 0}, {"evBattery": 2}):
@@ -124,10 +154,14 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
     def test_app_maintenance_does_not_hide_observed_lock_state(self):
         vehicle = behavior.make_vehicle()
         vehicle.features[VehicleFeatures.FrontDriverDoor] = ha.ToyotaLockableOpening(
-            closed=True, locked=True,
+            closed=True,
+            locked=True,
         )
         entity = ha.lock_platform.ToyotaLock(
-            ha.ConfigEntry(), ha.DataUpdateCoordinator([vehicle]), "", vehicle.vin,
+            ha.ConfigEntry(),
+            ha.DataUpdateCoordinator([vehicle]),
+            "",
+            vehicle.vin,
         )
         self.assertTrue(entity.is_locked)
         vehicle._feature_flags = {"vehicleState": 2, "remoteCommands": 1}
@@ -150,18 +184,37 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         hass = ha.FakeHass(coordinator)
         entry = ha.ConfigEntry()
         entities = []
-        await ha.lock_platform.async_setup_entry(hass, entry, lambda added, update: entities.extend(added))
-        entity, = entities
+        await ha.lock_platform.async_setup_entry(
+            hass, entry, lambda added, update: entities.extend(added)
+        )
+        (entity,) = entities
         entity.hass = hass
 
-        for value, flag, expected in (("locked", 0, True), ("unlocked", 1, False), ("locked", 0, True)):
+        for value, flag, expected in (
+            ("locked", 0, True),
+            ("unlocked", 1, False),
+            ("locked", 0, True),
+        ):
             with self.subTest(value=value, flag=flag):
-                client.api_get.return_value = {"status": {"vehicleStatus": [
-                    {"category": category, "sections": [{"section": "Door", "values": [
-                        {"value": "closed", "status": 0}, {"value": value, "status": flag},
-                    ]}]}
-                    for category in ("Driver Side", "Passenger Side")
-                ]}}
+                client.api_get.return_value = {
+                    "status": {
+                        "vehicleStatus": [
+                            {
+                                "category": category,
+                                "sections": [
+                                    {
+                                        "section": "Door",
+                                        "values": [
+                                            {"value": "closed", "status": 0},
+                                            {"value": value, "status": flag},
+                                        ],
+                                    }
+                                ],
+                            }
+                            for category in ("Driver Side", "Passenger Side")
+                        ]
+                    }
+                }
                 await vehicle.update()
 
                 self.assertTrue(entity.available)
@@ -175,7 +228,9 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
                         await entity.async_lock()
                     await asyncio.gather(*hass.tasks)
                 client.remote_request_21mm.assert_awaited_with(
-                    vehicle.vin, "door-unlock" if expected else "door-lock", "US",
+                    vehicle.vin,
+                    "door-unlock" if expected else "door-lock",
+                    "US",
                 )
                 self.assertFalse(entity._state_changing)
 
@@ -183,9 +238,13 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         client = types.SimpleNamespace(
             get_telemetry=AsyncMock(return_value={}),
             get_engine_status_17cy=AsyncMock(return_value={"status": "off"}),
-            get_electric_status=AsyncMock(return_value={"vehicleInfo": {
-                "chargeInfo": {"chargeRemainingAmount": 71, "plugStatus": 40},
-            }}),
+            get_electric_status=AsyncMock(
+                return_value={
+                    "vehicleInfo": {
+                        "chargeInfo": {"chargeRemainingAmount": 71, "plugStatus": 40},
+                    }
+                }
+            ),
         )
         vehicle = behavior.make_17cy_vehicle(client)
         vehicle._has_remote_subscription = False
@@ -194,13 +253,15 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         client.get_engine_status_17cy.assert_awaited_once()
         self.assertEqual(vehicle.features[VehicleFeatures.ChargeLevel].value, 71)
         vehicle.features[VehicleFeatures.FrontDriverDoor] = ha.ToyotaLockableOpening(
-            closed=True, locked=True,
+            closed=True,
+            locked=True,
         )
         coordinator = ha.DataUpdateCoordinator([vehicle])
         entities = []
         for platform in (ha.binary_sensor_platform, ha.sensor_platform):
             await platform.async_setup_entry(
-                ha.FakeHass(coordinator), ha.ConfigEntry(),
+                ha.FakeHass(coordinator),
+                ha.ConfigEntry(),
                 lambda added, update: entities.extend(added),
             )
         battery = next(entity for entity in entities if entity.sensor_name == "EV Battery Level")
@@ -239,13 +300,21 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
             async_register=lambda domain, name, handler: handlers.update({name: handler}),
         )
         hass.async_get_entry = lambda entry_id: entry
-        hass.device_registry = types.SimpleNamespace(async_get=lambda device_id: types.SimpleNamespace(
-            config_entry_id=entry.entry_id, identifiers={(ha.DOMAIN, vehicle.vin)},
-        ))
+        hass.device_registry = types.SimpleNamespace(
+            async_get=lambda device_id: types.SimpleNamespace(
+                config_entry_id=entry.entry_id,
+                identifiers={(ha.DOMAIN, vehicle.vin)},
+            )
+        )
         await ha.integration_runtime.async_setup(hass, {})
         for service in ("charge_start", "refresh"):
-            with self.subTest(service=service), self.assertRaises(ha.exceptions.ServiceValidationError):
-                await handlers[service](types.SimpleNamespace(service=service, data={"vehicle": "device"}))
+            with (
+                self.subTest(service=service),
+                self.assertRaises(ha.exceptions.ServiceValidationError),
+            ):
+                await handlers[service](
+                    types.SimpleNamespace(service=service, data={"vehicle": "device"})
+                )
         client.remote_request_24mm.assert_not_awaited()
         self.assertEqual(hass.tasks, [])
 
@@ -267,18 +336,28 @@ class StolenVehicleTests(unittest.IsolatedAsyncioTestCase):
         vehicle._extended_capabilities = {**vehicle.extended_capabilities, "climateCapable": True}
         vehicle._charge_settings["schedules"] = []
         field = next(iter(CHARGE_SETTINGS))
-        for remote_display, offered in ((None, True), (7, True), (1, True), (9, True), (10, False), (11, False)):
+        for remote_display, offered in (
+            (None, True),
+            (7, True),
+            (1, True),
+            (9, True),
+            (10, False),
+            (11, False),
+        ):
             with self.subTest(remote_display=remote_display):
                 vehicle._remote_display = remote_display
                 self.assertEqual(vehicle.stolen, not offered)
-                self.assertEqual([
-                    vehicle.supports_command(RemoteRequestCommand.DoorLock),
-                    vehicle.supports_command(RemoteRequestCommand.Refresh),
-                    vehicle.supports_climate_settings,
-                    vehicle.supports_climate_schedules,
-                    vehicle.supports_charge_setting(field),
-                    vehicle.supports_charge_schedules,
-                ], [offered] * 6)
+                self.assertEqual(
+                    [
+                        vehicle.supports_command(RemoteRequestCommand.DoorLock),
+                        vehicle.supports_command(RemoteRequestCommand.Refresh),
+                        vehicle.supports_climate_settings,
+                        vehicle.supports_climate_schedules,
+                        vehicle.supports_charge_setting(field),
+                        vehicle.supports_charge_schedules,
+                    ],
+                    [offered] * 6,
+                )
 
     async def test_stolen_vehicle_commands_return_after_recovery(self):
         vehicle = behavior.make_vehicle()
@@ -288,7 +367,9 @@ class StolenVehicleTests(unittest.IsolatedAsyncioTestCase):
         entities = []
         for platform in (ha.button, ha.lock_platform):
             await platform.async_setup_entry(
-                hass, ha.ConfigEntry(), lambda added, update: entities.extend(added),
+                hass,
+                ha.ConfigEntry(),
+                lambda added, update: entities.extend(added),
             )
         self.assertEqual(entities, [])
         vehicle._remote_display = 7
@@ -305,7 +386,9 @@ class StolenVehicleTests(unittest.IsolatedAsyncioTestCase):
         coordinator = ha.DataUpdateCoordinator([vehicle])
         entities = []
         await ha.sensor_platform.async_setup_entry(
-            ha.FakeHass(coordinator), ha.ConfigEntry(), lambda added, update: entities.extend(added),
+            ha.FakeHass(coordinator),
+            ha.ConfigEntry(),
+            lambda added, update: entities.extend(added),
         )
         fuel = next(entity for entity in entities if entity.sensor_name == "Fuel Level")
         vehicle._remote_display = 10
@@ -319,30 +402,47 @@ class ChargingTests(unittest.IsolatedAsyncioTestCase):
         coordinator = ha.DataUpdateCoordinator([vehicle])
         entities = []
         await ha.button.async_setup_entry(
-            ha.FakeHass(coordinator), ha.ConfigEntry(),
+            ha.FakeHass(coordinator),
+            ha.ConfigEntry(),
             lambda added, update: entities.extend(added),
         )
         charge_names = {"Charge Now", "Resume Charging", "Stop Charging"}
         for state, expected in (
-            ("charge_now", "Charge Now"), ("charging", "Stop Charging"),
-            ("resume_charging", "Resume Charging"), ("unavailable", None),
+            ("charge_now", "Charge Now"),
+            ("charging", "Stop Charging"),
+            ("resume_charging", "Resume Charging"),
+            ("unavailable", None),
             ("charge_now", "Charge Now"),
         ):
             with self.subTest(state=state):
                 vehicle._parse_graphql_electric_status({"charging": {"chargingState": state}})
                 coordinator.notify_listeners()
                 self.assertEqual(
-                    [entity.sensor_name for entity in entities
-                     if entity.sensor_name in charge_names and entity.available],
+                    [
+                        entity.sensor_name
+                        for entity in entities
+                        if entity.sensor_name in charge_names and entity.available
+                    ],
                     [expected] if expected else [],
                 )
         self.assertEqual(len(entities), len({entity.unique_id for entity in entities}))
 
     async def test_charging_state_selects_only_applicable_commands(self):
-        for generation in (ApiVehicleGeneration.CY17, ApiVehicleGeneration.CY17PLUS,
-                           ApiVehicleGeneration.MM21, ApiVehicleGeneration.MM24, ApiVehicleGeneration.BEV26):
-            client = types.SimpleNamespace(electric_command=AsyncMock(return_value={}), remote_request_24mm=AsyncMock())
-            vehicle = behavior.make_17cy_vehicle(client) if generation == ApiVehicleGeneration.CY17 else behavior.make_24mm_vehicle(client)
+        for generation in (
+            ApiVehicleGeneration.CY17,
+            ApiVehicleGeneration.CY17PLUS,
+            ApiVehicleGeneration.MM21,
+            ApiVehicleGeneration.MM24,
+            ApiVehicleGeneration.BEV26,
+        ):
+            client = types.SimpleNamespace(
+                electric_command=AsyncMock(return_value={}), remote_request_24mm=AsyncMock()
+            )
+            vehicle = (
+                behavior.make_17cy_vehicle(client)
+                if generation == ApiVehicleGeneration.CY17
+                else behavior.make_24mm_vehicle(client)
+            )
             vehicle._generation = generation
             for state, command, wire_command in (
                 ("36", RemoteRequestCommand.ChargeStart, "immediate-charge"),
@@ -352,33 +452,70 @@ class ChargingTests(unittest.IsolatedAsyncioTestCase):
             ):
                 with self.subTest(generation=generation, state=state):
                     if vehicle.uses_appsync:
-                        vehicle._parse_graphql_electric_status({"charging": {"chargingState": state}})
+                        vehicle._parse_graphql_electric_status(
+                            {"charging": {"chargingState": state}}
+                        )
                     else:
-                        vehicle._parse_electric_status({"vehicleInfo": {"chargeInfo": {"plugStatus": state}}})
+                        vehicle._parse_electric_status(
+                            {"vehicleInfo": {"chargeInfo": {"plugStatus": state}}}
+                        )
                     expected = command == RemoteRequestCommand.ChargeStart or vehicle.uses_appsync
                     self.assertEqual(vehicle.supports_command(command), expected)
                     if expected:
                         await vehicle.send_command(command)
                         if vehicle.uses_appsync:
-                            client.remote_request_24mm.assert_awaited_with(vehicle.vin, wire_command, vehicle.region)
+                            client.remote_request_24mm.assert_awaited_with(
+                                vehicle.vin, wire_command, vehicle.region
+                            )
                         else:
-                            client.electric_command.assert_awaited_with(vehicle.vin, generation.value, wire_command, vehicle.region, vehicle.brand)
+                            client.electric_command.assert_awaited_with(
+                                vehicle.vin,
+                                generation.value,
+                                wire_command,
+                                vehicle.region,
+                                vehicle.brand,
+                            )
                     else:
                         with self.assertRaises(ValueError):
                             await vehicle.send_command(command)
-            for state in ("40", "56", "45", "60", "no_controls", "unavailable", "external_power_active", "unexpected"):
+            for state in (
+                "40",
+                "56",
+                "45",
+                "60",
+                "no_controls",
+                "unavailable",
+                "external_power_active",
+                "unexpected",
+            ):
                 vehicle.features[VehicleFeatures.ChargingState] = ha.ToyotaNumeric(state, "")
-                for command in (RemoteRequestCommand.ChargeStart, RemoteRequestCommand.ChargeResume, RemoteRequestCommand.ChargeStop):
-                    self.assertFalse(vehicle.supports_command(command), (generation, state, command))
+                for command in (
+                    RemoteRequestCommand.ChargeStart,
+                    RemoteRequestCommand.ChargeResume,
+                    RemoteRequestCommand.ChargeStop,
+                ):
+                    self.assertFalse(
+                        vehicle.supports_command(command), (generation, state, command)
+                    )
 
     def test_older_charging_observations_cannot_reenable_commands(self):
         vehicle = behavior.make_24mm_vehicle()
-        vehicle._parse_graphql_electric_status({"charging": {
-            "chargingState": "no_controls", "lastUpdateDateTime": "2026-09-14T19:01:00Z",
-        }})
-        vehicle._parse_graphql_electric_status({"charging": {
-            "chargingState": "charge_now", "lastUpdateDateTime": "2026-09-14T19:00:00Z",
-        }})
+        vehicle._parse_graphql_electric_status(
+            {
+                "charging": {
+                    "chargingState": "no_controls",
+                    "lastUpdateDateTime": "2026-09-14T19:01:00Z",
+                }
+            }
+        )
+        vehicle._parse_graphql_electric_status(
+            {
+                "charging": {
+                    "chargingState": "charge_now",
+                    "lastUpdateDateTime": "2026-09-14T19:00:00Z",
+                }
+            }
+        )
         self.assertFalse(vehicle.supports_command(RemoteRequestCommand.ChargeStart))
 
 
@@ -390,14 +527,17 @@ class ClimateSettingsTests(unittest.IsolatedAsyncioTestCase):
         )
         self.vehicle = behavior.make_vehicle(self.client)
         self.vehicle._extended_capabilities = {
-            **self.vehicle._extended_capabilities, "climateCapable": True,
+            **self.vehicle._extended_capabilities,
+            "climateCapable": True,
         }
 
     async def test_partial_update_preserves_latest_unrelated_preferences(self):
         self.vehicle._climate_settings = {**CLIMATE_SETTINGS, "acOperations": []}
         await self.vehicle.update_climate_settings(temperature=23.5)
         expected = {**CLIMATE_SETTINGS, "temperature": 23.5}
-        self.client.update_climate_settings.assert_awaited_once_with("TESTVIN", "21MM", expected, "US", "L")
+        self.client.update_climate_settings.assert_awaited_once_with(
+            "TESTVIN", "21MM", expected, "US", "L"
+        )
         self.assertEqual(self.vehicle.climate_settings, expected)
         self.assertEqual(self.client.get_climate_settings.return_value, CLIMATE_SETTINGS)
 
@@ -424,11 +564,20 @@ class ClimateSettingsTests(unittest.IsolatedAsyncioTestCase):
         hass = ha.FakeHass(coordinator)
         entities = []
         for platform in (number, switch):
-            await platform.async_setup_entry(hass, ha.ConfigEntry(), lambda added, update: entities.extend(added))
+            await platform.async_setup_entry(
+                hass, ha.ConfigEntry(), lambda added, update: entities.extend(added)
+            )
         temperature, enabled = entities
-        self.assertEqual((temperature.native_value, temperature.native_min_value,
-                          temperature.native_max_value, temperature.native_step,
-                          temperature.native_unit_of_measurement), (22, 18, 30, 0.5, "°C"))
+        self.assertEqual(
+            (
+                temperature.native_value,
+                temperature.native_min_value,
+                temperature.native_max_value,
+                temperature.native_step,
+                temperature.native_unit_of_measurement,
+            ),
+            (22, 18, 30, 0.5, "°C"),
+        )
         await temperature.async_set_native_value(23)
         self.assertEqual(temperature.native_value, 23)
         await enabled.async_turn_off()
@@ -445,7 +594,9 @@ class ClimateSettingsTests(unittest.IsolatedAsyncioTestCase):
         replacement._extended_capabilities = dict(self.vehicle._extended_capabilities)
         replacement.inherit_state(self.vehicle)
         temperature = number.ToyotaClimateTemperature(
-            ha.DataUpdateCoordinator([replacement]), "Climate Temperature", replacement.vin,
+            ha.DataUpdateCoordinator([replacement]),
+            "Climate Temperature",
+            replacement.vin,
         )
         await self.vehicle.update_climate_settings(temperature=24)
         self.assertTrue(temperature.available)

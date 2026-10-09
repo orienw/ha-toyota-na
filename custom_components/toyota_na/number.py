@@ -43,7 +43,8 @@ class ToyotaClimateNumber(ToyotaNABaseEntity, NumberEntity):
         return (
             self.vehicle is not None
             and self.vehicle.supports_climate_settings
-            and type(value) in (int, float) and math.isfinite(value)
+            and type(value) in (int, float)
+            and math.isfinite(value)
             and climate_bounds(self.settings, self._key) is not None
             and (self._key != "temperature" or self.native_unit_of_measurement is not None)
         )

@@ -30,14 +30,20 @@ async def async_setup_entry(
     def discover_events():
         for vehicle in coordinator.data or []:
             if isinstance(vehicle.notifications, list):
-                yield ToyotaNotificationEvent(entry_data["started"], coordinator, "Notifications", vehicle.vin)
+                yield ToyotaNotificationEvent(
+                    entry_data["started"], coordinator, "Notifications", vehicle.vin
+                )
 
     setup_entity_discovery(config_entry, coordinator, async_add_entities, discover_events)
 
 
 def notification_event_type(category) -> str:
     """Return the event type for a notification category."""
-    return NOTIFICATION_EVENT_TYPES.get(category.lower(), "other") if isinstance(category, str) else "other"
+    return (
+        NOTIFICATION_EVENT_TYPES.get(category.lower(), "other")
+        if isinstance(category, str)
+        else "other"
+    )
 
 
 class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
@@ -75,14 +81,17 @@ class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
         await super().async_added_to_hass()
         # Everything present at startup is history, unless Toyota dates it after setup.
         self._seen.update(
-            message_id for message_id, date, _ in self._notifications or []
+            message_id
+            for message_id, date, _ in self._notifications or []
             if date is None or date <= self._started
         )
 
     @callback
     def _handle_coordinator_update(self) -> None:
         notifications = self._notifications or []
-        for message_id, date, item in sorted(notifications, key=lambda notification: notification[1] or _OLDEST):
+        for message_id, date, item in sorted(
+            notifications, key=lambda notification: notification[1] or _OLDEST
+        ):
             if message_id in self._seen:
                 continue
             # Remember skipped IDs too, so a later read that drops the date
@@ -90,15 +99,18 @@ class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
             self._seen.add(message_id)
             if date is not None and date <= self._started:
                 continue
-            self._trigger_event(notification_event_type(item.get("category")), {
-                "message_id": message_id,
-                "category": item.get("category"),
-                "display_category": item.get("displayCategory"),
-                "subcategory": item.get("subcategory"),
-                "title": item.get("title"),
-                "message": item.get("message"),
-                "status": item.get("status"),
-                "date": item.get("notificationDate"),
-            })
+            self._trigger_event(
+                notification_event_type(item.get("category")),
+                {
+                    "message_id": message_id,
+                    "category": item.get("category"),
+                    "display_category": item.get("displayCategory"),
+                    "subcategory": item.get("subcategory"),
+                    "title": item.get("title"),
+                    "message": item.get("message"),
+                    "status": item.get("status"),
+                    "date": item.get("notificationDate"),
+                },
+            )
             self.async_write_ha_state()
         super()._handle_coordinator_update()

@@ -33,7 +33,9 @@ def _vehicle_status(health: Mapping) -> Mapping:
 
 def health_reading(vehicle, features, read):
     """Return a Health tab reading when Toyota's app would show it."""
-    if vehicle is None or (features and not any(vehicle.feature_enabled(name) for name in features)):
+    if vehicle is None or (
+        features and not any(vehicle.feature_enabled(name) for name in features)
+    ):
         return None
     return read(vehicle.health)
 
@@ -47,12 +49,17 @@ def _merge(entries, campaigns, types, *, require_text=False) -> list[dict]:
         entries = [(reference, entry) for reference, entry in entries if reference != number]
         title, description = _text(item.get("campaignTitle")), _text(item.get("description"))
         if not require_text or (title and description):
-            entries.append(("", {
-                "title": title,
-                "description": description,
-                "remedy": _text(item.get("remedyDescription")),
-                "date": _text(item.get("recallDate")) or _text(item.get("campaignDate")),
-            }))
+            entries.append(
+                (
+                    "",
+                    {
+                        "title": title,
+                        "description": description,
+                        "remedy": _text(item.get("remedyDescription")),
+                        "date": _text(item.get("recallDate")) or _text(item.get("campaignDate")),
+                    },
+                )
+            )
     return [entry for _, entry in entries]
 
 
@@ -61,15 +68,22 @@ def safety_recalls(health: Mapping) -> list[dict] | None:
     if "report" not in health and "campaigns" not in health:
         return None
     report = _report(health)
-    entries = [
-        (_text(item.get("dealerReferenceID")), {
-            "title": _text(item.get("title")),
-            "description": _text(item.get("description")),
-            "remedy": _text(item.get("remedy")),
-            "date": _text(item.get("nhtsarecallDate")),
-        })
-        for item in _items(report.get("safetyRecallsList"))
-    ] if app_flag(report.get("recallsListExists")) else []
+    entries = (
+        [
+            (
+                _text(item.get("dealerReferenceID")),
+                {
+                    "title": _text(item.get("title")),
+                    "description": _text(item.get("description")),
+                    "remedy": _text(item.get("remedy")),
+                    "date": _text(item.get("nhtsarecallDate")),
+                },
+            )
+            for item in _items(report.get("safetyRecallsList"))
+        ]
+        if app_flag(report.get("recallsListExists"))
+        else []
+    )
     return _merge(entries, health.get("campaigns"), _RECALL_TYPES)
 
 
@@ -78,15 +92,22 @@ def service_campaigns(health: Mapping) -> list[dict] | None:
     if "report" not in health and "campaigns" not in health:
         return None
     report = _report(health)
-    entries = [
-        (_text(item.get("dealerRefID")), {
-            "title": _text(item.get("title")),
-            "description": _text(item.get("activityDesc")),
-            "remedy": _text(item.get("remedyDesc")),
-            "date": _text(item.get("campaignDate")),
-        })
-        for item in _items(report.get("serviceCampaigns"))
-    ] if app_flag(report.get("campaignsExists")) else []
+    entries = (
+        [
+            (
+                _text(item.get("dealerRefID")),
+                {
+                    "title": _text(item.get("title")),
+                    "description": _text(item.get("activityDesc")),
+                    "remedy": _text(item.get("remedyDesc")),
+                    "date": _text(item.get("campaignDate")),
+                },
+            )
+            for item in _items(report.get("serviceCampaigns"))
+        ]
+        if app_flag(report.get("campaignsExists"))
+        else []
+    )
     return _merge(entries, health.get("campaigns"), _CAMPAIGN_TYPES, require_text=True)
 
 
@@ -122,12 +143,20 @@ def key_fob_battery_low(health: Mapping) -> bool | None:
 
 def maintenance_required(health: Mapping) -> bool | None:
     information = _report(health).get("maintenanceInformation")
-    return app_flag(information.get("maintenanceRequired")) if isinstance(information, Mapping) else None
+    return (
+        app_flag(information.get("maintenanceRequired"))
+        if isinstance(information, Mapping)
+        else None
+    )
 
 
 def service_due(health: Mapping) -> dict | None:
     information = _report(health).get("maintenanceInformation")
-    return {"service_due": app_string(information.get("serviceDue"))} if isinstance(information, Mapping) else None
+    return (
+        {"service_due": app_string(information.get("serviceDue"))}
+        if isinstance(information, Mapping)
+        else None
+    )
 
 
 def _software(health: Mapping) -> Mapping | None:
