@@ -2,7 +2,6 @@
 
 import types
 from copy import deepcopy
-from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -12,11 +11,10 @@ from common import (
     make_17cy_vehicle,
     make_24mm_vehicle,
     make_vehicle,
+    settle,
 )
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
-from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
 from toyota_na.exceptions import LoginError
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
 from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
@@ -49,10 +47,9 @@ async def push(hass, account):
     await hass.async_block_till_done()
 
 
-async def settle(hass, account):
-    """Run any refresh the coordinator's cooldown deferred, and count the polls so far."""
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
-    await hass.async_block_till_done()
+async def count_polls(hass, account):
+    """Count the account polls once pending work and any deferred refresh have run."""
+    await settle(hass)
     return account.get_vehicles.await_count
 
 
@@ -326,17 +323,17 @@ async def test_services_enforce_live_feature_and_charging_state(hass, setup_vehi
     device_id = next(
         iter(er.async_entries_for_config_entry(er.async_get(hass), account.entry.entry_id))
     ).device_id
-    polls = await settle(hass, account)
+    polls = await count_polls(hass, account)
 
     for service in ("charge_start", "refresh"):
         with subtests.test(service=service), pytest.raises(ServiceValidationError):
             await hass.services.async_call(DOMAIN, service, {"vehicle": device_id}, blocking=True)
     client.remote_request_24mm.assert_not_awaited()
-    assert await settle(hass, account) == polls
+    assert await count_polls(hass, account) == polls
 
     await hass.services.async_call(DOMAIN, "charge_stop", {"vehicle": device_id}, blocking=True)
     client.remote_request_24mm.assert_awaited_once_with(vehicle.vin, "charge-stop", "CA")
-    assert await settle(hass, account) == polls + 1
+    assert await count_polls(hass, account) == polls + 1
     vehicle._feature_flags["remoteCommands"] = 2
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(DOMAIN, "charge_stop", {"vehicle": device_id}, blocking=True)

@@ -4,7 +4,7 @@ from copy import deepcopy
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
-from common import EMAIL, STATUS_24MM, FakeClient, FakeWebSocket, account_entry, set_up
+from common import EMAIL, STATUS_24MM, FakeClient, FakeWebSocket, account_entry, set_up, settle
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
@@ -71,7 +71,7 @@ async def test_service_finds_the_vehicle_through_its_device(hass, loaded):
     device_id = er.async_get(hass).async_get(LOCK).device_id
 
     await hass.services.async_call(DOMAIN, "door_lock", {"vehicle": device_id}, blocking=True)
-    await hass.async_block_till_done()
+    await settle(hass)
 
     client.remote_request_24mm.assert_awaited_once_with(VIN, ANY, "CA")
     assert [wake["vin"] for wake in entry.data[LAST_VEHICLE_WAKES]] == [VIN]

@@ -3,6 +3,7 @@
 import json
 import logging
 import time
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -10,7 +11,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_component import DATA_INSTANCES
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.patch_base_vehicle import (
@@ -247,6 +249,13 @@ async def set_up(hass: HomeAssistant, entry: MockConfigEntry, caplog) -> None:
     await hass.async_block_till_done()
     errors = [r.getMessage() for r in caplog.records[start:] if r.levelno >= logging.ERROR]
     assert not errors
+
+
+async def settle(hass: HomeAssistant) -> None:
+    """Run pending work, then any refresh the coordinator's 10 s cooldown deferred."""
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
+    await hass.async_block_till_done()
 
 
 def entity_id(hass: HomeAssistant, platform: str, unique_id: str) -> str | None:

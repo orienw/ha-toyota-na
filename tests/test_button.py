@@ -1,16 +1,13 @@
 """Vehicle controls, door and location entities, and polling in a real Home Assistant."""
 
 import logging
-from datetime import timedelta
 
 import pytest
-from common import FakeVehicle, account_entry, entity_id
+from common import FakeVehicle, account_entry, entity_id, settle
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
-from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     async_capture_events,
-    async_fire_time_changed,
 )
 from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
@@ -31,16 +28,6 @@ from custom_components.toyota_na.wake_policy import (
 
 LC_CONTROLS = ["Remote Start", "Remote Stop", "Flash Hazards", "Find Vehicle", "Refresh Status"]
 STALE_TRUNK = ["binary_sensor.testvin_trunk", "binary_sensor.testvin_trunk_door_lock"]
-
-
-async def settle(hass):
-    """Run the poll entities requested as they were added, then wait out its cooldown.
-
-    Until then a requested poll waits for the cooldown instead of running.
-    """
-    for _ in range(2):
-        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
-        await hass.async_block_till_done()
 
 
 def registry_entries(hass, entry, domain):
@@ -110,6 +97,7 @@ class TestButtons:
         vehicle, account = controls
         polls = account.get_vehicles.await_count
         await self.press(hass, "Remote Start")
+        await settle(hass)
 
         assert vehicle.sent == [RemoteRequestCommand.EngineStart]
         assert vehicle.refresh_requests == 0
@@ -122,6 +110,7 @@ class TestButtons:
         vehicle, account = controls
         polls = account.get_vehicles.await_count
         await self.press(hass, "Refresh Status")
+        await settle(hass)
 
         assert vehicle.refresh_requests == 1
         assert account.get_vehicles.await_count == polls + 1
@@ -134,7 +123,7 @@ class TestButtons:
         await hass.services.async_call(
             "lock", "lock", {"entity_id": entity_id(hass, "lock", "TESTVIN.")}, blocking=True
         )
-        await hass.async_block_till_done()
+        await settle(hass)
 
         assert vehicle.sent == [RemoteRequestCommand.DoorLock]
         assert vehicle.refresh_requests == 0

@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 import pytest
-from common import entity_id, make_vehicle
+from common import entity_id, make_vehicle, settle
 from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
@@ -560,7 +560,7 @@ class TestClimateSchedules:
         await account.coordinator.async_refresh()
         await hass.async_block_till_done()
         assert isinstance(account.coordinator.last_exception.__cause__, LoginError)
-        assert account.entry.async_get_active_flows(hass, {SOURCE_REAUTH})
+        assert list(account.entry.async_get_active_flows(hass, {SOURCE_REAUTH}))
 
     async def test_create_can_confirm_a_new_schedule_when_response_omits_its_id(
         self, hass, schedules
@@ -657,6 +657,7 @@ class TestClimateSchedules:
         assert body["ventilationOptions"] == SCHEDULE["ventilationOptions"]
         assert state.attributes["time"] == "23:30"
         assert state.attributes["days"] == ["Monday", "Wednesday"]
+        await settle(hass)
         assert schedules.account.get_vehicles.await_count == refreshes
 
     async def test_capabilities_gate_writes_and_reads_preserve_visible_schedules_without_subscription(

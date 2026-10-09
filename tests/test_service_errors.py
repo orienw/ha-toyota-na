@@ -3,16 +3,13 @@
 import asyncio
 import json
 import types
-from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from aiohttp import ClientResponseError
-from common import FakeVehicle, entity_id, get_entity
+from common import FakeVehicle, entity_id, get_entity, settle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
-from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
 from toyota_na.exceptions import TokenExpired
 
 from custom_components.toyota_na.const import DOMAIN
@@ -29,11 +26,8 @@ async def commands(hass, setup_vehicles):
         }
     )
     account = await setup_vehicles([vehicle])
-    # Run the poll entities requested as they were added and wait out its cooldown, so a
-    # poll after a failed command would run right away and show in the count.
-    for _ in range(2):
-        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
-        await hass.async_block_till_done()
+    # Nothing from setup is left waiting, so a poll after a failed command shows in the count.
+    await settle(hass)
     lock = entity_id(hass, "lock", "TESTVIN.")
     device_id = er.async_get(hass).async_get(lock).device_id
     target = {"entity_id": entity_id(hass, "button", "TESTVIN.Remote Start")}
