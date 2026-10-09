@@ -133,7 +133,7 @@ from homeassistant.helpers import device_registry as dr, service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .websocket_handler import ToyotaWebSocketHandler
-from .command_refresh import refresh_after_command
+from .command_refresh import cancel_on_unload, refresh_after_command
 from .service_helpers import translate_service_errors
 from .wake_policy import automatic_wake_due, record_vehicle_wake
 
@@ -256,7 +256,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             _refresh_coordinator_after_command(coordinator, vin, command)
         )
         if config_entry is not None:
-            config_entry.async_on_unload(task.cancel)
+            cancel_on_unload(config_entry, task)
         _LOGGER.info("Handling service call %s for VIN ...%s", remote_action, vin[-4:])
 
         return
@@ -406,7 +406,7 @@ async def update_vehicles_status(
             task = hass.async_create_task(
                 _refresh_coordinator_after_command(coordinator)
             )
-            entry.async_on_unload(task.cancel)
+            cancel_on_unload(entry, task)
         return vehicles
     except AuthError as e:
         raise ConfigEntryAuthFailed(e) from e

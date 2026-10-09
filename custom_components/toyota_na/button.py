@@ -9,7 +9,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
 
 from .base_entity import ToyotaNABaseEntity
-from .command_refresh import refresh_after_command
+from .command_refresh import cancel_on_unload, refresh_after_command
 from .const import COMMAND_BUTTONS, COMMAND_REFRESH_DELAY, DOMAIN
 from .entity_discovery import setup_entity_discovery
 from .service_helpers import translate_service_errors
@@ -62,7 +62,7 @@ class ToyotaButtonBase(ToyotaNABaseEntity, ButtonEntity):
 
     def _schedule_refresh(self, command=None) -> None:
         task = self.hass.async_create_task(self._async_refresh_after_delay(command))
-        self._config_entry.async_on_unload(task.cancel)
+        cancel_on_unload(self._config_entry, task)
 
     async def _async_refresh_after_delay(self, command=None) -> None:
         await refresh_after_command(
