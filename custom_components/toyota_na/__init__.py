@@ -1,9 +1,10 @@
-from datetime import datetime, timedelta, timezone
 import logging
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from toyota_na.auth import ToyotaOneAuth
 from toyota_na.client import ToyotaOneClient
+
 from .patch_auth import (
     authorize,
     check_tokens,
@@ -26,48 +27,48 @@ ToyotaOneAuth.logged_in = logged_in
 
 # Patch client code
 from .patch_client import (
+    _auth_headers,
+    api_request,
+    electric_command,
+    get_climate_schedules,
+    get_climate_settings,
     get_electric_realtime_status,
     get_electric_status,
-    get_climate_settings,
-    get_climate_schedules,
-    save_climate_schedule,
-    update_climate_settings,
-    update_charge_settings,
-    save_charge_schedule,
-    electric_command,
-    api_request,
-    _auth_headers,
-    get_user_vehicle_list,
-    get_telemetry,
-    get_tire_pressure,
-    get_vehicle_health_report,
-    get_vehicle_health_status,
-    get_service_campaigns,
-    get_notification_history,
-    get_software_update,
-    get_vehicle_status_17cyplus,
-    get_vehicle_status_21mm,
-    get_vehicle_status_route,
+    get_engine_status_17cy,
     get_engine_status_17cyplus,
     get_engine_status_21mm,
     get_engine_status_route,
+    get_notification_history,
+    get_service_campaigns,
+    get_software_update,
+    get_telemetry,
+    get_tire_pressure,
+    get_user_vehicle_list,
+    get_vehicle_health_report,
+    get_vehicle_health_status,
+    get_vehicle_status_17cy,
+    get_vehicle_status_17cyplus,
+    get_vehicle_status_21mm,
+    get_vehicle_status_route,
+    graphql_confirm_subscription,
+    graphql_get_vehicle_status,
+    graphql_pre_wake,
+    graphql_refresh_status,
+    graphql_request,
+    graphql_send_remote_command,
+    remote_request_17cy,
+    remote_request_17cyplus,
+    remote_request_21mm,
+    remote_request_24mm,
+    remote_request_route,
+    save_charge_schedule,
+    save_climate_schedule,
+    send_refresh_request_17cy,
     send_refresh_request_17cyplus,
     send_refresh_request_21mm,
     send_refresh_request_route,
-    remote_request_17cyplus,
-    remote_request_21mm,
-    remote_request_route,
-    get_vehicle_status_17cy,
-    get_engine_status_17cy,
-    send_refresh_request_17cy,
-    remote_request_17cy,
-    graphql_request,
-    graphql_pre_wake,
-    graphql_confirm_subscription,
-    graphql_refresh_status,
-    graphql_get_vehicle_status,
-    graphql_send_remote_command,
-    remote_request_24mm,
+    update_charge_settings,
+    update_climate_settings,
 )
 
 ToyotaOneClient.get_electric_realtime_status = get_electric_realtime_status
@@ -115,6 +116,7 @@ ToyotaOneClient.remote_request_24mm = remote_request_24mm
 
 # Patch base_vehicle
 import toyota_na.vehicle.base_vehicle
+
 from .patch_base_vehicle import ApiVehicleGeneration
 
 toyota_na.vehicle.base_vehicle.ApiVehicleGeneration = ApiVehicleGeneration
@@ -130,6 +132,7 @@ toyota_na.vehicle.base_vehicle.ToyotaVehicle = ToyotaVehicle
 
 # Patch seventeen_cy_plus
 import toyota_na.vehicle.vehicle_generations.seventeen_cy_plus
+
 from .patch_seventeen_cy_plus import (
     SeventeenCYPlusToyotaVehicle as PatchedSeventeenCYPlusToyotaVehicle,
 )
@@ -140,38 +143,38 @@ toyota_na.vehicle.vehicle_generations.seventeen_cy_plus.SeventeenCYPlusToyotaVeh
 
 # Patch seventeen_cy
 import toyota_na.vehicle.vehicle_generations.seventeen_cy
+
 from .patch_seventeen_cy import SeventeenCYToyotaVehicle as PatchedSeventeenCYToyotaVehicle
 
 toyota_na.vehicle.vehicle_generations.seventeen_cy.SeventeenCYToyotaVehicle = (
     PatchedSeventeenCYToyotaVehicle
 )
 
-from toyota_na.exceptions import AuthError
-from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
-
-# Patch get_vehicles
-from .patch_vehicle import get_vehicles
-# from toyota_na.vehicle.vehicle import get_vehicles
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
-from homeassistant.helpers import device_registry as dr, service
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .websocket_handler import ToyotaWebSocketHandler
-from .command_refresh import refresh_after_command
-from .service_helpers import translate_service_errors
-from .remote_access import sync_remote_access_issues
-from .wake_policy import automatic_wake_due, record_vehicle_wake
+from toyota_na.exceptions import AuthError
+from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
 
+from .command_refresh import refresh_after_command
 from .const import (
     COMMAND_MAP,
     COMMAND_REFRESH_DELAY,
     DOMAIN,
-    UPDATE_INTERVAL,
     REFRESH_STATUS_INTERVAL,
+    UPDATE_INTERVAL,
 )
+
+# Patch get_vehicles
+from .patch_vehicle import get_vehicles
+from .remote_access import sync_remote_access_issues
+from .service_helpers import translate_service_errors
+from .wake_policy import automatic_wake_due, record_vehicle_wake
+from .websocket_handler import ToyotaWebSocketHandler
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [
@@ -335,7 +338,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         raise ConfigEntryAuthFailed(e) from e
 
     # Notifications Toyota dates before setup are history, not new events.
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,

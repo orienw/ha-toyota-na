@@ -3,12 +3,12 @@
 import base64
 import importlib.util
 import json
-from pathlib import Path
-from urllib.parse import parse_qs, urlparse
-from uuid import UUID
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 import aiohttp
 

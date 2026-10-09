@@ -1,20 +1,19 @@
 """Toyota's notification history reaches each vehicle."""
 
+import json
 import types
 import unittest
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import test_button as ha
 import test_vehicle_behavior as behavior
-
-from datetime import datetime, timezone
-import json
+from toyota_na.exceptions import AuthError
 
 from custom_components.toyota_na import event, patch_client
 from custom_components.toyota_na.const import NOTIFICATION_EVENT_TYPES
 from custom_components.toyota_na.patch_seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
 from custom_components.toyota_na.patch_vehicle import get_vehicles
-from toyota_na.exceptions import AuthError
 
 HISTORY = [
     {
@@ -33,7 +32,7 @@ HISTORY = [
 ]
 
 
-STARTED = datetime(2026, 10, 6, 7, 0, tzinfo=timezone.utc)
+STARTED = datetime(2026, 10, 6, 7, 0, tzinfo=UTC)
 
 
 def message_ids(vehicle):

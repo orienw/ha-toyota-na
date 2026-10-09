@@ -1,9 +1,9 @@
 """Schedule writes preserve unrelated data and confirm reported state."""
 
-from copy import deepcopy
-from datetime import datetime
 import types
 import unittest
+from copy import deepcopy
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import test_appsync_transport as transport
@@ -13,7 +13,6 @@ import test_vehicle_behavior as behavior
 from custom_components.toyota_na import patch_base_vehicle, sensor, switch
 from custom_components.toyota_na.charging_helpers import build_charge_schedule
 from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration
-
 
 SCHEDULE = {
     "settingId": 1,

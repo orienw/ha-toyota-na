@@ -1,13 +1,14 @@
 """Generation, feature availability, and electric vehicle controls."""
 
 import asyncio
-from copy import deepcopy
 import types
 import unittest
+from copy import deepcopy
 from unittest.mock import AsyncMock, patch
 
 import test_button as ha
 import test_vehicle_behavior as behavior
+from toyota_na.exceptions import LoginError
 
 from custom_components.toyota_na import number, switch
 from custom_components.toyota_na.charging_helpers import CHARGE_SETTINGS
@@ -17,8 +18,6 @@ from custom_components.toyota_na.patch_base_vehicle import (
     VehicleFeatures,
 )
 from custom_components.toyota_na.patch_vehicle import get_vehicles
-from toyota_na.exceptions import LoginError
-
 
 CLIMATE_SETTINGS = {
     "temperature": 22.0,

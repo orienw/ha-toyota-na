@@ -3,9 +3,9 @@
 import asyncio
 import importlib.util
 import json
-from pathlib import Path
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -14,7 +14,6 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 from toyota_na.client import ToyotaOneClient
 from toyota_na.exceptions import LoginError
-
 
 SPEC = importlib.util.spec_from_file_location(
     "rest_patch_client",

@@ -20,6 +20,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-test.txt
       - run: pip install -r requirements-test.txt
+      - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
   hassfest:

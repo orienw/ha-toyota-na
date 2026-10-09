@@ -1,9 +1,9 @@
 """Reported charging choices and confirmed settings changes."""
 
 import asyncio
-from copy import deepcopy
 import types
 import unittest
+from copy import deepcopy
 from unittest.mock import AsyncMock, patch
 
 import test_appsync_transport as transport
@@ -17,7 +17,6 @@ from custom_components.toyota_na.patch_base_vehicle import (
     RemoteRequestCommand,
     VehicleFeatures,
 )
-
 
 CHARGING = {
     "lastUpdateDateTime": "2026-09-14T12:00:00Z",

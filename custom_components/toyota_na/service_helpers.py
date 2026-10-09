@@ -1,13 +1,12 @@
 """Translate expected Toyota failures at Home Assistant service boundaries."""
 
-import asyncio
-from contextlib import contextmanager
 import json
+from contextlib import contextmanager
 
 from aiohttp import ClientError, ClientResponseError
-from toyota_na.exceptions import AuthError
-
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+
+from toyota_na.exceptions import AuthError
 
 
 @contextmanager
@@ -18,7 +17,7 @@ def translate_service_errors():
         raise HomeAssistantError("Toyota returned an invalid response.") from err
     except ValueError as err:
         raise ServiceValidationError(str(err)) from err
-    except asyncio.TimeoutError as err:
+    except TimeoutError as err:
         raise HomeAssistantError(str(err) or "The Toyota request timed out.") from err
     except AuthError as err:
         raise HomeAssistantError(

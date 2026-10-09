@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from toyota_na.client import ToyotaOneClient
 from toyota_na.exceptions import AuthError
@@ -96,12 +95,12 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         vin: str,
         region: str,
         brand: str = "T",
-        backdoor_type: Optional[str] = None,
-        remote_capabilities: Optional[dict] = None,
-        extended_capabilities: Optional[dict] = None,
-        feature_flags: Optional[dict] = None,
-        legacy_capabilities: Optional[list] = None,
-        remote_display: Optional[int] = None,
+        backdoor_type: str | None = None,
+        remote_capabilities: dict | None = None,
+        extended_capabilities: dict | None = None,
+        feature_flags: dict | None = None,
+        legacy_capabilities: list | None = None,
+        remote_display: int | None = None,
     ):
         self._has_remote_subscription = has_remote_subscription
         self._has_electric = has_electric

@@ -1,10 +1,8 @@
-from toyota_na.vehicle.base_vehicle import VehicleFeatures
-
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE, UnitOfPressure
 
-from toyota_na.vehicle.base_vehicle import RemoteRequestCommand
+from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, VehicleFeatures
 
 from .health_helpers import (
     engine_oil_low,
@@ -17,7 +15,6 @@ from .health_helpers import (
     software_update_details,
     vehicle_alerts,
 )
-
 
 DOMAIN = "toyota_na"
 

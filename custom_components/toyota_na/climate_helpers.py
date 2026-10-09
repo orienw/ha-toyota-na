@@ -1,7 +1,7 @@
 """Vehicle-provided climate preferences and supported options."""
 
-from copy import deepcopy
 import math
+from copy import deepcopy
 
 AIRFLOWS = {
     "upperBody": "Upper body",

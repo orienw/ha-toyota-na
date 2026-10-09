@@ -1,6 +1,5 @@
 """Cached readings and shutdown independently of command access."""
 
-import asyncio
 import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch

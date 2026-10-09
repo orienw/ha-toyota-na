@@ -1,9 +1,9 @@
 """Runtime extension only for an eligible remote-start session."""
 
-from datetime import datetime, timedelta, timezone
 import json
 import types
 import unittest
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import test_appsync_transport as transport
@@ -17,7 +17,7 @@ def remote_status(**changes):
         "running": True,
         "lastUpdateBy": "Remote",
         "status": "Running",
-        "stopTime": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+        "stopTime": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
     }
     return {"vehicleState": {"engine": {**engine, **changes}}}
 

@@ -5,7 +5,6 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
-
 import test_button as ha
 
 ha.ha_const.CONF_ACCESS_TOKEN = "access_token"

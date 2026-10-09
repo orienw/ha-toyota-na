@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import test_button as ha
 import test_vehicle_behavior as behavior
+
 from custom_components.toyota_na import command_refresh
 from custom_components.toyota_na.patch_base_vehicle import (
     ApiVehicleGeneration,

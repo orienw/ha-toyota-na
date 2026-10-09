@@ -1,11 +1,12 @@
 """Readable sensor states retain the existing entity IDs."""
 
-from datetime import datetime, timezone
 import unittest
+from datetime import UTC, datetime
 
 import test_button as ha
-from custom_components.toyota_na.patch_base_vehicle import VehicleFeatures as F
 from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
+
+from custom_components.toyota_na.patch_base_vehicle import VehicleFeatures as F
 
 
 class SensorStateTests(unittest.IsolatedAsyncioTestCase):
@@ -99,7 +100,7 @@ class SensorStateTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(name=name):
                 entity = self.entities[name]
-                expected = datetime(2026, 9, 15, hour, tzinfo=timezone.utc)
+                expected = datetime(2026, 9, 15, hour, tzinfo=UTC)
                 self.assertEqual(entity.native_value, expected)
                 self.assertEqual(entity.device_class, ha.SensorDeviceClass.TIMESTAMP)
                 self.assertIsNone(entity.native_unit_of_measurement)

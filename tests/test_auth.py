@@ -1,9 +1,9 @@
 """Login continuation and expired-credential recovery."""
 
-import copy
-import base64
-import hashlib
 import asyncio
+import base64
+import copy
+import hashlib
 import os
 import time
 import types
@@ -13,10 +13,10 @@ from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 import jwt
-
 import test_button as platform
-from custom_components.toyota_na import patch_auth
 from toyota_na.exceptions import LoginError, TokenExpired
+
+from custom_components.toyota_na import patch_auth
 
 
 class TokenStorageTests(unittest.IsolatedAsyncioTestCase):

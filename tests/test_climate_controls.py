@@ -1,17 +1,16 @@
 """Saved climate controls and preservation of unrelated preferences."""
 
 import asyncio
-from copy import deepcopy
 import json
 import types
 import unittest
+from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
-
-from aiohttp import ClientConnectionError
-from toyota_na.exceptions import AuthError
 
 import test_button as ha
 import test_vehicle_behavior as behavior
+from aiohttp import ClientConnectionError
+from toyota_na.exceptions import AuthError
 
 from custom_components.toyota_na import number, patch_client, select, switch
 from custom_components.toyota_na.climate_helpers import climate_parameters
@@ -237,7 +236,7 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
             (RuntimeError("Toyota rejected the change."), "Toyota rejected the change."),
             (ClientConnectionError("Toyota connection failed."), "Toyota connection failed."),
             (AuthError("Toyota session expired."), "Toyota session expired."),
-            (asyncio.TimeoutError(), "The Toyota request timed out."),
+            (TimeoutError(), "The Toyota request timed out."),
             (ClientConnectionError(), "The Toyota request failed. Try again."),
             (RuntimeError(), "The Toyota request failed. Try again."),
         ):

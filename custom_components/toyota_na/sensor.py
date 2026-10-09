@@ -1,9 +1,6 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
-
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
@@ -13,10 +10,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util.unit_conversion import PressureConverter
 
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
+from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
+
 from .base_entity import ToyotaNABaseEntity
+from .climate_schedule_helpers import local_climate_schedule
 from .const import DOMAIN, HEALTH_SENSORS, REMOTE_ACCESS_STATES, SENSORS
 from .entity_discovery import setup_entity_discovery
-from .climate_schedule_helpers import local_climate_schedule
 from .health_helpers import health_reading
 
 # Toyota reports tire pressure units in varying case, such as "kpa".
@@ -178,7 +178,7 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         if self._states:
             return self._states.get(str(feature.value).lower())
         if self.device_class == SensorDeviceClass.TIMESTAMP:
-            return datetime.fromtimestamp(feature.value, timezone.utc)
+            return datetime.fromtimestamp(feature.value, UTC)
         if self._unit_of_measurement == UnitOfPressure.PSI and feature.unit:
             unit = _PRESSURE_UNITS.get(str(feature.unit).lower())
             if unit is None:

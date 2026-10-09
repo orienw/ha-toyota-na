@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from datetime import datetime, timezone
 import json
+from collections.abc import Iterable, Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 _POSITION_STATES = {
@@ -137,7 +137,7 @@ def can_extend_remote_runtime(engine: Mapping[str, Any]) -> bool:
         and bool(engine.get("status"))
         and str(engine["status"]).lower() not in ("pending", "extendedrunning")
         and stop_time is not None
-        and stop_time > datetime.now(timezone.utc)
+        and stop_time > datetime.now(UTC)
     )
 
 
@@ -228,6 +228,6 @@ def parse_api_timestamp(value: Any) -> datetime | None:
     normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
         parsed = datetime.fromisoformat(normalized)
-        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
     except ValueError:
         return None

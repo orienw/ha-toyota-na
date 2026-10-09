@@ -1,8 +1,6 @@
 """Fire an event for each new notification in Toyota's history."""
 
-from datetime import datetime, timezone
-
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle
+from datetime import UTC, datetime
 
 from homeassistant.components.event import EventEntity
 from homeassistant.config_entries import ConfigEntry
@@ -10,12 +8,14 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle
+
 from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN, NOTIFICATION_EVENT_TYPES
 from .entity_discovery import setup_entity_discovery
 from .vehicle_helpers import app_string, parse_api_timestamp
 
-_OLDEST = datetime.min.replace(tzinfo=timezone.utc)
+_OLDEST = datetime.min.replace(tzinfo=UTC)
 
 
 async def async_setup_entry(

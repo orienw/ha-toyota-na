@@ -1,10 +1,5 @@
-from typing import Any, Union, cast
 import logging
-
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
+from typing import Any, cast
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -15,6 +10,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
+from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
+from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
+from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
 from .const import BINARY_SENSORS, DOMAIN, HEALTH_BINARY_SENSORS
@@ -91,7 +91,7 @@ async def async_setup_entry(
 
 
 class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
-    _device_class: Union[BinarySensorDeviceClass, str]
+    _device_class: BinarySensorDeviceClass | str
     _vehicle_feature: VehicleFeatures
     _icon: str
 
@@ -99,7 +99,7 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
         self,
         vehicle_feature: VehicleFeatures,
         icon: str,
-        device_class: Union[BinarySensorDeviceClass, str],
+        device_class: BinarySensorDeviceClass | str,
         *args: Any,
     ):
         super().__init__(*args)

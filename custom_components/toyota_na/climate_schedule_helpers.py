@@ -1,8 +1,8 @@
 """Convert Toyota reservations between UTC and Home Assistant's timezone."""
 
-from copy import deepcopy
-from datetime import date, datetime, time, timezone
 import math
+from copy import deepcopy
+from datetime import UTC, date, datetime, time
 
 from .charging_helpers import WEEKDAYS, schedule_time
 from .climate_helpers import climate_bounds
@@ -29,7 +29,7 @@ def _reservation_datetime(schedule, selected_date=None):
     except ValueError:
         # Toyota's app sends minutes; accept a time reported with seconds too.
         result = datetime.strptime(value, "%m-%d-%Y %H:%M:%S")
-    return result.replace(tzinfo=timezone.utc)
+    return result.replace(tzinfo=UTC)
 
 
 def _shift_days(days, offset):
@@ -152,7 +152,7 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
                 if "date" in changes:
                     raise ValueError("Climate schedule date must use YYYY-MM-DD.") from err
                 raise RuntimeError("Toyota did not return a valid climate schedule date.") from err
-        utc = local_time.astimezone(timezone.utc)
+        utc = local_time.astimezone(UTC)
         if utc.astimezone(zone).replace(tzinfo=None) != local_time.replace(tzinfo=None):
             raise ValueError(
                 "This local time does not exist because the clocks move forward. Choose another time."

@@ -1,19 +1,18 @@
 """Climate reservations preserve options, local times, and reported state."""
 
 import asyncio
-from copy import deepcopy
 import json
-from datetime import datetime
 import types
 import unittest
+from copy import deepcopy
+from datetime import datetime
 from unittest.mock import AsyncMock, Mock, patch
 from zoneinfo import ZoneInfo
 
 import aiohttp
-from toyota_na.exceptions import LoginError
-
 import test_button as ha
 import test_vehicle_behavior as behavior
+from toyota_na.exceptions import LoginError
 
 from custom_components.toyota_na import climate_schedule_helpers, patch_base_vehicle, sensor, switch
 from custom_components.toyota_na.climate_schedule_helpers import (
@@ -21,7 +20,6 @@ from custom_components.toyota_na.climate_schedule_helpers import (
     climate_schedule_matches,
     local_climate_schedule,
 )
-
 
 ZONE = ZoneInfo("America/Los_Angeles")
 NOW = datetime(2026, 9, 21, 12, tzinfo=ZONE)
@@ -749,7 +747,7 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
     async def test_any_failed_read_back_is_retried(self):
         read = self.client.get_climate_schedules.side_effect
         for failure in (
-            asyncio.TimeoutError(),
+            TimeoutError(),
             json.JSONDecodeError("Expecting value", "", 0),
             aiohttp.ClientResponseError(None, (), status=503),
             aiohttp.ClientConnectionError(),
@@ -781,7 +779,7 @@ class ClimateScheduleTests(unittest.IsolatedAsyncioTestCase):
 
         async def time_out_after_save(*args):
             if self.client.save_climate_schedule.await_count:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             return await read(*args)
 
         async def sleep(delay):

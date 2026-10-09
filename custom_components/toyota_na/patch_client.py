@@ -7,6 +7,7 @@ import uuid
 from urllib.parse import urlencode, urljoin
 
 import aiohttp
+
 from toyota_na.exceptions import AuthError, TokenExpired
 
 API_GATEWAY = "https://onecdn.telematicsct.com/oneapi/"
@@ -905,7 +906,7 @@ async def graphql_request(
                     if status < 400:
                         raise
                     result = {}
-            except aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError:
+            except TimeoutError, aiohttp.ClientError, json.JSONDecodeError:
                 if original_data is not None and not raise_errors:
                     return original_data
                 raise
@@ -966,9 +967,7 @@ async def graphql_request(
                     body[:500],
                 )
                 if raise_errors:
-                    raise RuntimeError(
-                        "Toyota GraphQL %s failed with HTTP %d" % (operation_name, status)
-                    )
+                    raise RuntimeError(f"Toyota GraphQL {operation_name} failed with HTTP {status}")
                 return original_data
             if errors:
                 err = errors[0]
@@ -1365,7 +1364,7 @@ async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unkno
                     request_no,
                     fail_on_unknown=fail_on_unknown,
                 )
-            except asyncio.TimeoutError as err:
+            except TimeoutError as err:
                 raise RuntimeError(
                     "Toyota accepted the command but did not report completion within 60 seconds."
                 ) from err

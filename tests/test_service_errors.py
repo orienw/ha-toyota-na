@@ -6,10 +6,9 @@ import types
 import unittest
 from unittest.mock import AsyncMock, patch
 
+import test_button as ha
 from aiohttp import ClientResponseError
 from toyota_na.exceptions import TokenExpired
-
-import test_button as ha
 
 
 class CommandServiceErrorTests(unittest.IsolatedAsyncioTestCase):

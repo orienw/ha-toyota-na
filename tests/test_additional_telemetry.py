@@ -1,16 +1,14 @@
 """Additional returned measurements, with units and source ordering."""
 
-from copy import deepcopy
-from datetime import datetime, timezone
 import unittest
+from copy import deepcopy
+from datetime import UTC, datetime
 
 import test_button as ha
 import test_vehicle_behavior as behavior
 
-from custom_components.toyota_na import sensor
-from custom_components.toyota_na import binary_sensor
+from custom_components.toyota_na import binary_sensor, sensor
 from custom_components.toyota_na.patch_base_vehicle import VehicleFeatures
-
 
 STATUS = {
     "telemetry": {
@@ -151,10 +149,8 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
         by_name = {entity.sensor_name: entity for entity in entities}
         updated = by_name["Last Update Timestamp"]
         tire_updated = by_name["Last Tire Pressure Update Timestamp"]
-        self.assertEqual(datetime(2026, 9, 15, 12, 5, tzinfo=timezone.utc), updated.native_value)
-        self.assertEqual(
-            datetime(2026, 9, 15, 11, 58, tzinfo=timezone.utc), tire_updated.native_value
-        )
+        self.assertEqual(datetime(2026, 9, 15, 12, 5, tzinfo=UTC), updated.native_value)
+        self.assertEqual(datetime(2026, 9, 15, 11, 58, tzinfo=UTC), tire_updated.native_value)
 
         vehicle.apply_graphql_status(
             {
@@ -180,10 +176,8 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
         replacement.inherit_state(vehicle)
         replacement._parse_telemetry({"lastTimestamp": "2026-09-15T12:07:00Z"})
         coordinator.data = [replacement]
-        self.assertEqual(datetime(2026, 9, 15, 12, 10, tzinfo=timezone.utc), updated.native_value)
-        self.assertEqual(
-            datetime(2026, 9, 15, 12, 2, tzinfo=timezone.utc), tire_updated.native_value
-        )
+        self.assertEqual(datetime(2026, 9, 15, 12, 10, tzinfo=UTC), updated.native_value)
+        self.assertEqual(datetime(2026, 9, 15, 12, 2, tzinfo=UTC), tire_updated.native_value)
 
     async def test_missing_tire_section_does_not_invent_a_tire_timestamp(self):
         vehicle = behavior.make_24mm_vehicle()
@@ -225,7 +219,7 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
                                 expected, getattr(vehicle.features[feature], attribute)
                             )
                     self.assertEqual(
-                        datetime(2026, 9, 15, 12, tzinfo=timezone.utc).timestamp(),
+                        datetime(2026, 9, 15, 12, tzinfo=UTC).timestamp(),
                         vehicle.features[VehicleFeatures.LastTimeStamp].value,
                     )
                     self.assertEqual(original, update)

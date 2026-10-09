@@ -6,9 +6,10 @@ import math
 import secrets
 import time
 from copy import deepcopy
+from urllib.parse import parse_qs, urlencode, urlparse
+
 import aiohttp
 import jwt
-from urllib.parse import urlparse, parse_qs, urlencode
 
 from toyota_na import ToyotaOneAuth
 from toyota_na.exceptions import LoginError, NotLoggedIn, TokenExpired

@@ -7,7 +7,6 @@ import logging
 import uuid
 from collections.abc import Callable, Mapping
 from time import monotonic
-from typing import Optional
 
 import aiohttp
 
@@ -39,7 +38,7 @@ class ToyotaWebSocketHandler:
     def __init__(
         self,
         client,
-        status_callback: Optional[Callable[[str, dict], None]] = None,
+        status_callback: Callable[[str, dict], None] | None = None,
     ):
         """Initialize with a ToyotaOneClient instance (already monkey-patched)."""
         self._client = client

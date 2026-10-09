@@ -1,12 +1,12 @@
-from abc import ABC, abstractmethod
 import asyncio
-from contextlib import asynccontextmanager
 import logging
 import time
+from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
 from enum import Enum, auto, unique
-from typing import Optional, Union
 
 import aiohttp
+
 from toyota_na.client import ToyotaOneClient
 from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
@@ -15,6 +15,15 @@ from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
+from .charging_helpers import (
+    CHARGE_SETTINGS,
+    build_charge_schedule,
+    charge_options,
+    schedule_identifier,
+    schedule_matches,
+)
+from .climate_helpers import apply_climate_changes
+from .climate_schedule_helpers import build_climate_schedule, climate_schedule_matches
 from .vehicle_helpers import (
     can_extend_remote_runtime,
     endpoint_generation,
@@ -23,15 +32,6 @@ from .vehicle_helpers import (
     merge_opening_states,
     opening_state_from_values,
     parse_api_timestamp,
-)
-from .climate_helpers import apply_climate_changes
-from .climate_schedule_helpers import build_climate_schedule, climate_schedule_matches
-from .charging_helpers import (
-    CHARGE_SETTINGS,
-    build_charge_schedule,
-    charge_options,
-    schedule_identifier,
-    schedule_matches,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -154,17 +154,11 @@ class ToyotaVehicle(ABC):
     _client: ToyotaOneClient
     _features: dict[
         VehicleFeatures,
-        Union[
-            ToyotaLocation,
-            ToyotaLockableOpening,
-            ToyotaNumeric,
-            ToyotaRemoteStart,
-            ToyotaOpening,
-        ],
+        ToyotaLocation | ToyotaLockableOpening | ToyotaNumeric | ToyotaRemoteStart | ToyotaOpening,
     ]
     _has_remote_subscription = False
     _has_electric = False
-    _remote_display: Optional[int] = None
+    _remote_display: int | None = None
     _model_name: str
     _model_year: str
     _generation: ApiVehicleGeneration
@@ -241,12 +235,12 @@ class ToyotaVehicle(ABC):
         region: str,
         generation: ApiVehicleGeneration,
         brand: str = "T",
-        backdoor_type: Optional[str] = None,
-        remote_capabilities: Optional[dict] = None,
-        extended_capabilities: Optional[dict] = None,
-        feature_flags: Optional[dict] = None,
-        legacy_capabilities: Optional[list] = None,
-        remote_display: Optional[int] = None,
+        backdoor_type: str | None = None,
+        remote_capabilities: dict | None = None,
+        extended_capabilities: dict | None = None,
+        feature_flags: dict | None = None,
+        legacy_capabilities: list | None = None,
+        remote_display: int | None = None,
     ):
         """
         Initialize a new vehicle object. Must call `vehicle.update()` to fully populate the object.
@@ -301,13 +295,7 @@ class ToyotaVehicle(ABC):
         self,
     ) -> dict[
         VehicleFeatures,
-        Union[
-            ToyotaLocation,
-            ToyotaLockableOpening,
-            ToyotaNumeric,
-            ToyotaOpening,
-            ToyotaRemoteStart,
-        ],
+        ToyotaLocation | ToyotaLockableOpening | ToyotaNumeric | ToyotaOpening | ToyotaRemoteStart,
     ]:
         """Provides a programmatic representation of all the features of the vehicle and their current states."""
         return self._features
@@ -381,7 +369,7 @@ class ToyotaVehicle(ABC):
         return self._extended_capabilities
 
     @property
-    def remote_display(self) -> Optional[int]:
+    def remote_display(self) -> int | None:
         """Return Toyota's remote activation state from the vehicle list."""
         return self._remote_display
 
@@ -1033,7 +1021,7 @@ class ToyotaVehicle(ABC):
             return supported is True
         return supported is not False
 
-    def inherit_state(self, previous: "ToyotaVehicle") -> bool:
+    def inherit_state(self, previous: ToyotaVehicle) -> bool:
         """Share observations with matching vehicle instances used by active polls."""
         if (
             previous.vin != self.vin

@@ -1,18 +1,16 @@
 """Legacy tire readings share entities and source ordering with AppSync."""
 
-from copy import deepcopy
 import types
 import unittest
+from copy import deepcopy
 from unittest.mock import AsyncMock
-
-from toyota_na.exceptions import LoginError
 
 import test_button as ha
 import test_vehicle_behavior as behavior
+from toyota_na.exceptions import LoginError
 
 from custom_components.toyota_na import binary_sensor
 from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration, VehicleFeatures
-
 
 TIRES = {
     "vin": "TESTVIN",
