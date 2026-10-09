@@ -1,93 +1,23 @@
 """Run the integration in a real Home Assistant with Toyota's cloud stubbed."""
 
-import json
-import time
 from copy import deepcopy
-from pathlib import Path
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
+from common import EMAIL, STATUS_24MM, FakeClient, FakeWebSocket, account_entry, set_up
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.wake_policy import CONF_WAKE_INTERVAL, LAST_VEHICLE_WAKES
 
-pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
-
 VIN = "TESTVIN24"
-EMAIL = "owner@example.com"
-STATUS = json.loads((Path(__file__).parents[1] / "fixtures/vehicle_24mm.json").read_text())
-VEHICLE = {
-    "vin": VIN,
-    "modelYear": "2026",
-    "modelName": "RAV4 PLUG-IN HYBRID",
-    "generation": "24MM",
-    "brand": "T",
-    "region": "CA",
-    "subscriptionStatus": "subscribed",
-    "remoteSubscriptionExists": True,
-    "remoteServiceCapabilities": {"estartStopCapable": True, "dlockUnlockCapable": True},
-    "extendedCapabilities": {"remoteEngineStartStop": True, "doorLockUnlockCapable": True},
-    "backdoorType": "hatch",
-    "fuelType": "I",
-    "evVehicle": False,
-}
 LOCK = "lock.2026_rav4_plug_in_hybrid"
 
 
-class FakeClient:
-    """Answer for one 24MM vehicle. Every other read returns nothing."""
-
-    def __init__(self, auth):
-        self.auth = auth
-        self.calls = {}
-        self.get_user_vehicle_list = AsyncMock(return_value=[VEHICLE])
-
-    async def graphql_get_vehicle_status(self, vin, backdoor_type, region):
-        return STATUS
-
-    def __getattr__(self, name):
-        if name.startswith("_"):
-            raise AttributeError(name)
-        return self.calls.setdefault(name, AsyncMock(return_value=None))
-
-
-class FakeWebSocket:
-    def __init__(self, client, on_status):
-        self.on_status = on_status
-        self.start = AsyncMock()
-        self.stop = AsyncMock()
-        self.update_vehicle_contexts = AsyncMock()
-
-    def get_cached_status(self, vin):
-        return None
-
-
-def account_entry(**kwargs):
-    now = time.time()
-    tokens = {
-        "access_token": "test-access",
-        "refresh_token": "test-refresh",
-        "id_token": "test-id",
-        "expires_at": now + 3600,
-        "updated_at": now,
-        "guid": "test-guid",
-        "clock": "unix",
-    }
-    return MockConfigEntry(
-        domain=DOMAIN,
-        title=EMAIL,
-        unique_id=f"{DOMAIN}:{EMAIL}",
-        data={"tokens": tokens, "device_id": "test-device", "email": EMAIL, "username": EMAIL},
-        **kwargs,
-    )
-
-
 @pytest.fixture
-async def loaded(hass):
+async def loaded(hass, caplog):
     # A wake interval of 0 keeps setup from waking the vehicle.
     entry = account_entry(options={CONF_WAKE_INTERVAL: 0})
     entry.add_to_hass(hass)
@@ -96,8 +26,7 @@ async def loaded(hass):
         patch("custom_components.toyota_na.ToyotaWebSocketHandler", FakeWebSocket),
         patch("custom_components.toyota_na.COMMAND_REFRESH_DELAY", 0),
     ):
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
+        await set_up(hass, entry, caplog)
         runtime = hass.data[DOMAIN][entry.entry_id]
         yield entry, runtime["toyota_na_client"], runtime["ws_handler"]
         if entry.state is ConfigEntryState.LOADED:
@@ -125,7 +54,7 @@ async def test_setup_reads_the_vehicle_into_entities_and_unloads(hass, loaded):
 
 async def test_pushed_status_updates_entities(hass, loaded):
     _, _, websocket = loaded
-    status = deepcopy(STATUS)
+    status = deepcopy(STATUS_24MM)
     status["lastUpdateDateTime"] = status["vehicleState"]["lastUpdateDateTime"] = (
         "2026-08-14T12:05:00Z"
     )
