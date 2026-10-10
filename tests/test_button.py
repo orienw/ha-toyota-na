@@ -280,11 +280,11 @@ class TestNumericSensors:
     @pytest.mark.parametrize(
         ("value", "unit", "expected"),
         [
-            (240, "kPa", 34.809058),
-            (240, "kpa", 34.809058),
-            (2.4, "bar", 34.809058),
-            (2.4, "BAR", 34.809058),
-            (0, "kPa", 0),
+            (240, "kPa", "34.8"),
+            (240, "kpa", "34.8"),
+            (2.4, "bar", "34.8"),
+            (2.4, "BAR", "34.8"),
+            (0, "kPa", "0.0"),
         ],
     )
     async def test_pressure_sensor_converts_reported_units_to_psi(
@@ -295,7 +295,7 @@ class TestNumericSensors:
         await setup_vehicles([vehicle])
 
         state = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Spare Tire Pressure"))
-        assert float(state.state) == pytest.approx(expected)
+        assert state.state == expected
         assert state.attributes["unit_of_measurement"] == "psi"
 
     async def test_native_and_missing_pressure_values_do_not_need_conversion(

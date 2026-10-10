@@ -184,7 +184,7 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
             if unit is None:
                 return None
             if unit != UnitOfPressure.PSI:
-                return PressureConverter.convert(feature.value, unit, UnitOfPressure.PSI)
+                return round(PressureConverter.convert(feature.value, unit, UnitOfPressure.PSI), 1)
         return feature.value
 
     @property
