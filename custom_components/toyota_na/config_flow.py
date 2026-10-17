@@ -8,7 +8,7 @@ from toyota_na import ToyotaOneClient
 from toyota_na.exceptions import AuthError
 
 from .const import DOMAIN, REFRESH_STATUS_INTERVAL
-from .patch_auth import SsoAccountError
+from .patch_auth import PasswordHistoryError, SsoAccountError
 from .wake_policy import (
     CONF_WAKE_INTERVAL,
     WAKE_INTERVAL_OPTIONS,
@@ -42,6 +42,9 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return await self.async_step_otp()
                 data = await self.async_get_entry_data(self.client, authorization)
                 return await self.async_create_or_update_entry(data)
+            except PasswordHistoryError:
+                errors["base"] = "password_history_failure"
+                _LOGGER.error("Toyota password recovery is required")
             except SsoAccountError:
                 errors["base"] = "sso_account"
                 _LOGGER.error("Toyota account requires identity provider sign-in")
@@ -70,6 +73,9 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 data = await self.async_get_entry_data(self.client, authorization)
                 return await self.async_create_or_update_entry(data)
+            except PasswordHistoryError:
+                _LOGGER.error("Toyota password recovery is required")
+                return await self._async_user_step(None, {"base": "password_history_failure"})
             except SsoAccountError:
                 _LOGGER.error("Toyota account requires identity provider sign-in")
                 return await self._async_user_step(None, {"base": "sso_account"})

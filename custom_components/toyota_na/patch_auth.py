@@ -26,6 +26,10 @@ class SsoAccountError(LoginError):
     """Raised when a Toyota account cannot sign in with a password."""
 
 
+class PasswordHistoryError(LoginError):
+    """Raised when Toyota rejects a previously used password."""
+
+
 async def check_tokens(self, *, rejected_token=None):
     """Serialize refreshes and cap expiry margins at 10% of token lifetime."""
     lock = getattr(self, "_token_lock", None)
@@ -216,17 +220,26 @@ async def authorize(self, username, password, otp=None):
                     _LOGGER.info("Toyota authentication failed with HTTP %s", resp.status)
                     raise LoginError()
                 data = await resp.json()
-                if any(
-                    cb["type"] == "TextOutputCallback"
-                    and any(
-                        (output.get("name") == "messageType" and output.get("value") == 2)
-                        or str(output.get("value", "")).strip().casefold() == "invalid otp"
+                for cb in data.get("callbacks", []):
+                    if cb["type"] != "TextOutputCallback":
+                        continue
+                    outputs = {
+                        output.get("name"): output.get("value")
                         for output in cb.get("output", [])
-                    )
-                    for cb in data.get("callbacks", [])
-                ):
+                    }
+                    message = str(outputs.get("message") or "").strip()
+                    if (
+                        str(outputs.get("messageType", "")).strip() != "2"
+                        and message.casefold() != "invalid otp"
+                    ):
+                        continue
                     self.otp_callbacks = data
-                    _LOGGER.error("Toyota rejected the authentication challenge")
+                    _LOGGER.error(
+                        "Toyota rejected the authentication challenge: %s",
+                        message or "unspecified error",
+                    )
+                    if message.casefold() == "password_history_failure":
+                        raise PasswordHistoryError()
                     raise LoginError()
                 if "tokenId" in data:
                     break
