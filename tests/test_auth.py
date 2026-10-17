@@ -274,6 +274,53 @@ class TestAuthFlow:
         assert "password" not in result["data"]
         auth.request_tokens.assert_awaited_once_with("code")
 
+    @pytest.mark.parametrize("source", ["user", "reauth"])
+    @pytest.mark.parametrize("after_otp", [False, True])
+    async def test_password_history_errors_return_to_credentials(
+        self, hass, auth, caplog, source, after_otp
+    ):
+        entry = None
+        initial = None
+        if source == "reauth":
+            entry = account_entry(
+                data={"password": "old-password", "tokens": {"access_token": "expired"}}
+            )
+            entry.add_to_hass(hass)
+            previous_data = copy.deepcopy(dict(entry.data))
+            initial = await entry.start_reauth_flow(hass)
+        auth.authorize.side_effect = (
+            [{"callbacks": []}, patch_auth.PasswordHistoryError(), "recovery-code"]
+            if after_otp
+            else [patch_auth.PasswordHistoryError(), "recovery-code"]
+        )
+        result = await self.sign_in(hass, initial)
+        if after_otp:
+            assert result["step_id"] == "otp"
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"code": "123456"}
+            )
+        assert (result["step_id"], result["errors"]) == (
+            "user",
+            {"base": "password_history_failure"},
+        )
+        assert errors_logged(caplog, config_flow.__name__)
+        auth.request_tokens.assert_not_awaited()
+        if entry:
+            assert entry.data == previous_data
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**CREDENTIALS, "password": "new-password"}
+        )
+        await hass.async_block_till_done()
+        auth.authorize.assert_awaited_with("owner", "new-password")
+        auth.request_tokens.assert_awaited_once_with("recovery-code")
+        if entry:
+            assert result["reason"] == "reauth_successful"
+            assert hass.config_entries.async_entries(DOMAIN) == [entry]
+        else:
+            assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert "password" not in (entry.data if entry else result["data"])
+
     async def test_identity_provider_account_reports_password_setup_error(self, hass, auth, caplog):
         auth.authorize.side_effect = patch_auth.SsoAccountError()
 
@@ -456,6 +503,81 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
             "output": [{"name": "prompt", "value": prompt}],
             "input": [{"name": "IDToken1", "value": value}],
         }
+
+    def text_callback(self, message, message_type):
+        return {
+            "type": "TextOutputCallback",
+            "output": [
+                {"name": "message", "value": message},
+                {"name": "messageType", "value": message_type},
+            ],
+        }
+
+    async def test_text_errors_stop_login_and_log_only_the_message(self):
+        for message_type in (2, "2", " 2 "):
+            with self.subTest(message_type=message_type):
+                self.sent.clear()
+                self.auth.otp_callbacks = {
+                    "authId": "private-auth-session",
+                    "callbacks": [self.callback("PasswordCallback", "One Time Password")],
+                }
+                rejected = {
+                    "authId": "private-retry-session",
+                    "callbacks": [
+                        self.text_callback("account_disabled", message_type),
+                        self.callback("PasswordCallback", "One Time Password", "private-input"),
+                    ],
+                }
+                self.response.json.side_effect = [rejected]
+                with self.assertLogs(patch_auth.__name__, level="ERROR") as logs:
+                    with self.assertRaises(LoginError):
+                        await patch_auth.authorize(
+                            self.auth, "owner", "private-password", "private-otp"
+                        )
+                self.assertEqual(len(self.sent), 1)
+                self.assertIs(self.auth.otp_callbacks, rejected)
+                self.assertIn("account_disabled", " ".join(logs.output))
+                self.assertNotIn("private-", " ".join(logs.output))
+                self.session.get.assert_not_called()
+
+    async def test_password_history_error_after_otp_requires_recovery(self):
+        for message_type in (2, "2"):
+            with self.subTest(message_type=message_type):
+                self.sent.clear()
+                self.auth.otp_callbacks = {
+                    "callbacks": [self.callback("PasswordCallback", "One Time Password")],
+                }
+                self.response.json.side_effect = [
+                    {"callbacks": [self.callback("PasswordCallback", "Password")]},
+                    {"callbacks": [self.text_callback("password_history_failure", message_type)]},
+                ]
+                with self.assertLogs(patch_auth.__name__, level="ERROR") as logs:
+                    with self.assertRaises(patch_auth.PasswordHistoryError):
+                        await patch_auth.authorize(self.auth, "owner", "password", "123456")
+                self.assertEqual(
+                    ["123456", "password"],
+                    [data["callbacks"][0]["input"][0]["value"] for data in self.sent],
+                )
+                self.assertIn("password_history_failure", " ".join(logs.output))
+                self.session.get.assert_not_called()
+
+    async def test_otp_login_can_continue_to_password(self):
+        otp_challenge = {
+            "callbacks": [
+                self.text_callback("Enter OTP received on your Phone/Email", "0"),
+                self.callback("PasswordCallback", "One Time Password"),
+            ]
+        }
+        self.response.json.side_effect = [
+            otp_challenge,
+            {"callbacks": [self.callback("PasswordCallback", "Password")]},
+            {"tokenId": "session"},
+        ]
+        self.assertEqual(otp_challenge, await patch_auth.authorize(self.auth, "owner", "password"))
+        self.assertEqual(
+            "code", await patch_auth.authorize(self.auth, "owner", "password", "123456")
+        )
+        self.assertEqual(self.sent[-1]["callbacks"][0]["input"][0]["value"], "password")
 
     async def test_authorization_accepts_valid_redirects(self):
         self.response.json.return_value = {"tokenId": "session"}

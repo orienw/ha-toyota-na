@@ -24,6 +24,7 @@
     "error": {
       "not_logged_in": "Not logged in",
       "otp_not_logged_in": "Invalid verification code",
+      "password_history_failure": "Toyota rejected a previously used password. Reset your password in the Toyota or Lexus mobile app, then sign in here again with your new password.",
       "sso_account": "Apple, Google, and Facebook sign-in are not supported. Sign out of the Toyota app and sign in with the same email address that Apple, Google, or Facebook uses, then tap Forgot password to set a password. Sign in here with that email and password.",
       "unknown": "Unexpected error"
     }
