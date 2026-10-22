@@ -41,7 +41,7 @@ WINDOWS_CLOSE = "windows_close"
 MOONROOF_CLOSE = "moonroof_close"
 
 UPDATE_INTERVAL = 600
-REFRESH_STATUS_INTERVAL = 2 * 3600
+REFRESH_STATUS_INTERVAL = 0
 
 COMMAND_MAP = {
     DOOR_LOCK: RemoteRequestCommand.DoorLock,

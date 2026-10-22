@@ -1,13 +1,17 @@
 """Vehicle controls, door and location entities, and polling in a real Home Assistant."""
 
 import logging
+from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
-from common import FakeVehicle, account_entry, entity_id, settle
+from common import FakeClient, FakeVehicle, FakeWebSocket, account_entry, entity_id, set_up, settle
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     async_capture_events,
+    async_fire_time_changed,
 )
 from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
@@ -335,6 +339,41 @@ class TestDeviceTracker:
 
 
 class TestCoordinatorUpdate:
+    @pytest.mark.parametrize("previous_wake", [None, 0])
+    async def test_existing_entry_without_wake_option_only_reads_cloud(
+        self, hass, freezer, caplog, previous_wake
+    ):
+        data = (
+            {LAST_VEHICLE_WAKES: [{"vin": "TESTVIN24", "timestamp": previous_wake}]}
+            if previous_wake is not None
+            else {}
+        )
+        entry = account_entry(data=data)
+        entry.add_to_hass(hass)
+        with (
+            patch("custom_components.toyota_na.ToyotaOneClient", FakeClient),
+            patch("custom_components.toyota_na.ToyotaWebSocketHandler", FakeWebSocket),
+            patch("custom_components.toyota_na.COMMAND_REFRESH_DELAY", 0),
+        ):
+            await set_up(hass, entry, caplog)
+            try:
+                client = hass.data[DOMAIN][entry.entry_id]["toyota_na_client"]
+                client.get_user_vehicle_list.assert_awaited_once()
+                client.graphql_refresh_status.assert_not_awaited()
+
+                freezer.tick(timedelta(seconds=601))
+                async_fire_time_changed(hass, dt_util.utcnow())
+                await hass.async_block_till_done()
+
+                assert client.get_user_vehicle_list.await_count == 2
+                assert client.get_notification_history.await_count == 2
+                assert client.get_vehicle_health_report.await_count == 2
+                client.graphql_refresh_status.assert_not_awaited()
+                assert entry.options == {}
+                assert entry.data.get(LAST_VEHICLE_WAKES) == data.get(LAST_VEHICLE_WAKES)
+            finally:
+                assert await hass.config_entries.async_unload(entry.entry_id)
+
     async def test_poll_reconciles_only_current_push_capable_vehicles(
         self, hass, setup_vehicles, caplog
     ):
@@ -373,13 +412,14 @@ class TestCoordinatorUpdate:
             and record.levelno >= logging.WARNING
         ]
 
-    async def test_automatic_wakes_schedule_one_followup_poll(self, hass, setup_vehicles):
+    @pytest.mark.parametrize("interval", [2 * 3600, 12 * 3600])
+    async def test_automatic_wakes_schedule_one_followup_poll(self, hass, setup_vehicles, interval):
         vehicles = [FakeVehicle(set(), vin="FIRSTVIN"), FakeVehicle(set(), vin="SECONDVIN")]
         account = await setup_vehicles(vehicles)
         await settle(hass)
         # Neither vehicle has a recorded wake, so the next poll wakes both.
         hass.config_entries.async_update_entry(
-            account.entry, options={CONF_WAKE_INTERVAL: 2 * 3600}
+            account.entry, options={CONF_WAKE_INTERVAL: interval}
         )
         polls = account.get_vehicles.await_count
 
@@ -400,10 +440,10 @@ class TestOptionsFlow:
         entry.add_to_hass(hass)
         return entry, await hass.config_entries.options.async_init(entry.entry_id)
 
-    async def test_default_preserves_existing_two_hour_behavior(self, hass):
+    async def test_default_selects_cloud_updates_only(self, hass):
         _, result = await self.open(hass)
 
-        assert result["data_schema"]({}) == {CONF_WAKE_INTERVAL: str(2 * 3600)}
+        assert result["data_schema"]({}) == {CONF_WAKE_INTERVAL: "0"}
 
     async def test_manual_only_is_saved(self, hass):
         entry, result = await self.open(hass)
@@ -416,7 +456,7 @@ class TestOptionsFlow:
         assert result["data"] == {CONF_WAKE_INTERVAL: 0}
         assert entry.options == {CONF_WAKE_INTERVAL: 0}
 
-    @pytest.mark.parametrize("interval", [0, 12 * 3600])
+    @pytest.mark.parametrize("interval", [0, 2 * 3600, 12 * 3600])
     async def test_saved_interval_is_selected_when_reopened(self, hass, interval):
         _, result = await self.open(hass, options={CONF_WAKE_INTERVAL: interval})
 

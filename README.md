@@ -94,11 +94,14 @@ uses one of them, sign out of the Toyota app and sign in with the same email
 address that Apple, Google, or Facebook uses, then tap **Forgot password** to
 set a password. Sign in here with that email and password.
 
-Use **Configure** to choose how vehicle status is updated. Home Assistant
-always reads Toyota's cloud data. That data stays unchanged until the
-vehicle contacts Toyota. Choose **Cloud updates only** to skip scheduled
-wakes. Refresh Status and remote commands stay available. Pick an interval
-to wake the vehicle.
+**Cloud updates only** is the default. Home Assistant checks Toyota's cloud
+every ten minutes without scheduled vehicle wakes. Vehicle readings can
+remain unchanged until the vehicle contacts Toyota. **Refresh Status** and
+remote commands remain available. Use **Configure** to choose an interval
+if you want automatic vehicle wakes.
+
+Existing installations without a saved wake interval also use this default.
+An interval you previously selected in **Configure** is preserved.
 
 ## Current features
 
