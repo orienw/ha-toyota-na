@@ -1,81 +1,192 @@
 """Expected failures reach Home Assistant through every command entry point."""
 
 import asyncio
+import base64
 import json
+import logging
 import types
-import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
+import aiohttp
+import pytest
 from aiohttp import ClientResponseError
+from common import FakeVehicle, entity_id, get_entity, make_24mm_vehicle, settle
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import entity_registry as er
+from toyota_na.client import ToyotaOneClient
 from toyota_na.exceptions import TokenExpired
 
-import test_button as ha
+from custom_components.toyota_na import patch_client
+from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.patch_base_vehicle import RemoteRequestCommand
 
 
-class CommandServiceErrorTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.vehicle = ha.FakeVehicle({
-            ha.RemoteRequestCommand.DoorLock, ha.RemoteRequestCommand.DoorUnlock,
-            ha.RemoteRequestCommand.EngineStart,
-        })
-        self.coordinator = ha.DataUpdateCoordinator([self.vehicle])
-        self.hass = ha.FakeHass(self.coordinator)
-        self.entry = ha.ConfigEntry()
-        buttons = []
-        await ha.button.async_setup_entry(self.hass, self.entry, lambda added, update: buttons.extend(added))
-        for button in buttons:
-            button.hass = self.hass
-        self.lock = ha.lock_platform.ToyotaLock(self.entry, self.coordinator, "", self.vehicle.vin)
-        self.lock.hass = self.hass
-        handlers = {}
-        self.hass.services = types.SimpleNamespace(async_register=lambda domain, name, handler: handlers.update({name: handler}))
-        self.hass.async_get_entry = lambda entry_id: self.entry
-        self.hass.device_registry = types.SimpleNamespace(async_get=lambda device_id: types.SimpleNamespace(
-            config_entries={self.entry.entry_id}, identifiers={(ha.DOMAIN, self.vehicle.vin)},
-        ))
-        await ha.integration_runtime.async_setup(self.hass, {})
-        self.actions = [
-            (buttons[0].async_press, (), "send_command"),
-            (buttons[-1].async_press, (), "poll_vehicle_refresh"),
-            (self.lock.async_lock, (), "send_command"),
-            (self.lock.async_unlock, (), "send_command"),
-        ]
-        for service, operation in ((ha.lock_platform.DOOR_LOCK, "send_command"), ("refresh", "poll_vehicle_refresh")):
-            call = types.SimpleNamespace(service=service, data={"vehicle": "device"})
-            self.actions.append((handlers[service], (call,), operation))
+@pytest.fixture
+async def commands(hass, setup_vehicles):
+    vehicle = FakeVehicle(
+        {
+            RemoteRequestCommand.DoorLock,
+            RemoteRequestCommand.DoorUnlock,
+            RemoteRequestCommand.EngineStart,
+        }
+    )
+    account = await setup_vehicles([vehicle])
+    # Nothing from setup is left waiting, so a poll after a failed command shows in the count.
+    await settle(hass)
+    lock = entity_id(hass, "lock", "TESTVIN.")
+    device_id = er.async_get(hass).async_get(lock).device_id
+    target = {"entity_id": entity_id(hass, "button", "TESTVIN.Remote Start")}
+    refresh = {"entity_id": entity_id(hass, "button", "TESTVIN.Refresh Status")}
+    actions = [
+        ("button", "press", target, "send_command"),
+        ("button", "press", refresh, "poll_vehicle_refresh"),
+        ("lock", "lock", {"entity_id": lock}, "send_command"),
+        ("lock", "unlock", {"entity_id": lock}, "send_command"),
+        (DOMAIN, "door_lock", {"vehicle": device_id}, "send_command"),
+        (DOMAIN, "refresh", {"vehicle": device_id}, "poll_vehicle_refresh"),
+    ]
+    return vehicle, account, lock, actions
 
-    async def test_expected_command_failures_use_home_assistant_errors(self):
-        request_info = types.SimpleNamespace(real_url="https://example.invalid/remote/command")
-        detail = "Vehicle not reachable [ONE-RES-40001]"
-        for error, expected_type, message in (
-            (ValueError("Command is unavailable."), ha.exceptions.ServiceValidationError, "Command is unavailable."),
-            (RuntimeError("Toyota rejected the command."), ha.exceptions.HomeAssistantError, "Toyota rejected the command."),
-            (TokenExpired(), ha.exceptions.HomeAssistantError, "Toyota authentication failed. Sign in again."),
-            (json.JSONDecodeError("Expecting value", "invalid", 0), ha.exceptions.HomeAssistantError, "Toyota returned an invalid response."),
-            (ClientResponseError(request_info, (), status=400, message=detail), ha.exceptions.HomeAssistantError, detail),
-            (ClientResponseError(request_info, (), status=400), ha.exceptions.HomeAssistantError, "The Toyota request failed. Try again."),
-        ):
-            for action, args, operation in self.actions:
-                with self.subTest(action=action, args=args, error=type(error)):
-                    with patch.object(self.vehicle, operation, AsyncMock(side_effect=error)) as send:
-                        with self.assertRaises(expected_type) as raised:
-                            await action(*args)
-                    self.assertIs(type(raised.exception), expected_type)
-                    self.assertEqual(message, str(raised.exception))
-                    self.assertIs(error, raised.exception.__cause__)
-                    send.assert_awaited_once()
-                    self.assertFalse(self.lock._state_changing)
-                    self.assertEqual({}, self.entry.data)
-                    self.assertEqual([], self.hass.tasks)
 
-    async def test_cancellation_and_unexpected_errors_propagate(self):
-        for error in (asyncio.CancelledError(), KeyError("broken payload")):
-            for action, args, operation in self.actions:
-                with self.subTest(action=action, args=args, error=type(error)):
-                    with patch.object(self.vehicle, operation, AsyncMock(side_effect=error)):
-                        with self.assertRaises(type(error)) as raised:
-                            await action(*args)
-                    self.assertIs(error, raised.exception)
-                    self.assertFalse(self.lock._state_changing)
-                    self.assertEqual({}, self.entry.data)
-                    self.assertEqual([], self.hass.tasks)
+async def test_expected_command_failures_use_home_assistant_errors(hass, commands, subtests):
+    vehicle, account, lock, actions = commands
+    data = dict(account.entry.data)
+    polls = account.get_vehicles.await_count
+    request_info = types.SimpleNamespace(real_url="https://example.invalid/remote/command")
+    detail = "Vehicle not reachable [ONE-RES-40001]"
+    for error, expected_type, message in (
+        (
+            ValueError("Command is unavailable."),
+            ServiceValidationError,
+            "Command is unavailable.",
+        ),
+        (
+            RuntimeError("Toyota rejected the command."),
+            HomeAssistantError,
+            "Toyota rejected the command.",
+        ),
+        (
+            TokenExpired(),
+            HomeAssistantError,
+            "Toyota authentication failed. Sign in again.",
+        ),
+        (
+            json.JSONDecodeError("Expecting value", "invalid", 0),
+            HomeAssistantError,
+            "Toyota returned an invalid response.",
+        ),
+        (
+            ClientResponseError(request_info, (), status=400, message=detail),
+            HomeAssistantError,
+            detail,
+        ),
+        (
+            ClientResponseError(request_info, (), status=400),
+            HomeAssistantError,
+            "The Toyota request failed. Try again.",
+        ),
+    ):
+        for domain, service, target, operation in actions:
+            with subtests.test(domain=domain, service=service, target=target, error=type(error)):
+                with patch.object(vehicle, operation, AsyncMock(side_effect=error)) as send:
+                    with pytest.raises(expected_type) as raised:
+                        await hass.services.async_call(domain, service, target, blocking=True)
+                    await hass.async_block_till_done()
+                assert type(raised.value) is expected_type
+                assert str(raised.value) == message
+                assert raised.value.__cause__ is error
+                send.assert_awaited_once()
+                # With no door lock states the lock can't show locking, so read the flag itself.
+                assert not get_entity(hass, lock)._state_changing
+                assert account.entry.data == data
+                assert account.get_vehicles.await_count == polls
+
+
+async def test_cancellation_and_unexpected_errors_propagate(hass, commands, subtests):
+    vehicle, account, lock, actions = commands
+    data = dict(account.entry.data)
+    polls = account.get_vehicles.await_count
+    for error in (asyncio.CancelledError(), KeyError("broken payload")):
+        for domain, service, target, operation in actions:
+            with subtests.test(domain=domain, service=service, target=target, error=type(error)):
+                with patch.object(vehicle, operation, AsyncMock(side_effect=error)):
+                    with pytest.raises(type(error)) as raised:
+                        await hass.services.async_call(domain, service, target, blocking=True)
+                    await hass.async_block_till_done()
+                assert raised.value is error
+                # With no door lock states the lock can't show locking, so read the flag itself.
+                assert not get_entity(hass, lock)._state_changing
+                assert account.entry.data == data
+                assert account.get_vehicles.await_count == polls
+
+
+@pytest.mark.parametrize("native", [True, False], ids=["native_lock", "toyota_service"])
+@pytest.mark.parametrize("failure", ["timeout", "handshake"])
+async def test_remote_connection_errors_keep_credentials_out_of_errors_and_logs(
+    hass, setup_vehicles, hass_ws_client, caplog, native, failure
+):
+    token = "test-command-access-token"
+    client = ToyotaOneClient(
+        types.SimpleNamespace(
+            get_access_token=AsyncMock(return_value=token),
+            get_guid=AsyncMock(return_value="test-guid"),
+            get_device_id=lambda: "test-device",
+        )
+    )
+    client.graphql_send_remote_command = AsyncMock()
+    vehicle = make_24mm_vehicle(client)
+    await setup_vehicles([vehicle])
+    lock = entity_id(hass, "lock", "TESTVIN24.")
+    device_id = er.async_get(hass).async_get(lock).device_id
+    websocket = await hass_ws_client(hass)
+    attempted_urls = []
+
+    async def timeout(request, **kwargs):
+        attempted_urls.append(str(request.url))
+        raise TimeoutError()
+
+    def reject_handshake(url, **kwargs):
+        attempted_urls.append(url)
+        socket = MagicMock()
+        socket.__aenter__.side_effect = aiohttp.WSServerHandshakeError(
+            types.SimpleNamespace(real_url=url), (), status=500, message="Invalid response status"
+        )
+        return socket
+
+    session = MagicMock()
+    session.__aenter__.return_value = session
+    session.ws_connect.side_effect = reject_handshake
+    connection = (
+        patch.object(aiohttp.TCPConnector, "connect", AsyncMock(side_effect=timeout))
+        if failure == "timeout"
+        else patch.object(patch_client.aiohttp, "ClientSession", return_value=session)
+    )
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG), connection:
+        await websocket.send_json_auto_id(
+            {
+                "type": "call_service",
+                "domain": "lock" if native else DOMAIN,
+                "service": "lock" if native else "door_lock",
+                "service_data": {"entity_id": lock} if native else {"vehicle": device_id},
+            }
+        )
+        response = await websocket.receive_json()
+
+    assert not response["success"]
+    assert len(attempted_urls) == 1
+    encoded_headers = parse_qs(urlparse(attempted_urls[0]).query)["header"][0]
+    assert json.loads(base64.b64decode(encoded_headers))["Authorization"] == f"Bearer {token}"
+    output = json.dumps(response) + caplog.text
+    for private in (attempted_urls[0], encoded_headers, "header=", token):
+        assert private not in output
+    assert response["error"]["message"] == (
+        "The Toyota connection timed out. Try again."
+        if failure == "timeout"
+        else "Could not connect to Toyota (HTTP 500). Try again."
+    )
+    client.graphql_send_remote_command.assert_not_awaited()
+    assert not client._remote_locks[vehicle.vin].locked()
+    if failure == "handshake":
+        session.__aexit__.assert_awaited_once()

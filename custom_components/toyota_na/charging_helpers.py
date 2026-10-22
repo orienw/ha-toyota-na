@@ -9,7 +9,10 @@ CHARGE_SETTINGS = {
     "maxACCurrent": ("AC Charging Current", "acCurrentSelections", "A", "currentCharge"),
     "maxDCPower": ("DC Charging Power", "dcPowerSelections", "kW", "quickChargePowerLimit"),
     "electricSupplyModeLimit": (
-        "Power Supply Battery Limit", "electricSupplyLimitSelections", "%", "minimumElectricSupply",
+        "Power Supply Battery Limit",
+        "electricSupplyLimitSelections",
+        "%",
+        "minimumElectricSupply",
     ),
 }
 
@@ -25,8 +28,11 @@ def charge_options(settings, field, *, allow_missing_target=False):
     if field == "targetLimit":
         choices = choices or [str(value) for value in range(100, 39, -10)]
     else:
-        choices = [choice.get("key") for choice in choices
-                   if isinstance(choice, dict) and choice.get("enabled") is True]
+        choices = [
+            choice.get("key")
+            for choice in choices
+            if isinstance(choice, dict) and choice.get("enabled") is True
+        ]
     result = {}
     for choice in choices:
         if not isinstance(choice, str):
@@ -36,7 +42,7 @@ def charge_options(settings, field, *, allow_missing_target=False):
             result["Max"] = 127 if field == "maxACCurrent" else 1
             continue
         if clean.lower().endswith(suffix.lower()):
-            clean = clean[:-len(suffix)].strip()
+            clean = clean[: -len(suffix)].strip()
         if clean.lower() == "full" and field == "targetLimit":
             clean = "100"
         try:
@@ -60,7 +66,7 @@ def current_charge_option(settings, field):
         current = "100"
     suffix = CHARGE_SETTINGS[field][2]
     if current.lower().endswith(suffix.lower()):
-        current = current[:-len(suffix)].strip()
+        current = current[: -len(suffix)].strip()
     try:
         value = int(current)
     except ValueError:
@@ -101,8 +107,14 @@ def build_charge_schedule(schedules, identifier=None, **changes):
             raise ValueError("A new schedule needs start time, end time, and days of the week.")
     else:
         identifier = schedule_identifier(identifier)
-        existing = next((item for item in schedules if isinstance(item, dict)
-                         and str(item.get("settingId")) == str(identifier)), None)
+        existing = next(
+            (
+                item
+                for item in schedules
+                if isinstance(item, dict) and str(item.get("settingId")) == str(identifier)
+            ),
+            None,
+        )
         if existing is None:
             raise ValueError("This charge schedule no longer exists.")
         body = {key: existing.get(key) for key in fields}

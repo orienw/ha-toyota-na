@@ -14,6 +14,7 @@ from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
 from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
 
 from .base_entity import ToyotaNABaseEntity
+from .command_refresh import cancel_on_unload
 from .const import (
     COMMAND_MAP,
     COMMAND_REFRESH_DELAY,
@@ -61,7 +62,6 @@ async def async_setup_entry(
 
 
 class ToyotaLock(ToyotaNABaseEntity, LockEntity):
-
     _state_changing = False
 
     @property
@@ -90,9 +90,12 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
         lock_states = [
             feature.locked
             for key, feature in self.vehicle.features.items()
-            if key in (
-                VehicleFeatures.FrontDriverDoor, VehicleFeatures.FrontPassengerDoor,
-                VehicleFeatures.RearDriverDoor, VehicleFeatures.RearPassengerDoor,
+            if key
+            in (
+                VehicleFeatures.FrontDriverDoor,
+                VehicleFeatures.FrontPassengerDoor,
+                VehicleFeatures.RearDriverDoor,
+                VehicleFeatures.RearPassengerDoor,
             )
             and isinstance(feature, ToyotaLockableOpening)
             and feature.locked is not None
@@ -127,13 +130,13 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
             try:
                 with translate_service_errors():
                     await self.vehicle.send_command(COMMAND_MAP[command])
-            except (Exception, asyncio.CancelledError):
+            except Exception, asyncio.CancelledError:
                 self._state_changing = False
                 self.async_write_ha_state()
                 raise
             record_vehicle_wake(self.hass, self._config_entry, self.vin)
             task = self.hass.async_create_task(self._background_refresh())
-            self._config_entry.async_on_unload(task.cancel)
+            cancel_on_unload(self._config_entry, task)
 
     async def _background_refresh(self):
         """Refresh coordinator state after a remote command."""

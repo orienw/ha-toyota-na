@@ -1,25 +1,27 @@
 """Saved climate controls and preservation of unrelated preferences."""
 
 import asyncio
-from copy import deepcopy
 import json
+import logging
 import types
-import unittest
+from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import pytest
+import voluptuous as vol
 from aiohttp import ClientConnectionError
+from common import entity_id, make_vehicle
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from toyota_na.exceptions import AuthError
 
-import test_button as ha
-import test_vehicle_behavior as behavior
-
-from custom_components.toyota_na import number, patch_client, select, switch
+from custom_components.toyota_na import patch_client
 from custom_components.toyota_na.climate_helpers import climate_parameters
 
 
 def operation(category, *parameters):
     return {
-        "categoryName": category, "available": True,
+        "categoryName": category,
+        "available": True,
         "acParameters": [
             {"name": name, "available": available, "enabled": enabled}
             for name, available, enabled in parameters
@@ -28,16 +30,32 @@ def operation(category, *parameters):
 
 
 SETTINGS = {
-    "temperature": 22.0, "temperatureUnit": "C", "minTemp": 18, "maxTemp": 30,
-    "tempInterval": 0.5, "settingsOn": True, "isCustomerSettings": True,
-    "airFlowVolume": 2, "minAirFlow": 0, "maxAirFlow": 5,
+    "temperature": 22.0,
+    "temperatureUnit": "C",
+    "minTemp": 18,
+    "maxTemp": 30,
+    "tempInterval": 0.5,
+    "settingsOn": True,
+    "isCustomerSettings": True,
+    "airFlowVolume": 2,
+    "minAirFlow": 0,
+    "maxAirFlow": 5,
     "extendedRuntime": {"available": True, "enabled": False},
     "acOperations": [
-        operation("airflow", ("upperBody", True, True), ("feet", True, False),
-                  ("upperBodyFeet", False, False), ("frontDefrostFeet", True, False)),
+        operation(
+            "airflow",
+            ("upperBody", True, True),
+            ("feet", True, False),
+            ("upperBodyFeet", False, False),
+            ("frontDefrostFeet", True, False),
+        ),
         operation("seatHeat", ("frontDriver", True, True), ("frontPassenger", True, False)),
-        operation("seatVent", ("ventFrontDriver", True, False),
-                  ("ventFrontPassenger", False, False), ("ventRearDriver", True, True)),
+        operation(
+            "seatVent",
+            ("ventFrontDriver", True, False),
+            ("ventFrontPassenger", False, False),
+            ("ventRearDriver", True, True),
+        ),
         operation("defrost", ("frontDefrost", True, True), ("rearDefrost", True, False)),
         operation("steeringHeaterCat", ("steeringWheel", True, True)),
         operation("airCirculate", ("insideAirCirculate", True, False)),
@@ -45,113 +63,217 @@ SETTINGS = {
     ],
     "futureMetadata": {"preserve": True},
 }
+CONTROLS = {
+    "Climate Temperature": "number",
+    "Climate Fan Speed": "number",
+    "Climate Airflow": "select",
+    "Driver Seat Climate": "select",
+    "Passenger Seat Climate": "select",
+    "Rear Driver Seat Climate": "select",
+    "Rear Passenger Seat Climate": "select",
+    "Use Climate Settings": "switch",
+    "Front Defroster": "switch",
+    "Rear Defroster": "switch",
+    "Steering Wheel Heat": "switch",
+    "Recirculate Air": "switch",
+    "Longer Climate Runtime": "switch",
+}
 
 
-class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
+class Cloud:
+    """Toyota's climate settings endpoints over one saved settings document."""
+
+    def __init__(self):
         self.server = deepcopy(SETTINGS)
+        self.get_climate_settings = AsyncMock(side_effect=self.read)
+        self.update_climate_settings = AsyncMock(side_effect=self.write)
 
-        async def read(*args):
-            await asyncio.sleep(0)
-            return deepcopy(self.server)
+    async def read(self, *args):
+        await asyncio.sleep(0)
+        return deepcopy(self.server)
 
-        async def write(vin, generation, settings, region, brand):
-            await asyncio.sleep(0)
-            self.server = deepcopy(settings)
+    async def write(self, vin, generation, settings, region, brand):
+        await asyncio.sleep(0)
+        self.server = deepcopy(settings)
 
-        self.client = types.SimpleNamespace(
-            get_climate_settings=AsyncMock(side_effect=read),
-            update_climate_settings=AsyncMock(side_effect=write),
+
+class Controls:
+    """The vehicle's climate controls as Home Assistant shows and changes them."""
+
+    def __init__(self, hass, cloud, vehicle, account):
+        self.hass = hass
+        self.cloud = cloud
+        self.vehicle = vehicle
+        self.account = account
+        self.ids = {
+            name: entity_id(hass, platform, f"TESTVIN.{name}")
+            for name, platform in CONTROLS.items()
+        }
+
+    def state(self, name):
+        return self.hass.states.get(self.ids[name])
+
+    async def call(self, name, service, **data):
+        domain = CONTROLS[name]
+        await self.hass.services.async_call(
+            domain, service, {"entity_id": self.ids[name], **data}, blocking=True
         )
-        self.vehicle = behavior.make_vehicle(self.client)
-        self.vehicle._extended_capabilities = {"climateCapable": True}
-        await self.vehicle.update_climate()
-        self.coordinator = ha.DataUpdateCoordinator([self.vehicle])
-        self.entities = {}
+        await self.hass.async_block_till_done()
 
-        def add(entities, update):
-            self.entities.update({entity.sensor_name: entity for entity in entities})
+    async def set_value(self, name, value):
+        await self.call(name, "set_value", value=value)
 
-        for platform in (number, select, switch):
-            await platform.async_setup_entry(ha.FakeHass(self.coordinator), ha.ConfigEntry(), add)
+    async def select_option(self, name, option):
+        await self.call(name, "select_option", option=option)
 
-    def test_controls_follow_reported_seats_options_and_fan_bounds(self):
-        self.assertEqual(self.entities["Driver Seat Climate"].options, ["Off", "Heat", "Ventilate"])
-        self.assertEqual(self.entities["Passenger Seat Climate"].options, ["Off", "Heat"])
-        self.assertEqual(self.entities["Rear Driver Seat Climate"].options, ["Off", "Ventilate"])
-        self.assertNotIn("Rear Passenger Seat Climate", self.entities)
-        self.assertEqual(self.entities["Climate Airflow"].options, [
-            "Upper body", "Feet", "Windshield and feet",
-        ])
-        fan = self.entities["Climate Fan Speed"]
-        self.assertEqual((fan.native_value, fan.native_min_value, fan.native_max_value, fan.native_step), (2, 0, 5, 1))
+    async def turn_on(self, name):
+        await self.call(name, "turn_on")
 
-    async def test_airflow_change_preserves_seats_defrosters_and_unknown_settings(self):
-        await self.entities["Climate Airflow"].async_select_option("Feet")
-        self.assertEqual(self.entities["Climate Airflow"].current_option, "Feet")
-        self.assertEqual(self.server["acOperations"][1:], SETTINGS["acOperations"][1:])
-        self.assertEqual(self.server["futureMetadata"], SETTINGS["futureMetadata"])
-        parameters = climate_parameters(self.server, "airflow")
-        self.assertFalse(parameters["upperBody"]["enabled"])
-        self.assertTrue(parameters["feet"]["enabled"])
-        self.assertFalse(parameters["frontDefrostFeet"]["enabled"])
+    async def turn_off(self, name):
+        await self.call(name, "turn_off")
 
-    async def test_seat_mode_disables_opposite_setting_and_preserves_other_seats(self):
-        seat = self.entities["Driver Seat Climate"]
-        await seat.async_select_option("Ventilate")
-        self.assertEqual(seat.current_option, "Ventilate")
-        self.assertFalse(climate_parameters(self.server, "seatHeat")["frontDriver"]["enabled"])
-        self.assertTrue(climate_parameters(self.server, "seatVent")["ventFrontDriver"]["enabled"])
-        self.assertTrue(climate_parameters(self.server, "seatVent")["ventRearDriver"]["enabled"])
-        await seat.async_select_option("Off")
-        self.assertEqual(seat.current_option, "Off")
-        self.assertFalse(climate_parameters(self.server, "seatVent")["ventFrontDriver"]["enabled"])
+    async def push(self):
+        self.account.coordinator.async_set_updated_data(self.account.coordinator.data)
+        await self.hass.async_block_till_done()
 
-    async def test_switches_and_fan_save_independent_preferences(self):
-        await self.entities["Front Defroster"].async_turn_off()
-        await self.entities["Rear Defroster"].async_turn_on()
-        await self.entities["Steering Wheel Heat"].async_turn_off()
-        await self.entities["Recirculate Air"].async_turn_on()
-        await self.entities["Longer Climate Runtime"].async_turn_on()
-        await self.entities["Climate Fan Speed"].async_set_native_value(4.0)
-        self.assertFalse(self.entities["Front Defroster"].is_on)
-        self.assertTrue(self.entities["Rear Defroster"].is_on)
-        self.assertFalse(self.entities["Steering Wheel Heat"].is_on)
-        self.assertTrue(self.entities["Recirculate Air"].is_on)
-        self.assertTrue(self.server["extendedRuntime"]["enabled"])
-        self.assertEqual(self.server["airFlowVolume"], 4)
-        self.assertIs(type(self.server["airFlowVolume"]), int)
-        self.assertEqual(self.server["temperature"], 22)
 
-    async def test_concurrent_nested_changes_preserve_each_other(self):
+@pytest.fixture
+async def controls(hass, setup_vehicles):
+    cloud = Cloud()
+    vehicle = make_vehicle(cloud)
+    vehicle._extended_capabilities = {"climateCapable": True}
+    await vehicle.update_climate()
+    account = await setup_vehicles([vehicle])
+    return Controls(hass, cloud, vehicle, account)
+
+
+class TestClimateControls:
+    async def test_controls_follow_reported_seats_options_and_fan_bounds(self, controls):
+        assert controls.state("Driver Seat Climate").attributes["options"] == [
+            "Off",
+            "Heat",
+            "Ventilate",
+        ]
+        assert controls.state("Passenger Seat Climate").attributes["options"] == ["Off", "Heat"]
+        assert controls.state("Rear Driver Seat Climate").attributes["options"] == [
+            "Off",
+            "Ventilate",
+        ]
+        assert controls.ids["Rear Passenger Seat Climate"] is None
+        assert controls.state("Climate Airflow").attributes["options"] == [
+            "Upper body",
+            "Feet",
+            "Windshield and feet",
+        ]
+        fan = controls.state("Climate Fan Speed")
+        assert (
+            fan.state,
+            fan.attributes["min"],
+            fan.attributes["max"],
+            fan.attributes["step"],
+        ) == ("2", 0, 5, 1)
+
+    async def test_airflow_change_preserves_seats_defrosters_and_unknown_settings(self, controls):
+        cloud = controls.cloud
+        await controls.select_option("Climate Airflow", "Feet")
+        assert controls.state("Climate Airflow").state == "Feet"
+        assert cloud.server["acOperations"][1:] == SETTINGS["acOperations"][1:]
+        assert cloud.server["futureMetadata"] == SETTINGS["futureMetadata"]
+        parameters = climate_parameters(cloud.server, "airflow")
+        assert not parameters["upperBody"]["enabled"]
+        assert parameters["feet"]["enabled"]
+        assert not parameters["frontDefrostFeet"]["enabled"]
+
+    async def test_seat_mode_disables_opposite_setting_and_preserves_other_seats(self, controls):
+        cloud = controls.cloud
+        await controls.select_option("Driver Seat Climate", "Ventilate")
+        assert controls.state("Driver Seat Climate").state == "Ventilate"
+        assert not climate_parameters(cloud.server, "seatHeat")["frontDriver"]["enabled"]
+        assert climate_parameters(cloud.server, "seatVent")["ventFrontDriver"]["enabled"]
+        assert climate_parameters(cloud.server, "seatVent")["ventRearDriver"]["enabled"]
+        await controls.select_option("Driver Seat Climate", "Off")
+        assert controls.state("Driver Seat Climate").state == "Off"
+        assert not climate_parameters(cloud.server, "seatVent")["ventFrontDriver"]["enabled"]
+
+    async def test_switches_and_fan_save_independent_preferences(self, controls):
+        cloud = controls.cloud
+        await controls.turn_off("Front Defroster")
+        await controls.turn_on("Rear Defroster")
+        await controls.turn_off("Steering Wheel Heat")
+        await controls.turn_on("Recirculate Air")
+        await controls.turn_on("Longer Climate Runtime")
+        await controls.set_value("Climate Fan Speed", 4.0)
+        assert controls.state("Front Defroster").state == "off"
+        assert controls.state("Rear Defroster").state == "on"
+        assert controls.state("Steering Wheel Heat").state == "off"
+        assert controls.state("Recirculate Air").state == "on"
+        assert controls.state("Longer Climate Runtime").state == "on"
+        assert cloud.server["extendedRuntime"]["enabled"]
+        assert cloud.server["airFlowVolume"] == 4
+        assert type(cloud.server["airFlowVolume"]) is int
+        assert cloud.server["temperature"] == 22
+
+    async def test_concurrent_nested_changes_preserve_each_other(self, controls):
+        cloud = controls.cloud
         await asyncio.gather(
-            self.entities["Climate Airflow"].async_select_option("Feet"),
-            self.entities["Driver Seat Climate"].async_select_option("Ventilate"),
-            self.entities["Longer Climate Runtime"].async_turn_on(),
+            controls.select_option("Climate Airflow", "Feet"),
+            controls.select_option("Driver Seat Climate", "Ventilate"),
+            controls.turn_on("Longer Climate Runtime"),
         )
-        self.assertTrue(climate_parameters(self.server, "airflow")["feet"]["enabled"])
-        self.assertTrue(climate_parameters(self.server, "seatVent")["ventFrontDriver"]["enabled"])
-        self.assertTrue(self.server["extendedRuntime"]["enabled"])
+        assert climate_parameters(cloud.server, "airflow")["feet"]["enabled"]
+        assert climate_parameters(cloud.server, "seatVent")["ventFrontDriver"]["enabled"]
+        assert cloud.server["extendedRuntime"]["enabled"]
 
-    async def test_fresh_capability_loss_rejects_save_without_changing_cached_preferences(self):
-        before = deepcopy(self.vehicle.climate_settings)
-        self.server["acOperations"][3]["available"] = False
-        with self.assertRaises(ha.exceptions.ServiceValidationError):
-            await self.entities["Front Defroster"].async_turn_off()
-        self.client.update_climate_settings.assert_not_awaited()
-        self.assertEqual(self.vehicle.climate_settings, before)
-        await self.vehicle.update_climate()
-        self.assertFalse(self.entities["Front Defroster"].available)
+    async def test_fresh_capability_loss_rejects_save_without_changing_cached_preferences(
+        self, controls
+    ):
+        cloud, vehicle = controls.cloud, controls.vehicle
+        before = deepcopy(vehicle.climate_settings)
+        cloud.server["acOperations"][3]["available"] = False
+        with pytest.raises(ServiceValidationError):
+            await controls.turn_off("Front Defroster")
+        cloud.update_climate_settings.assert_not_awaited()
+        assert vehicle.climate_settings == before
+        await controls.push()
+        assert controls.state("Front Defroster").state == "on"
+        await vehicle.update_climate()
+        await controls.push()
+        assert controls.state("Front Defroster").state == "unavailable"
 
-    async def test_fan_and_unavailable_seat_modes_are_rejected_before_write(self):
-        for value in (-1, 6, 2.5, float("nan"), float("inf"), None, True, "4"):
-            with self.subTest(value=value), self.assertRaises(ha.exceptions.ServiceValidationError):
-                await self.entities["Climate Fan Speed"].async_set_native_value(value)
-        with self.assertRaises(ha.exceptions.ServiceValidationError):
-            await self.entities["Passenger Seat Climate"].async_select_option("Ventilate")
-        self.client.update_climate_settings.assert_not_awaited()
+    async def test_fan_and_unavailable_seat_modes_are_rejected_before_write(
+        self, controls, subtests
+    ):
+        cloud = controls.cloud
+        # The set_value service coerces its value to a float and checks it
+        # against the range before the entity sees it, so None is rejected by
+        # the schema, and True and "4" become 1 and 4, which are valid speeds.
+        for value, expected in (
+            (-1, ServiceValidationError),
+            (6, ServiceValidationError),
+            (2.5, ServiceValidationError),
+            (float("nan"), ServiceValidationError),
+            (float("inf"), ServiceValidationError),
+            (None, vol.Invalid),
+            (True, 1),
+            ("4", 4),
+        ):
+            with subtests.test(value=value):
+                cloud.update_climate_settings.reset_mock()
+                if expected in (1, 4):
+                    await controls.set_value("Climate Fan Speed", value)
+                    cloud.update_climate_settings.assert_awaited_once()
+                    assert cloud.server["airFlowVolume"] == expected
+                else:
+                    with pytest.raises(expected):
+                        await controls.set_value("Climate Fan Speed", value)
+                    cloud.update_climate_settings.assert_not_awaited()
+        cloud.update_climate_settings.reset_mock()
+        with pytest.raises(ServiceValidationError):
+            await controls.select_option("Passenger Seat Climate", "Ventilate")
+        cloud.update_climate_settings.assert_not_awaited()
 
-    async def test_invalid_climate_metadata_is_an_operational_error(self):
+    async def test_invalid_climate_metadata_is_an_operational_error(self, controls, subtests):
+        cloud = controls.cloud
         for name, changes in (
             ("Climate Temperature", {"minTemp": 31}),
             ("Climate Temperature", {"tempInterval": 0}),
@@ -160,16 +282,17 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
             ("Climate Fan Speed", {"minAirFlow": 6}),
             ("Climate Fan Speed", {"maxAirFlow": 2.5}),
         ):
-            self.server = {**deepcopy(SETTINGS), **changes}
+            cloud.server = {**deepcopy(SETTINGS), **changes}
             value = 23 if name == "Climate Temperature" else 4
-            with self.subTest(changes=changes), self.assertRaises(ha.exceptions.HomeAssistantError) as raised:
-                await self.entities[name].async_set_native_value(value)
-            self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
-            self.assertEqual("Toyota did not provide a valid climate range.", str(raised.exception))
-        self.client.update_climate_settings.assert_not_awaited()
-        self.assertEqual(SETTINGS, self.vehicle.climate_settings)
+            with subtests.test(changes=changes):
+                with pytest.raises(HomeAssistantError) as raised:
+                    await controls.set_value(name, value)
+                assert type(raised.value) is HomeAssistantError
+                assert str(raised.value) == "Toyota did not provide a valid climate range."
+        cloud.update_climate_settings.assert_not_awaited()
+        assert controls.vehicle.climate_settings == SETTINGS
 
-    async def test_invalid_rest_json_is_an_operational_error(self):
+    async def test_invalid_rest_json_is_an_operational_error(self, controls):
         error = json.JSONDecodeError("Expecting value", "invalid", 0)
         response = AsyncMock()
         response.status = 200
@@ -185,75 +308,106 @@ class ClimateControlTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(patch_client.aiohttp, "ClientSession", return_value=session),
-            patch.object(self.client, "update_climate_settings", request),
-            self.assertRaises(ha.exceptions.HomeAssistantError) as raised,
+            patch.object(controls.cloud, "update_climate_settings", request),
+            pytest.raises(HomeAssistantError) as raised,
         ):
-            await self.entities["Climate Fan Speed"].async_set_native_value(4)
-        self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
-        self.assertEqual("Toyota returned an invalid response.", str(raised.exception))
-        self.assertIs(error, raised.exception.__cause__)
+            await controls.set_value("Climate Fan Speed", 4)
+        assert type(raised.value) is HomeAssistantError
+        assert str(raised.value) == "Toyota returned an invalid response."
+        assert raised.value.__cause__ is error
         session.request.assert_called_once()
-        self.assertEqual(SETTINGS, self.vehicle.climate_settings)
+        assert controls.vehicle.climate_settings == SETTINGS
 
-    async def test_expected_write_failures_preserve_messages_and_reported_state(self):
+    async def test_expected_write_failures_preserve_messages_and_reported_state(
+        self, controls, subtests
+    ):
+        cloud = controls.cloud
         changed = Mock()
-        self.coordinator.async_add_listener(changed)
+        remove_listener = controls.account.coordinator.async_add_listener(changed)
         actions = (
-            (self.entities["Climate Fan Speed"].async_set_native_value, (4,)),
-            (self.entities["Climate Airflow"].async_select_option, ("Feet",)),
-            (self.entities["Driver Seat Climate"].async_select_option, ("Off",)),
-            (self.entities["Use Climate Settings"].async_turn_off, ()),
-            (self.entities["Front Defroster"].async_turn_off, ()),
+            (controls.set_value, ("Climate Fan Speed", 4)),
+            (controls.select_option, ("Climate Airflow", "Feet")),
+            (controls.select_option, ("Driver Seat Climate", "Off")),
+            (controls.turn_off, ("Use Climate Settings",)),
+            (controls.turn_off, ("Front Defroster",)),
         )
         for error, message in (
             (RuntimeError("Toyota rejected the change."), "Toyota rejected the change."),
             (ClientConnectionError("Toyota connection failed."), "Toyota connection failed."),
             (AuthError("Toyota session expired."), "Toyota session expired."),
-            (asyncio.TimeoutError(), "The Toyota request timed out."),
+            (TimeoutError(), "The Toyota request timed out."),
             (ClientConnectionError(), "The Toyota request failed. Try again."),
             (RuntimeError(), "The Toyota request failed. Try again."),
         ):
-            self.client.update_climate_settings.side_effect = error
+            cloud.update_climate_settings.side_effect = error
             for action, args in actions:
-                with self.subTest(error=type(error), action=action), self.assertRaises(ha.exceptions.HomeAssistantError) as raised:
+                with (
+                    subtests.test(error=type(error), action=args[0]),
+                    pytest.raises(HomeAssistantError) as raised,
+                ):
                     await action(*args)
-                self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
-                self.assertEqual(message, str(raised.exception))
-                self.assertIs(error, raised.exception.__cause__)
-        self.assertEqual(SETTINGS, self.vehicle.climate_settings)
+                assert type(raised.value) is HomeAssistantError
+                assert str(raised.value) == message
+                assert raised.value.__cause__ is error
+        remove_listener()
+        assert controls.vehicle.climate_settings == SETTINGS
         changed.assert_not_called()
 
-    async def test_unavailable_controls_raise_validation_errors_without_writing(self):
-        self.vehicle._has_remote_subscription = False
+    async def test_unavailable_controls_are_skipped_without_writing(
+        self, controls, caplog, subtests
+    ):
+        controls.vehicle._has_remote_subscription = False
+        # Home Assistant skips entities that are unavailable when the service
+        # runs, logging a warning instead of calling them.
         for action, args in (
-            (self.entities["Climate Fan Speed"].async_set_native_value, (4,)),
-            (self.entities["Climate Airflow"].async_select_option, ("Feet",)),
-            (self.entities["Use Climate Settings"].async_turn_off, ()),
+            (controls.set_value, ("Climate Fan Speed", 4)),
+            (controls.select_option, ("Climate Airflow", "Feet")),
+            (controls.turn_off, ("Use Climate Settings",)),
         ):
-            with self.subTest(action=action), self.assertRaisesRegex(ha.exceptions.ServiceValidationError, "unavailable"):
+            with subtests.test(action=args[0]):
+                caplog.clear()
                 await action(*args)
-        self.client.update_climate_settings.assert_not_awaited()
+                assert [
+                    record.getMessage()
+                    for record in caplog.records
+                    if record.levelno == logging.WARNING
+                ] == [
+                    "Referenced entities "
+                    f"{controls.ids[args[0]]} are missing or not currently available"
+                ]
+        controls.cloud.update_climate_settings.assert_not_awaited()
+        await controls.push()
+        for name in ("Climate Fan Speed", "Climate Airflow", "Use Climate Settings"):
+            assert controls.state(name).state == "unavailable"
 
-    async def test_missing_climate_response_is_an_operational_error(self):
-        self.client.get_climate_settings.side_effect = None
-        self.client.get_climate_settings.return_value = {}
-        with self.assertRaisesRegex(ha.exceptions.HomeAssistantError, "Toyota did not return climate settings") as raised:
-            await self.entities["Climate Fan Speed"].async_set_native_value(4)
-        self.assertIs(type(raised.exception), ha.exceptions.HomeAssistantError)
-        self.client.update_climate_settings.assert_not_awaited()
+    async def test_missing_climate_response_is_an_operational_error(self, controls):
+        cloud = controls.cloud
+        cloud.get_climate_settings.side_effect = None
+        cloud.get_climate_settings.return_value = {}
+        with pytest.raises(
+            HomeAssistantError, match="Toyota did not return climate settings"
+        ) as raised:
+            await controls.set_value("Climate Fan Speed", 4)
+        assert type(raised.value) is HomeAssistantError
+        cloud.update_climate_settings.assert_not_awaited()
 
-    async def test_disabled_custom_settings_can_be_configured_before_enabling(self):
-        self.server["settingsOn"] = False
-        await self.vehicle.update_climate()
-        await self.entities["Driver Seat Climate"].async_select_option("Ventilate")
-        self.assertFalse(self.server["settingsOn"])
-        self.assertEqual(self.entities["Driver Seat Climate"].current_option, "Ventilate")
+    async def test_disabled_custom_settings_can_be_configured_before_enabling(self, controls):
+        cloud = controls.cloud
+        cloud.server["settingsOn"] = False
+        await controls.vehicle.update_climate()
+        await controls.push()
+        assert controls.state("Use Climate Settings").state == "off"
+        await controls.select_option("Driver Seat Climate", "Ventilate")
+        assert not cloud.server["settingsOn"]
+        assert controls.state("Driver Seat Climate").state == "Ventilate"
 
-    async def test_fan_uses_vehicle_bounds_and_defaults_for_omitted_limits(self):
-        self.server["minAirFlow"] = None
-        self.server.pop("maxAirFlow")
-        await self.vehicle.update_climate()
-        fan = self.entities["Climate Fan Speed"]
-        self.assertEqual((fan.native_min_value, fan.native_max_value), (1, 7))
-        await fan.async_set_native_value(7)
-        self.assertEqual(self.server["airFlowVolume"], 7)
+    async def test_fan_uses_vehicle_bounds_and_defaults_for_omitted_limits(self, controls):
+        cloud = controls.cloud
+        cloud.server["minAirFlow"] = None
+        cloud.server.pop("maxAirFlow")
+        await controls.vehicle.update_climate()
+        await controls.push()
+        fan = controls.state("Climate Fan Speed")
+        assert (fan.attributes["min"], fan.attributes["max"]) == (1, 7)
+        await controls.set_value("Climate Fan Speed", 7)
+        assert cloud.server["airFlowVolume"] == 7

@@ -1,10 +1,5 @@
-from typing import Any, Union, cast
 import logging
-
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
+from typing import Any, cast
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -16,9 +11,15 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
+from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
+from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
+from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
+
 from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
-from .const import BINARY_SENSORS, DOMAIN
+from .const import BINARY_SENSORS, DOMAIN, HEALTH_BINARY_SENSORS
 from .entity_discovery import setup_entity_discovery
+from .health_helpers import health_reading
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,9 +49,7 @@ async def async_setup_entry(
                 {},
             )
             for entity_config in BINARY_SENSORS:
-                if vehicle.electric is False and cast(
-                    bool, entity_config["electric"]
-                ):
+                if vehicle.electric is False and cast(bool, entity_config["electric"]):
                     continue
                 feature = cast(VehicleFeatures, entity_config["feature"])
                 name = cast(str, entity_config["name"])
@@ -79,6 +78,9 @@ async def async_setup_entry(
                     name,
                     vehicle.vin,
                 )
+            for config in HEALTH_BINARY_SENSORS:
+                if health_reading(vehicle, config["features"], config["value"]) is not None:
+                    yield ToyotaHealthBinarySensor(config, coordinator, config["name"], vehicle.vin)
 
     setup_entity_discovery(
         config_entry,
@@ -89,7 +91,7 @@ async def async_setup_entry(
 
 
 class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
-    _device_class: Union[BinarySensorDeviceClass, str]
+    _device_class: BinarySensorDeviceClass | str
     _vehicle_feature: VehicleFeatures
     _icon: str
 
@@ -97,7 +99,7 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
         self,
         vehicle_feature: VehicleFeatures,
         icon: str,
-        device_class: Union[BinarySensorDeviceClass, str],
+        device_class: BinarySensorDeviceClass | str,
         *args: Any,
     ):
         super().__init__(*args)
@@ -139,7 +141,6 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
                 and remote_start.time_left is not None
                 and remote_start.start_time is not None
             ):
-
                 return {
                     "end_time": remote_start.end_time,
                     "minutes_remaining": remote_start.time_left,
@@ -153,13 +154,36 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
         if sensor is None:
             return False
         if self.device_class == BinarySensorDeviceClass.LOCK:
-            return (
-                isinstance(sensor, ToyotaLockableOpening)
-                and sensor.locked is not None
-            )
-        if (
-            self.device_class == BinarySensorDeviceClass.DOOR
-            and isinstance(sensor, ToyotaOpening)
-        ):
+            return isinstance(sensor, ToyotaLockableOpening) and sensor.locked is not None
+        if self.device_class == BinarySensorDeviceClass.DOOR and isinstance(sensor, ToyotaOpening):
             return sensor.closed is not None
         return True
+
+
+class ToyotaHealthBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
+    def __init__(self, config, *args):
+        super().__init__(*args)
+        self._config = config
+        self._attr_icon = config["icon"]
+        self._attr_device_class = config["device_class"]
+
+    @property
+    def device_class(self):
+        return self._attr_device_class
+
+    @property
+    def available(self):
+        return self.is_on is not None
+
+    @property
+    def is_on(self):
+        return health_reading(self.vehicle, self._config["features"], self._config["value"])
+
+    @property
+    def extra_state_attributes(self):
+        attributes = self._config.get("attributes")
+        return (
+            health_reading(self.vehicle, self._config["features"], attributes)
+            if attributes
+            else None
+        )

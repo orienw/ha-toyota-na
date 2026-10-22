@@ -30,7 +30,7 @@ integration under **Settings > Devices & services**. Each vehicle's
 [![Latest beta release](https://img.shields.io/github/v/release/orienw/ha-toyota-na?include_prereleases&filter=*b*&sort=date&style=for-the-badge&label=beta&color=orange)](https://github.com/orienw/ha-toyota-na/releases)
 
 ## Installation
-Requires Home Assistant 2024.11 or newer.
+Requires Home Assistant 2026.8 or newer.
 
 ### HACS
 
@@ -94,11 +94,14 @@ uses one of them, sign out of the Toyota app and sign in with the same email
 address that Apple, Google, or Facebook uses, then tap **Forgot password** to
 set a password. Sign in here with that email and password.
 
-Use **Configure** to choose how vehicle status is updated. Home Assistant
-always reads Toyota's cloud data. That data stays unchanged until the
-vehicle contacts Toyota. Choose **Cloud updates only** to skip scheduled
-wakes. Refresh Status and remote commands stay available. Pick an interval
-to wake the vehicle.
+**Cloud updates only** is the default. Home Assistant checks Toyota's cloud
+every ten minutes without scheduled vehicle wakes. Vehicle readings can
+remain unchanged until the vehicle contacts Toyota. **Refresh Status** and
+remote commands remain available. Use **Configure** to choose an interval
+if you want automatic vehicle wakes.
+
+Existing installations without a saved wake interval also use this default.
+An interval you previously selected in **Configure** is preserved.
 
 ## Current features
 
@@ -113,15 +116,17 @@ Sensors:
 * Door Lock Status
 * Window/Moonroof Status
 * Trunk or Tailgate Status
-* Vehicle Location
-* Last Parked Location
+* Last Parked Location, and Current Location (disabled by default)
 * Tire Pressure and Tire Pressure Warnings
 * Fuel Level
 * Odometer
-* Oil Status
-* Key Fob Battery Status
+* Engine Oil and Key Fob Battery
+* Vehicle Alerts, Safety Recalls, and Service Campaigns
+* Maintenance Required
+* Software Update
 * Last Update
 * Last Tire Pressure Update
+* Remote Access
 * Speed
 * EV Plug Status
 * EV Remaining Charge Time
@@ -136,9 +141,18 @@ Sensors:
 * Battery and Gasoline Power Supply Time
 * Average and Trip Fuel Consumption, Trip Count, and Gasoline Range
 * Charge Schedules and Climate Schedules
+* Notifications event
 
 Lock, remote start, hazards, and find-vehicle commands need a remote
 subscription.
+
+The Remote Access sensor shows the vehicle's remote activation state in Toyota's
+app, such as Active, Activation pending, or Subscription expired. When Toyota
+needs you to act in its app, for example to authorize remote access or renew a
+subscription, Home Assistant raises a repair. The repair clears itself once
+Toyota reports the vehicle active. While a vehicle is reported stolen, its
+commands and controls, including Refresh Status and climate and charging
+settings, are unavailable and scheduled wakes stop, like Toyota's app. Its last reported data, including location, stays visible.
 
 Actions:
 
@@ -176,6 +190,29 @@ The main lock reports the vehicle's door locks, like the Doors tile in Toyota's
 app. Check cargo sensors separately in automations that monitor whether the
 whole vehicle is secured; on vehicles with a tailgate, use Tailgate Lock.
 
+Current Location only takes the position from Toyota's telemetry. Last Parked
+Location takes that same position and also newer ones from vehicle status, so
+Current Location can lag behind it. Current Location starts disabled for
+vehicles added from 2.11 on. Enable it in the entity's settings if you use it;
+vehicles already set up keep it as it was.
+
+The health sensors mirror the Health tab in Toyota's app and appear only when
+Toyota offers that tab's tiles for the vehicle. Home Assistant reads them
+hourly without waking the vehicle, retrying at each update until Toyota first
+answers. Vehicle Alerts, Safety Recalls,
+and Service Campaigns count items and list them in their attributes. Like
+Toyota's app, Engine Oil and Key Fob Battery read Toyota's English status text.
+Software Update shows whether Toyota offers a vehicle software update, with its
+name, version, and status in attributes, on vehicles where Toyota's app checks
+for updates.
+
+The Notifications event fires once for each new notification Toyota lists for
+the vehicle, such as remote command results, service warnings, and software
+updates. Its event type groups Toyota's categories, and the event data keeps
+Toyota's category, title, and message. Home Assistant checks at each update
+without waking the vehicle. Notifications that Toyota dates before Home
+Assistant started don't fire.
+
 Climate preferences for Remote Start appear under device configuration.
 Remote Start runs the engine or climate system the vehicle supports.
 Charging settings and buttons follow the vehicle's reported options and state.
@@ -207,7 +244,7 @@ vehicle's local time.
 
 ### Sensor display
 
-Plug Status and Connector Status show readable charging and connection states.
+Plug Status, Connector Status, and Remote Access show readable states.
 Unrecognized values show Unknown; Toyota's original value is in `raw_value`.
 Last Update Timestamp and Last Tire Pressure Update Timestamp show dates and
 times. Choose km/h or mph in the Speed sensor's settings.

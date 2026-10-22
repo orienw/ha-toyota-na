@@ -1,4 +1,5 @@
 """Diagnostics support for ha-toyota-na."""
+
 from __future__ import annotations
 
 import logging
@@ -12,6 +13,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
 )
 from homeassistant.core import HomeAssistant
+
 from toyota_na.client import ToyotaOneClient
 
 from .const import DOMAIN
@@ -39,16 +41,27 @@ TO_REDACT = {
     "vin",
     "latitude",
     "longitude",
+    "lat",  # notification history
+    "lon",
 }
+# Notification fields that describe an item without Toyota's text or location.
+_NOTIFICATION_FIELDS = (
+    "messageId",
+    "category",
+    "displayCategory",
+    "subcategory",
+    "type",
+    "status",
+    "notificationDate",
+    "isRead",
+)
 
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, config_entry: ConfigEntry
 ) -> dict:
     """Return diagnostics for a config entry."""
-    client: ToyotaOneClient = hass.data[DOMAIN][config_entry.entry_id][
-        "toyota_na_client"
-    ]
+    client: ToyotaOneClient = hass.data[DOMAIN][config_entry.entry_id]["toyota_na_client"]
 
     # We don't directly expose this from the vehicle api abstraction, but it's critical to dump this in diagnostics for debugging
     # Keep the report available while Toyota's vehicle list is failing.
@@ -70,15 +83,17 @@ async def async_get_config_entry_diagnostics(
         vehicle_list["unexpected"] = type(vehicle_list["data"]).__name__
         vehicle_list["data"] = None
     user_vehicle_list = vehicle_list["data"] or []
-    # Climate schedules as the last poll read them, to see what Toyota reports.
+    # Climate schedules and vehicle health as the last poll read them, to see what Toyota reports.
     coordinator = hass.data[DOMAIN][config_entry.entry_id].get("coordinator")
     vehicles = {vehicle.vin: vehicle for vehicle in getattr(coordinator, "data", None) or []}
-    
+
     vehicle_status = []
     telemetry = []
     engine_status = []
     electric_status = []
     climate_schedules = []
+    vehicle_health = []
+    notification_history = []
 
     for vehicle in user_vehicle_list:
         if not isinstance(vehicle, dict) or not isinstance(vehicle.get("vin"), str):
@@ -91,7 +106,7 @@ async def async_get_config_entry_diagnostics(
         api_generation = vehicle.get("generation")
         generation = endpoint_generation(api_generation)
         region = vehicle.get("region") or "US"
-        
+
         try:
             if is_appsync_generation(api_generation):
                 user_vehicle_status = await client.graphql_get_vehicle_status(
@@ -100,21 +115,18 @@ async def async_get_config_entry_diagnostics(
                     region,
                 )
             elif generation == "17CY":
-                user_vehicle_status = await client.get_vehicle_status_17cy(
-                    vin, region
-                )
+                user_vehicle_status = await client.get_vehicle_status_17cy(vin, region)
             elif api_generation == "21MM":
-                user_vehicle_status = await client.get_vehicle_status_21mm(
-                    vin, region
-                )
+                user_vehicle_status = await client.get_vehicle_status_21mm(vin, region)
             elif api_generation in ("NG86", "GR86"):
                 user_vehicle_status = await client.get_vehicle_status_route(
-                    vin, api_generation, region, vehicle.get("brand") or "T",
+                    vin,
+                    api_generation,
+                    region,
+                    vehicle.get("brand") or "T",
                 )
             elif generation == "17CYPLUS":
-                user_vehicle_status = await client.get_vehicle_status_17cyplus(
-                    vin, region
-                )
+                user_vehicle_status = await client.get_vehicle_status_17cyplus(vin, region)
         except Exception as err:
             _LOGGER.debug(
                 "Vehicle status diagnostics failed for VIN ...%s: %s",
@@ -123,30 +135,23 @@ async def async_get_config_entry_diagnostics(
             )
 
         try:
-            user_telemetry = await client.get_telemetry(
-                vin, region, generation
-            )
+            user_telemetry = await client.get_telemetry(vin, region, generation)
         except Exception as err:
-            _LOGGER.debug(
-                "Telemetry diagnostics failed for VIN ...%s: %s", vin[-4:], err
-            )
+            _LOGGER.debug("Telemetry diagnostics failed for VIN ...%s: %s", vin[-4:], err)
 
         try:
             if generation == "17CY":
-                user_engine_status = await client.get_engine_status_17cy(
-                    vin, region
-                )
+                user_engine_status = await client.get_engine_status_17cy(vin, region)
             elif api_generation == "21MM":
-                user_engine_status = await client.get_engine_status_21mm(
-                    vin, region
-                )
+                user_engine_status = await client.get_engine_status_21mm(vin, region)
             elif api_generation == "17CYPLUS":
-                user_engine_status = await client.get_engine_status_17cyplus(
-                    vin, region
-                )
+                user_engine_status = await client.get_engine_status_17cyplus(vin, region)
             elif api_generation in ("NG86", "GR86"):
                 user_engine_status = await client.get_engine_status_route(
-                    vin, api_generation, region, vehicle.get("brand") or "T",
+                    vin,
+                    api_generation,
+                    region,
+                    vehicle.get("brand") or "T",
                 )
         except Exception as err:
             _LOGGER.debug(
@@ -154,7 +159,7 @@ async def async_get_config_entry_diagnostics(
                 vin[-4:],
                 err,
             )
-            
+
         try:
             if not is_appsync_generation(api_generation):
                 user_electric_status = await client.get_electric_status(
@@ -172,6 +177,19 @@ async def async_get_config_entry_diagnostics(
         engine_status.append(user_engine_status)
         electric_status.append(user_electric_status)
         climate_schedules.append(getattr(vehicles.get(vin), "climate_schedules", None) or None)
+        health = getattr(vehicles.get(vin), "health", None) or {}
+        vehicle_health.append(
+            {key: value for key, value in health.items() if key != "read_at"} or None
+        )
+        notifications = getattr(vehicles.get(vin), "notifications", None)
+        notification_history.append(
+            [
+                {key: item[key] for key in _NOTIFICATION_FIELDS if key in item}
+                for item in notifications
+            ]
+            if isinstance(notifications, list)
+            else None
+        )
 
     return async_redact_data(
         {
@@ -182,6 +200,8 @@ async def async_get_config_entry_diagnostics(
             "engine_status": {"data": engine_status},
             "electric_status": {"data": electric_status},
             "climate_schedules": {"data": climate_schedules},
+            "vehicle_health": {"data": vehicle_health},
+            "notification_history": {"data": notification_history},
         },
         TO_REDACT,
     )

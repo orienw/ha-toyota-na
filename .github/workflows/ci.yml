@@ -4,22 +4,29 @@ on:
     branches: ["**"]
   pull_request:
   workflow_call:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   tests:
-    name: Tests (Python ${{ matrix.python-version }})
+    name: Tests (HA ${{ matrix.homeassistant }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.12", "3.14"]
+        homeassistant: ["2026.8.0", "2026.9.0", "2026.10.0"]
     steps:
       - uses: actions/checkout@v7
+      # Home Assistant 2026.8, the minimum, requires Python 3.14.
       - uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: pip install -r requirements-test.txt
-      - run: python -m unittest discover -s tests
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-test.txt
+      - run: pip install -r requirements-test.txt "homeassistant==${{ matrix.homeassistant }}"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest -q
   hassfest:
     name: hassfest
     runs-on: ubuntu-latest
@@ -30,9 +37,9 @@ jobs:
     name: HACS validation
     runs-on: ubuntu-latest
     steps:
-      # The repository has no license or topics yet.
+      # The repository has no license yet.
       - uses: hacs/action@main
         with:
           category: integration
           comment: false
-          ignore: license topics
+          ignore: license

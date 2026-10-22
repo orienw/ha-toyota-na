@@ -1,6 +1,7 @@
 {
-  "editor.defaultFormatter": "ms-python.python",
-  "editor.formatOnSave": true,
-  "python.formatting.provider": "black",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true
+  },
   "python.analysis.typeCheckingMode": "basic"
 }

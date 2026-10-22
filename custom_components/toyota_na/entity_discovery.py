@@ -25,7 +25,8 @@ def setup_entity_discovery(
             addition_ids.add(unique_id)
 
         if additions:
-            async_add_entities(additions, True)
+            # The coordinator's data is current, so skip the extra poll update_before_add requests.
+            async_add_entities(additions, False)
             known_ids.update(addition_ids)
 
     add_new_entities()

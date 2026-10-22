@@ -1,12 +1,10 @@
-from typing import Union
-
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
+
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
 
 from .const import DOMAIN
 
@@ -63,6 +61,6 @@ class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
         }
 
     @property
-    def vehicle(self) -> Union[ToyotaVehicle, None]:
+    def vehicle(self) -> ToyotaVehicle | None:
         """Return the vehicle."""
         return next((v for v in self.coordinator.data if v.vin == self.vin), None)

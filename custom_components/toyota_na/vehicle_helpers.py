@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 _POSITION_STATES = {
@@ -42,6 +43,40 @@ def has_remote_subscription(vehicle: Mapping[str, Any]) -> bool:
     if isinstance(subscription_status, str) and subscription_status:
         return subscription_status.upper() in ("ACTIVE", "SUBSCRIBED")
     return vehicle.get("remoteSubscriptionExists") is True
+
+
+def app_string(value: Any) -> str | None:
+    """Read a JSON value as the app's Gson String fields do: scalars become text."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bool, int, float)):
+        return json.dumps(value)
+    return None
+
+
+def app_flag(value: Any) -> bool:
+    """Read a JSON value as the app's Gson Boolean fields do, including "true" as text."""
+    return value is True or (isinstance(value, str) and value.lower() == "true")
+
+
+def app_int(value: Any) -> int | None:
+    """Read a JSON value as the app's Gson Integer fields do: integral numbers, also as text."""
+    if type(value) is int:
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            try:
+                value = float(value.strip())
+            except ValueError:
+                return None
+    return int(value) if type(value) is float and value.is_integer() else None
+
+
+def normalize_remote_display(value: Any) -> int | None:
+    """Return Toyota's remote activation state."""
+    return app_int(value)
 
 
 def is_electric_vehicle(vehicle: Mapping[str, Any]) -> bool:
@@ -101,7 +136,8 @@ def can_extend_remote_runtime(engine: Mapping[str, Any]) -> bool:
         and str(engine.get("lastUpdateBy", "")).lower() == "remote"
         and bool(engine.get("status"))
         and str(engine["status"]).lower() not in ("pending", "extendedrunning")
-        and stop_time is not None and stop_time > datetime.now(timezone.utc)
+        and stop_time is not None
+        and stop_time > datetime.now(UTC)
     )
 
 
@@ -111,8 +147,17 @@ def normalize_charging_state(value: Any) -> bool | None:
     if normalized in ("charging", "40", "56", "active", "in_progress", "in-progress"):
         return True
     if normalized in (
-        "12", "36", "45", "60", "unplugged", "charge_now", "resume_charging", "no_controls",
-        "unavailable", "external_power_active", "external_power_active_hybrid",
+        "12",
+        "36",
+        "45",
+        "60",
+        "unplugged",
+        "charge_now",
+        "resume_charging",
+        "no_controls",
+        "unavailable",
+        "external_power_active",
+        "external_power_active_hybrid",
     ):
         return False
     return None
@@ -162,9 +207,7 @@ def opening_state_from_graphql(
     """Extract position and lock state from an AppSync opening object."""
     position = opening.get("position") or {}
     lock = opening.get("lock") or {}
-    return normalize_position(position.get("status")), normalize_lock(
-        lock.get("status")
-    )
+    return normalize_position(position.get("status")), normalize_lock(lock.get("status"))
 
 
 def backdoor_candidates(backdoor_type: str | None) -> tuple[str, ...]:
@@ -185,8 +228,6 @@ def parse_api_timestamp(value: Any) -> datetime | None:
     normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
         parsed = datetime.fromisoformat(normalized)
-        return (
-            parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
-        )
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
     except ValueError:
         return None

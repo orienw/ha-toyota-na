@@ -73,5 +73,7 @@ class EntityDiscoveryTests(unittest.TestCase):
 
         config_entry.unload_callbacks[0]()
         self.assertEqual(coordinator.listeners, [])
+
+
 if __name__ == "__main__":
     unittest.main()

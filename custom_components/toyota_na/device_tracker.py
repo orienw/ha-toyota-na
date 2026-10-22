@@ -1,15 +1,16 @@
 """Device tracker platform for Toyota Connected Services"""
+
 import logging
 from typing import Any, cast
-
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
 
 from homeassistant.components.device_tracker import SourceType, TrackerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
+from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
 
 from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN
@@ -36,9 +37,7 @@ async def async_setup_entry(
     def discover_locations():
         for vehicle in coordinator.data or []:
             for entity_config in features_sensors:
-                vehicle_feature = cast(
-                    VehicleFeatures, entity_config["feature"]
-                )
+                vehicle_feature = cast(VehicleFeatures, entity_config["feature"])
                 feature = vehicle.features.get(vehicle_feature)
                 if isinstance(feature, ToyotaLocation):
                     yield ToyotaDeviceTracker(
@@ -63,6 +62,10 @@ class ToyotaDeviceTracker(ToyotaNABaseEntity, TrackerEntity):
     def __init__(self, feature: VehicleFeatures, *args: Any):
         super().__init__(*args)
         self._feature = feature
+        # Current Location only takes the telemetry position, which Last Parked
+        # also takes along with newer status updates, so it starts disabled for
+        # entities new to the registry.
+        self._attr_entity_registry_enabled_default = feature != VehicleFeatures.RealTimeLocation
 
     @property
     def icon(self) -> str:

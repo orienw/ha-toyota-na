@@ -9,11 +9,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, ToyotaVehicle
 
 from .base_entity import ToyotaNABaseEntity
-from .command_refresh import refresh_after_command
+from .command_refresh import cancel_on_unload, refresh_after_command
 from .const import COMMAND_BUTTONS, COMMAND_REFRESH_DELAY, DOMAIN
 from .entity_discovery import setup_entity_discovery
 from .service_helpers import translate_service_errors
 from .wake_policy import record_vehicle_wake
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -41,9 +42,7 @@ async def async_setup_entry(
                         vehicle.vin,
                     )
             if vehicle.supports_command(RemoteRequestCommand.Refresh):
-                yield ToyotaRefreshButton(
-                    config_entry, coordinator, "Refresh Status", vehicle.vin
-                )
+                yield ToyotaRefreshButton(config_entry, coordinator, "Refresh Status", vehicle.vin)
 
     setup_entity_discovery(
         config_entry,
@@ -62,11 +61,14 @@ class ToyotaButtonBase(ToyotaNABaseEntity, ButtonEntity):
 
     def _schedule_refresh(self, command=None) -> None:
         task = self.hass.async_create_task(self._async_refresh_after_delay(command))
-        self._config_entry.async_on_unload(task.cancel)
+        cancel_on_unload(self._config_entry, task)
 
     async def _async_refresh_after_delay(self, command=None) -> None:
         await refresh_after_command(
-            self.coordinator, self.vin, command, delay=COMMAND_REFRESH_DELAY,
+            self.coordinator,
+            self.vin,
+            command,
+            delay=COMMAND_REFRESH_DELAY,
         )
 
 
@@ -87,9 +89,7 @@ class ToyotaCommandButton(ToyotaButtonBase):
     def available(self) -> bool:
         vehicle = self.vehicle
         return (
-            vehicle is not None
-            and vehicle.subscribed
-            and vehicle.supports_command(self._command)
+            vehicle is not None and vehicle.subscribed and vehicle.supports_command(self._command)
         )
 
     async def async_press(self) -> None:

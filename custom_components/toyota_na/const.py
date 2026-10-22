@@ -1,11 +1,20 @@
-from toyota_na.vehicle.base_vehicle import VehicleFeatures
-
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE, UnitOfPressure
 
-from toyota_na.vehicle.base_vehicle import RemoteRequestCommand
+from toyota_na.vehicle.base_vehicle import RemoteRequestCommand, VehicleFeatures
 
+from .health_helpers import (
+    engine_oil_low,
+    key_fob_battery_low,
+    maintenance_required,
+    safety_recalls,
+    service_campaigns,
+    service_due,
+    software_update_available,
+    software_update_details,
+    vehicle_alerts,
+)
 
 DOMAIN = "toyota_na"
 
@@ -32,7 +41,7 @@ WINDOWS_CLOSE = "windows_close"
 MOONROOF_CLOSE = "moonroof_close"
 
 UPDATE_INTERVAL = 600
-REFRESH_STATUS_INTERVAL = 2 * 3600
+REFRESH_STATUS_INTERVAL = 0
 
 COMMAND_MAP = {
     DOOR_LOCK: RemoteRequestCommand.DoorLock,
@@ -346,6 +355,104 @@ CONNECTOR_STATES = {
     "unlocked": "unlocked",
     "locked": "locked",
 }
+
+# Toyota's remoteDisplay values, named after the app's banners.
+REMOTE_ACCESS_STATES = {
+    0: "unsupported",
+    1: "authorization_required",
+    2: "subscription_cancelled",
+    3: "subscription_cancelled",
+    4: "activation_failed",
+    5: "activation_pending",
+    6: "activation_error",
+    7: "active",
+    8: "subscription_expired",
+    9: "subscription_expired",
+    10: "stolen",
+    11: "stolen_immobilizer",
+}
+
+# Toyota notification categories, lowercased, by the event type they fire.
+# Other categories fire "other"; the event data keeps the original category.
+NOTIFICATION_EVENT_TYPES = {
+    "remotecommand": "remote_command",
+    "realtimestatus": "status_update",
+    "vehiclestatusalert": "vehicle_alert",
+    "servicewarnings": "service_warning",
+    "ota_updates": "software_update",
+    "ota_updates_21mm": "software_update",
+    "update_notification": "software_update",
+    "install_notification": "software_update",
+    "release_notes": "software_update",
+    "subscriptions": "subscription",
+    "chargeassist": "charging",
+    "evgoenrollment": "charging",
+    "guestdriverprofileactivate": "shared_access",
+    "remote_user_activated": "shared_access",
+    "digitalkey": "digital_key",
+    "drive_recorder_new_event": "drive_recorder",
+    "drive_recorder_upload_complete": "drive_recorder",
+    "navi_send_to_phone": "navigation",
+}
+
+# Toyota's Health tab tiles, gated on the app's feature flags.
+HEALTH_SENSORS = (
+    {
+        "name": "Safety Recalls",
+        "icon": "mdi:alert-octagon-outline",
+        "features": ("safetyRecall",),
+        "attribute": "recalls",
+        "items": safety_recalls,
+    },
+    {
+        "name": "Service Campaigns",
+        "icon": "mdi:car-wrench",
+        "features": ("serviceCampaign",),
+        "attribute": "campaigns",
+        "items": service_campaigns,
+    },
+    {
+        "name": "Vehicle Alerts",
+        "icon": "mdi:car-light-alert",
+        "features": ("vehicleHealthReport",),
+        "attribute": "alerts",
+        "items": vehicle_alerts,
+    },
+)
+
+HEALTH_BINARY_SENSORS = (
+    {
+        "name": "Engine Oil",
+        "icon": "mdi:oil",
+        "device_class": BinarySensorDeviceClass.PROBLEM,
+        "features": ("vehicleHealthReport",),
+        "value": engine_oil_low,
+    },
+    {
+        # The app shows the key fob whenever the report names it.
+        "name": "Key Fob Battery",
+        "icon": "mdi:key-wireless",
+        "device_class": BinarySensorDeviceClass.BATTERY,
+        "features": None,
+        "value": key_fob_battery_low,
+    },
+    {
+        "name": "Maintenance Required",
+        "icon": "mdi:wrench-clock",
+        "device_class": BinarySensorDeviceClass.PROBLEM,
+        "features": ("vehicleHealthReport", "scheduleMaintenance"),
+        "value": maintenance_required,
+        "attributes": service_due,
+    },
+    {
+        "name": "Software Update",
+        "icon": "mdi:update",
+        "device_class": BinarySensorDeviceClass.UPDATE,
+        "features": ("autoDrive",),
+        "value": software_update_available,
+        "attributes": software_update_details,
+    },
+)
 
 SENSORS = [
     {
