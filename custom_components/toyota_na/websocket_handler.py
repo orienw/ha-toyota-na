@@ -135,7 +135,8 @@ class ToyotaWebSocketHandler:
             except asyncio.CancelledError:
                 return
             except Exception as e:
-                _LOGGER.debug("WebSocket connection error: %s", e)
+                status = f" (HTTP {e.status})" if isinstance(e, aiohttp.ClientResponseError) else ""
+                _LOGGER.debug("WebSocket connection error: %s%s", type(e).__name__, status)
 
             if not self._running or not self._vehicle_contexts:
                 return

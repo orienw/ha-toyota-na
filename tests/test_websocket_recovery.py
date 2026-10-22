@@ -1,10 +1,16 @@
 """Subscription recovery with multiple vehicles on one connection."""
 
 import asyncio
+import base64
 import json
 import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
+
+import aiohttp
+from multidict import CIMultiDict, CIMultiDictProxy
+from yarl import URL
 
 from custom_components.toyota_na import websocket_handler as websocket_module
 from custom_components.toyota_na.websocket_handler import ToyotaWebSocketHandler
@@ -366,6 +372,57 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(retry.cancelled())
         self.assertEqual(self.handler._retry_tasks, {})
         self.socket.send_json.assert_not_awaited()
+
+    async def test_connection_errors_do_not_log_authentication_query(self):
+        for error_type in (aiohttp.WSServerHandshakeError, ConnectionError):
+            with self.subTest(error=error_type.__name__):
+                handler = ToyotaWebSocketHandler(self.client)
+                self.addAsyncCleanup(handler.stop)
+
+                async def reject(url, **kwargs):
+                    if error_type is ConnectionError:
+                        raise ConnectionError(f"Connection failed for {url}")
+                    info = aiohttp.RequestInfo(
+                        URL(url), "GET", CIMultiDictProxy(CIMultiDict()), URL(url)
+                    )
+                    raise aiohttp.WSServerHandshakeError(
+                        info, (), status=500, message="Invalid response status"
+                    )
+
+                session = MagicMock(closed=False)
+                session.ws_connect = AsyncMock(side_effect=reject)
+                session.close = AsyncMock()
+                with (
+                    patch.object(websocket_module.aiohttp, "ClientSession", return_value=session),
+                    self.assertLogs(websocket_module.__name__, level="DEBUG") as logs,
+                ):
+                    await handler.start({"FIRSTVIN": {"region": "US"}})
+                    await self.next_sleep(5)
+                    await handler.stop()
+
+                url = session.ws_connect.call_args.args[0]
+                encoded_headers = parse_qs(urlparse(url).query)["header"][0]
+                headers = json.loads(base64.b64decode(encoded_headers))
+                self.assertEqual(headers["Authorization"], "Bearer fresh-token")
+                output = "\n".join(logs.output)
+                for private in (
+                    url,
+                    encoded_headers,
+                    "header=",
+                    "fresh-token",
+                    "guid",
+                    "FIRSTVIN",
+                    "device",
+                ):
+                    self.assertNotIn(private, output)
+                self.assertIn(error_type.__name__, output)
+                if error_type is aiohttp.WSServerHandshakeError:
+                    self.assertIn("500", output)
+                session.close.assert_awaited_once()
+                self.assertIsNone(handler._task)
+                self.assertFalse(handler.is_connected)
+                self.assertEqual(handler._subscriptions, {})
+                self.assertEqual(handler._retry_tasks, {})
 
     async def test_disconnected_socket_cancels_subscription_retries(self):
         frames = iter(("connection_ack", "start_ack", "start_ack", "error", "close"))
