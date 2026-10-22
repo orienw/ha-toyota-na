@@ -1,6 +1,7 @@
 """Run the integration in a real Home Assistant with Toyota's cloud stubbed."""
 
 from copy import deepcopy
+from datetime import timedelta
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,6 +9,9 @@ from common import EMAIL, STATUS_24MM, FakeClient, FakeWebSocket, account_entry,
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from toyota_na.exceptions import TokenExpired
 
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.wake_policy import CONF_WAKE_INTERVAL, LAST_VEHICLE_WAKES
@@ -64,6 +68,71 @@ async def test_pushed_status_updates_entities(hass, loaded):
     await hass.async_block_till_done()
 
     assert hass.states.get(LOCK).state == "locked"
+
+
+async def test_frequent_pushes_keep_account_polling_without_waking(hass, freezer, loaded):
+    entry, client, websocket = loaded
+    for reading in range(1, 5):
+        freezer.tick(timedelta(seconds=300))
+        websocket.on_status(
+            VIN,
+            {
+                "vin": VIN,
+                "telemetry": {
+                    "lastUpdateDateTime": dt_util.utcnow().isoformat(),
+                    "odo": {"value": 1234 + reading, "unit": "mi"},
+                },
+            },
+        )
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await hass.async_block_till_done()
+
+        assert hass.states.get("sensor.2026_rav4_plug_in_hybrid_odometer").state == str(
+            1234 + reading
+        )
+        polls = 1 + reading // 2
+        assert client.get_user_vehicle_list.await_count == polls
+        assert client.get_notification_history.await_count == polls
+        assert client.get_vehicle_health_report.await_count == polls
+    assert LAST_VEHICLE_WAKES not in entry.data
+    client.graphql_refresh_status.assert_not_awaited()
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("Account read failed"), TokenExpired()])
+async def test_push_preserves_failed_poll_and_its_retry_behavior(hass, freezer, loaded, failure):
+    entry, client, websocket = loaded
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    client.get_user_vehicle_list.side_effect = failure
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert not coordinator.last_update_success
+    error = coordinator.last_exception
+    reads = client.get_user_vehicle_list.await_count
+
+    status = deepcopy(STATUS_24MM)
+    status["vehicleState"]["lastUpdateDateTime"] = "2026-08-14T12:05:00Z"
+    status["vehicleState"]["doors"]["passengerSide"]["lock"]["status"] = "lock"
+    websocket.on_status(VIN, status)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(LOCK).state == "locked"
+    assert not coordinator.last_update_success
+    assert coordinator.last_exception is error
+    assert client.get_user_vehicle_list.await_count == reads
+    client.get_user_vehicle_list.side_effect = None
+    freezer.tick(timedelta(seconds=601))
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    if isinstance(failure, TokenExpired):
+        assert not coordinator.last_update_success
+        assert client.get_user_vehicle_list.await_count == reads
+        assert any(
+            flow["context"]["source"] == "reauth"
+            for flow in hass.config_entries.flow.async_progress()
+        )
+    else:
+        assert coordinator.last_update_success
+        assert client.get_user_vehicle_list.await_count == reads + 1
 
 
 async def test_service_finds_the_vehicle_through_its_device(hass, loaded):

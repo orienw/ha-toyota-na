@@ -357,7 +357,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             if vehicle is None or not hasattr(vehicle, "apply_graphql_status"):
                 return
             if vehicle.apply_graphql_status(status):
-                coordinator.async_set_updated_data(vehicles)
+                # Vehicle pushes must not postpone account-only reads.
+                coordinator.async_update_listeners()
 
         ws_handler = ToyotaWebSocketHandler(client, handle_vehicle_status)
         await ws_handler.start(_websocket_contexts(coordinator.data or []))
