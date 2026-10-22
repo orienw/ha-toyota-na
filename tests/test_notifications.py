@@ -3,6 +3,7 @@
 import json
 import types
 import unittest
+from asyncio import Handle
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -273,8 +274,15 @@ async def test_history_present_at_startup_stays_history_without_its_date(hass, n
     assert events("UNREADVIN") == []
 
 
-async def test_a_late_first_read_still_fires_notifications_after_startup(hass, notifications):
-    _, unread, refresh, events = notifications
+async def test_a_late_first_read_still_fires_notifications_after_startup(
+    hass, setup_vehicles, freezer
+):
+    freezer.move_to(STARTED)
+    unread = FakeVehicle(set())
+    unread.notifications = None
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+    account = await setup_vehicles([unread])
+    reads = account.get_vehicles.await_count
     unread.notifications = [
         {
             "messageId": "before",
@@ -282,16 +290,55 @@ async def test_a_late_first_read_still_fires_notifications_after_startup(hass, n
             "notificationDate": "2026-10-06T06:00:00Z",
         },
         {
-            "messageId": "after",
+            "messageId": "after-2",
             "category": "RemoteCommand",
             "notificationDate": "2026-10-06T07:05:00Z",
         },
         {"messageId": "undated", "category": "RemoteCommand"},
+        {
+            "messageId": "after-1",
+            "category": "ServiceWarnings",
+            "notificationDate": "2026-10-06T07:01:00Z",
+        },
     ]
-    await refresh()
-    assert entity_id(hass, "event", "UNREADVIN.Notifications") is not None
-    await refresh()
-    assert [data["message_id"] for _, data in events("UNREADVIN")] == ["after"]
+    account.coordinator.async_set_updated_data([unread])
+    await hass.async_block_till_done()
+    notification = entity_id(hass, "event", "TESTVIN.Notifications")
+    assert notification is not None
+    assert [data["message_id"] for _, data in fired(changes, notification)] == [
+        "after-1",
+        "after-2",
+    ]
+    assert account.get_vehicles.await_count == reads
+    unread.notifications = [{**item, "notificationDate": None} for item in unread.notifications]
+    account.coordinator.async_set_updated_data([unread])
+    await hass.async_block_till_done()
+    assert [data["message_id"] for _, data in fired(changes, notification)] == [
+        "after-1",
+        "after-2",
+    ]
+    assert account.get_vehicles.await_count == reads
+
+
+async def test_removal_cancels_pending_initial_notifications(hass, setup_vehicles):
+    pending = []
+    call_soon = hass.loop.call_soon
+
+    def defer_notifications(callback, *args, **kwargs):
+        if isinstance(getattr(callback, "__self__", None), event.ToyotaNotificationEvent):
+            handle = Handle(callback, args, hass.loop, **kwargs)
+            pending.append(handle)
+            return handle
+        return call_soon(callback, *args, **kwargs)
+
+    vehicle = FakeVehicle(set())
+    vehicle.notifications = []
+    with patch.object(hass.loop, "call_soon", side_effect=defer_notifications):
+        account = await setup_vehicles([vehicle])
+        [handle] = pending
+        assert not handle.cancelled()
+        assert await hass.config_entries.async_unload(account.entry.entry_id)
+    assert handle.cancelled()
 
 
 async def test_ids_compare_as_text_like_the_app(notifications):

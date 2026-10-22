@@ -85,6 +85,8 @@ class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
             for message_id, date, _ in self._notifications or []
             if date is None or date <= self._started
         )
+        # Wait until the entity is fully added so every event can write its state.
+        self.async_on_remove(self.hass.loop.call_soon(self._handle_coordinator_update).cancel)
 
     @callback
     def _handle_coordinator_update(self) -> None:
