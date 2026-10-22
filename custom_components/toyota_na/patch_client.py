@@ -4,6 +4,7 @@ import json
 import logging
 import time
 import uuid
+from contextlib import AsyncExitStack
 from urllib.parse import urlencode, urljoin
 
 import aiohttp
@@ -1333,7 +1334,18 @@ async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unkno
     websocket_url = f"{GRAPHQL_WS_ENDPOINT}?{query}"
 
     async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
-        async with session.ws_connect(websocket_url, protocols=["graphql-ws"], heartbeat=30) as ws:
+        async with AsyncExitStack() as stack:
+            try:
+                ws = await stack.enter_async_context(
+                    session.ws_connect(websocket_url, protocols=["graphql-ws"], heartbeat=30)
+                )
+            except TimeoutError:
+                raise RuntimeError("The Toyota connection timed out. Try again.") from None
+            except aiohttp.ClientError as err:
+                status = (
+                    f" (HTTP {err.status})" if isinstance(err, aiohttp.ClientResponseError) else ""
+                )
+                raise RuntimeError(f"Could not connect to Toyota{status}. Try again.") from None
             await ws.send_json({"type": "connection_init"})
             await _wait_for_remote_socket_event(ws, "connection_ack")
 

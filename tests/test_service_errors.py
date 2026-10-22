@@ -1,17 +1,23 @@
 """Expected failures reach Home Assistant through every command entry point."""
 
 import asyncio
+import base64
 import json
+import logging
 import types
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
+import aiohttp
 import pytest
 from aiohttp import ClientResponseError
-from common import FakeVehicle, entity_id, get_entity, settle
+from common import FakeVehicle, entity_id, get_entity, make_24mm_vehicle, settle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+from toyota_na.client import ToyotaOneClient
 from toyota_na.exceptions import TokenExpired
 
+from custom_components.toyota_na import patch_client
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.patch_base_vehicle import RemoteRequestCommand
 
@@ -113,3 +119,74 @@ async def test_cancellation_and_unexpected_errors_propagate(hass, commands, subt
                 assert not get_entity(hass, lock)._state_changing
                 assert account.entry.data == data
                 assert account.get_vehicles.await_count == polls
+
+
+@pytest.mark.parametrize("native", [True, False], ids=["native_lock", "toyota_service"])
+@pytest.mark.parametrize("failure", ["timeout", "handshake"])
+async def test_remote_connection_errors_keep_credentials_out_of_errors_and_logs(
+    hass, setup_vehicles, hass_ws_client, caplog, native, failure
+):
+    token = "test-command-access-token"
+    client = ToyotaOneClient(
+        types.SimpleNamespace(
+            get_access_token=AsyncMock(return_value=token),
+            get_guid=AsyncMock(return_value="test-guid"),
+            get_device_id=lambda: "test-device",
+        )
+    )
+    client.graphql_send_remote_command = AsyncMock()
+    vehicle = make_24mm_vehicle(client)
+    await setup_vehicles([vehicle])
+    lock = entity_id(hass, "lock", "TESTVIN24.")
+    device_id = er.async_get(hass).async_get(lock).device_id
+    websocket = await hass_ws_client(hass)
+    attempted_urls = []
+
+    async def timeout(request, **kwargs):
+        attempted_urls.append(str(request.url))
+        raise TimeoutError()
+
+    def reject_handshake(url, **kwargs):
+        attempted_urls.append(url)
+        socket = MagicMock()
+        socket.__aenter__.side_effect = aiohttp.WSServerHandshakeError(
+            types.SimpleNamespace(real_url=url), (), status=500, message="Invalid response status"
+        )
+        return socket
+
+    session = MagicMock()
+    session.__aenter__.return_value = session
+    session.ws_connect.side_effect = reject_handshake
+    connection = (
+        patch.object(aiohttp.TCPConnector, "connect", AsyncMock(side_effect=timeout))
+        if failure == "timeout"
+        else patch.object(patch_client.aiohttp, "ClientSession", return_value=session)
+    )
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG), connection:
+        await websocket.send_json_auto_id(
+            {
+                "type": "call_service",
+                "domain": "lock" if native else DOMAIN,
+                "service": "lock" if native else "door_lock",
+                "service_data": {"entity_id": lock} if native else {"vehicle": device_id},
+            }
+        )
+        response = await websocket.receive_json()
+
+    assert not response["success"]
+    assert len(attempted_urls) == 1
+    encoded_headers = parse_qs(urlparse(attempted_urls[0]).query)["header"][0]
+    assert json.loads(base64.b64decode(encoded_headers))["Authorization"] == f"Bearer {token}"
+    output = json.dumps(response) + caplog.text
+    for private in (attempted_urls[0], encoded_headers, "header=", token):
+        assert private not in output
+    assert response["error"]["message"] == (
+        "The Toyota connection timed out. Try again."
+        if failure == "timeout"
+        else "Could not connect to Toyota (HTTP 500). Try again."
+    )
+    client.graphql_send_remote_command.assert_not_awaited()
+    assert not client._remote_locks[vehicle.vin].locked()
+    if failure == "handshake":
+        session.__aexit__.assert_awaited_once()
