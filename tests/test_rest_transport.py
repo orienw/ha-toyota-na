@@ -1,11 +1,9 @@
 """REST routing through the integration and upstream client wrappers."""
 
 import asyncio
-import importlib.util
 import json
 import types
 import unittest
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -14,14 +12,9 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import LoginError
 
-SPEC = importlib.util.spec_from_file_location(
-    "rest_patch_client",
-    Path(__file__).resolve().parents[1] / "custom_components/toyota_na/patch_client.py",
-)
-client_module = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(client_module)
+from custom_components.toyota_na import patch_client as client_module
+from custom_components.toyota_na.exceptions import LoginError
 
 
 class Client:

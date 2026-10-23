@@ -1,7 +1,6 @@
 import logging
 
 from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import (
     ApiVehicleGeneration,
     ToyotaVehicle,
@@ -11,6 +10,7 @@ from toyota_na.vehicle.vehicle_generations.seventeen_cy_plus import (
     SeventeenCYPlusToyotaVehicle,
 )
 
+from .exceptions import AuthError
 from .vehicle_helpers import has_remote_subscription, is_electric_vehicle, normalize_remote_display
 
 _LOGGER = logging.getLogger(__name__)

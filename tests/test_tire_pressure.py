@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 from common import entity_id, make_17cy_vehicle, make_24mm_vehicle, make_vehicle
-from toyota_na.exceptions import LoginError
 
+from custom_components.toyota_na.exceptions import LoginError
 from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration, VehicleFeatures
 
 TIRES = {

@@ -9,7 +9,7 @@ from urllib.parse import urlencode, urljoin
 
 import aiohttp
 
-from toyota_na.exceptions import AuthError, TokenExpired
+from .exceptions import AuthError, TokenExpired
 
 API_GATEWAY = "https://onecdn.telematicsct.com/oneapi/"
 REMOTE_ROUTE = "https://onecdn.telematicsct.com/v1/remote/route/"

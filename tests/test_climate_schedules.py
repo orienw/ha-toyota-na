@@ -16,7 +16,6 @@ from common import entity_id, make_vehicle, settle
 from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
-from toyota_na.exceptions import LoginError
 
 from custom_components.toyota_na import climate_schedule_helpers, patch_base_vehicle
 from custom_components.toyota_na.climate_schedule_helpers import (
@@ -25,6 +24,7 @@ from custom_components.toyota_na.climate_schedule_helpers import (
     local_climate_schedule,
 )
 from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.exceptions import LoginError
 from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration
 
 ZONE = ZoneInfo("America/Los_Angeles")

@@ -13,10 +13,10 @@ from common import LEXUS_21MM_COUPE, FakeVehicle, entity_id
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import async_capture_events
-from toyota_na.exceptions import AuthError
 
 from custom_components.toyota_na import event, patch_client
 from custom_components.toyota_na.const import NOTIFICATION_EVENT_TYPES
+from custom_components.toyota_na.exceptions import AuthError
 from custom_components.toyota_na.patch_seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
 from custom_components.toyota_na.patch_vehicle import get_vehicles
 

@@ -4,6 +4,7 @@ import asyncio
 import base64
 import copy
 import hashlib
+import json
 import logging
 import os
 import time
@@ -20,10 +21,10 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from toyota_na.exceptions import LoginError, TokenExpired
 
 from custom_components.toyota_na import config_flow, patch_auth
 from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.exceptions import LoginError, TokenExpired
 
 CREDENTIALS = {"username": "owner", "password": "password"}
 
@@ -44,6 +45,43 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
             auth._extract_tokens(response)
 
         return AsyncMock(side_effect=refresh)
+
+    async def test_saved_session_restores_account_identity_without_refreshing(self):
+        identity = {"sub": "guid", "email": "owner@example.com"}
+        auth = patch_auth.ToyotaOneAuth()
+        auth._extract_tokens(
+            {
+                **self.token_response(),
+                "id_token": jwt.encode(identity, key="", algorithm="none"),
+            }
+        )
+        tokens = json.loads(json.dumps(auth.get_tokens()))
+        restored = patch_auth.ToyotaOneAuth(initial_tokens=tokens)
+        restored.refresh_tokens = AsyncMock()
+
+        self.assertEqual("access", await restored.get_access_token())
+        self.assertEqual("guid", await restored.get_guid())
+        self.assertEqual(identity, await restored.get_id_info())
+        self.assertEqual(tokens, restored.get_tokens())
+        restored.refresh_tokens.assert_not_awaited()
+
+    def test_device_id_keeps_saved_identity_and_existing_hex_format(self):
+        for value, expected in ((1, "0" * 29 + "1"), (2**256 - 1, "f" * 64)):
+            with self.subTest(value=value):
+                auth = patch_auth.ToyotaOneAuth()
+                with patch.object(
+                    patch_auth.secrets, "randbits", return_value=value
+                ) as random_bits:
+                    generated = auth.get_device_id()
+                    self.assertEqual(expected, generated)
+                    self.assertEqual(generated, auth.get_device_id())
+                random_bits.assert_called_once_with(256)
+
+                restored = patch_auth.ToyotaOneAuth()
+                restored.set_device_id(generated)
+                with patch.object(patch_auth.secrets, "randbits") as random_bits:
+                    self.assertEqual(generated, restored.get_device_id())
+                random_bits.assert_not_called()
 
     async def test_expiry_is_independent_of_local_timezone(self):
         old_timezone = os.environ.get("TZ")
@@ -145,6 +183,18 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(*(auth.get_access_token() for _ in range(4)))
         auth.refresh_tokens.assert_awaited_once()
 
+    async def test_default_auth_refresh_interval_is_preserved(self):
+        auth = patch_auth.ToyotaOneAuth()
+        with patch.object(patch_auth.time, "time", return_value=1800000000):
+            auth._extract_tokens(self.token_response())
+        auth.refresh_tokens = self.refresh_with(auth, self.token_response())
+        with patch.object(patch_auth.time, "time", return_value=1800000299):
+            self.assertEqual("guid", await auth.get_guid())
+        auth.refresh_tokens.assert_not_awaited()
+        with patch.object(patch_auth.time, "time", return_value=1800000300):
+            self.assertEqual("access", await auth.get_access_token())
+        auth.refresh_tokens.assert_awaited_once()
+
     async def test_short_lived_tokens_do_not_refresh_repeatedly_inside_the_margin(self):
         for lifetime in (120, 10):
             with self.subTest(lifetime=lifetime):
@@ -231,7 +281,7 @@ class TestAuthFlow:
             caplog.at_level(logging.INFO, logger=patch_auth.__name__),
             pytest.raises(LoginError),
         ):
-            await patch_auth.authorize(types.SimpleNamespace(), "owner", "password")
+            await patch_auth.ToyotaOneAuth.authorize(types.SimpleNamespace(), "owner", "password")
         logs = " ".join(
             record.getMessage() for record in caplog.records if record.name == patch_auth.__name__
         )
@@ -531,7 +581,7 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
                 self.response.json.side_effect = [rejected]
                 with self.assertLogs(patch_auth.__name__, level="ERROR") as logs:
                     with self.assertRaises(LoginError):
-                        await patch_auth.authorize(
+                        await patch_auth.ToyotaOneAuth.authorize(
                             self.auth, "owner", "private-password", "private-otp"
                         )
                 self.assertEqual(len(self.sent), 1)
@@ -553,7 +603,9 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
                 ]
                 with self.assertLogs(patch_auth.__name__, level="ERROR") as logs:
                     with self.assertRaises(patch_auth.PasswordHistoryError):
-                        await patch_auth.authorize(self.auth, "owner", "password", "123456")
+                        await patch_auth.ToyotaOneAuth.authorize(
+                            self.auth, "owner", "password", "123456"
+                        )
                 self.assertEqual(
                     ["123456", "password"],
                     [data["callbacks"][0]["input"][0]["value"] for data in self.sent],
@@ -573,9 +625,12 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
             {"callbacks": [self.callback("PasswordCallback", "Password")]},
             {"tokenId": "session"},
         ]
-        self.assertEqual(otp_challenge, await patch_auth.authorize(self.auth, "owner", "password"))
         self.assertEqual(
-            "code", await patch_auth.authorize(self.auth, "owner", "password", "123456")
+            otp_challenge, await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "password")
+        )
+        self.assertEqual(
+            "code",
+            await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "password", "123456"),
         )
         self.assertEqual(self.sent[-1]["callbacks"][0]["input"][0]["value"], "password")
 
@@ -590,7 +645,7 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
                 redirect.status = status
                 self.assertEqual(
                     "encoded+code=",
-                    await patch_auth.authorize(self.auth, "owner", "secret"),
+                    await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "secret"),
                 )
                 self.assertFalse(self.session.get.call_args.kwargs["allow_redirects"])
 
@@ -621,7 +676,7 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(status=status, location=location), self.assertRaises(LoginError):
                 redirect.status = status
                 redirect.headers = {} if location is None else {"Location": location}
-                await patch_auth.authorize(self.auth, "owner", "secret")
+                await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "secret")
 
     async def test_renamed_prompts_fill_credentials_and_preserve_metadata(self):
         for name, password, locale in (
@@ -640,7 +695,9 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
                 callbacks[-1]["output"].insert(0, {"name": "echoOn", "value": False})
                 self.response.json.side_effect = [{"callbacks": callbacks}, {"tokenId": "session"}]
 
-                self.assertEqual("code", await patch_auth.authorize(self.auth, "owner", "secret"))
+                self.assertEqual(
+                    "code", await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "secret")
+                )
 
                 self.assertEqual(
                     ["owner", "en-US", "device-metadata", "server@example.com", "secret"],
@@ -655,11 +712,15 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
                 self.response.json.side_effect = [challenge, {"tokenId": "session"}]
 
                 self.assertEqual(
-                    challenge, await patch_auth.authorize(self.auth, "owner", "secret")
+                    challenge,
+                    await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "secret"),
                 )
                 self.assertEqual([{}], self.sent)
                 self.assertEqual(
-                    "code", await patch_auth.authorize(self.auth, "owner", "secret", "123456")
+                    "code",
+                    await patch_auth.ToyotaOneAuth.authorize(
+                        self.auth, "owner", "secret", "123456"
+                    ),
                 )
                 self.assertEqual("123456", self.sent[-1]["callbacks"][0]["input"][0]["value"])
 
@@ -677,7 +738,7 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
                 ]
 
                 with self.assertRaises(LoginError):
-                    await patch_auth.authorize(self.auth, "owner", "secret")
+                    await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "secret")
 
                 self.assertEqual(2, len(self.sent))
                 self.session.get.assert_not_called()
@@ -700,7 +761,7 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
                 self.response.json.side_effect = challenges
 
                 with self.assertRaisesRegex(LoginError, message):
-                    await patch_auth.authorize(self.auth, "owner", "secret", code)
+                    await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "secret", code)
                 self.session.get.assert_not_called()
 
     async def test_password_login_continues_to_otp(self):
@@ -712,10 +773,14 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
             {"tokenId": "session"},
         ]
 
-        self.assertEqual(otp_challenge, await patch_auth.authorize(self.auth, "owner", "secret"))
+        self.assertEqual(
+            otp_challenge, await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "secret")
+        )
         self.session.get.assert_not_called()
         self.assertEqual(3, len(self.sent))
-        self.assertEqual("code", await patch_auth.authorize(self.auth, "owner", "secret", "123456"))
+        self.assertEqual(
+            "code", await patch_auth.ToyotaOneAuth.authorize(self.auth, "owner", "secret", "123456")
+        )
         self.assertEqual(
             ["owner", "secret", "123456"],
             [data["callbacks"][0]["input"][0]["value"] for data in self.sent[1:]],
@@ -740,9 +805,9 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         verifiers = []
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
             for _ in range(2):
-                code = await patch_auth.authorize(auth, "owner", "password")
+                code = await patch_auth.ToyotaOneAuth.authorize(auth, "owner", "password")
                 query = parse_qs(urlparse(session.get.call_args.args[0]).query)
-                await patch_auth.request_tokens(auth, code)
+                await patch_auth.ToyotaOneAuth.request_tokens(auth, code)
                 form = session.post.call_args.kwargs["data"]
                 verifier = form["code_verifier"]
                 self.assertEqual(len(verifier), 86)
@@ -763,7 +828,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_token_exchange_requires_authorization_and_preserves_failed_attempt(self):
         auth = types.SimpleNamespace(_extract_tokens=MagicMock())
         with self.assertRaises(LoginError):
-            await patch_auth.request_tokens(auth, "code")
+            await patch_auth.ToyotaOneAuth.request_tokens(auth, "code")
         auth._code_verifier = "pending-verifier"
         response = AsyncMock()
         response.status = 400
@@ -773,7 +838,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         session.post.return_value = response
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
             with self.assertRaises(LoginError):
-                await patch_auth.request_tokens(auth, "code")
+                await patch_auth.ToyotaOneAuth.request_tokens(auth, "code")
         auth._extract_tokens.assert_not_called()
         self.assertEqual(auth._code_verifier, "pending-verifier")
 
@@ -788,7 +853,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         session.__aenter__.return_value = session
         session.post.return_value = response
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
-            await patch_auth.refresh_tokens(auth)
+            await patch_auth.ToyotaOneAuth.refresh_tokens(auth)
         form = session.post.call_args.kwargs["data"]
         self.assertEqual(form["refresh_token"], "saved-refresh")
         self.assertEqual(form["grant_type"], "refresh_token")
@@ -910,13 +975,13 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         session.get.return_value = redirect
         auth = types.SimpleNamespace(_extract_tokens=MagicMock())
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
-            await patch_auth.authorize(auth, "owner", "password")
+            await patch_auth.ToyotaOneAuth.authorize(auth, "owner", "password")
             with self.assertLogs(patch_auth.__name__, level="ERROR"):
                 with self.assertRaises(LoginError):
-                    await patch_auth.authorize(auth, "owner", "password", "wrong")
-            code = await patch_auth.authorize(auth, "owner", "password", "correct")
+                    await patch_auth.ToyotaOneAuth.authorize(auth, "owner", "password", "wrong")
+            code = await patch_auth.ToyotaOneAuth.authorize(auth, "owner", "password", "correct")
             verifier = auth._code_verifier
-            await patch_auth.request_tokens(auth, code)
+            await patch_auth.ToyotaOneAuth.request_tokens(auth, code)
 
         self.assertEqual(code, "code")
         self.assertEqual(sent[-1]["authId"], "retry-auth-id")
@@ -958,7 +1023,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
                     patch.object(patch_auth._LOGGER, "error"),
                     self.assertRaises(LoginError),
                 ):
-                    await patch_auth.authorize(auth, "owner", "password", "123456")
+                    await patch_auth.ToyotaOneAuth.authorize(auth, "owner", "password", "123456")
                 session.post.assert_called_once()
 
     async def test_login_method_choice_is_selected_by_name(self):
@@ -995,7 +1060,9 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         session.get.return_value = redirect
         auth = types.SimpleNamespace(_extract_tokens=MagicMock())
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
-            self.assertEqual(await patch_auth.authorize(auth, "owner", "password"), "code")
+            self.assertEqual(
+                await patch_auth.ToyotaOneAuth.authorize(auth, "owner", "password"), "code"
+            )
 
         self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], 2)
 
@@ -1033,7 +1100,9 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         session.get.return_value = redirect
         auth = types.SimpleNamespace(_extract_tokens=MagicMock())
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
-            self.assertEqual(await patch_auth.authorize(auth, "owner", "password"), "code")
+            self.assertEqual(
+                await patch_auth.ToyotaOneAuth.authorize(auth, "owner", "password"), "code"
+            )
 
         self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], 1)
 
@@ -1059,7 +1128,7 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
             with self.assertLogs(patch_auth.__name__, level="ERROR") as logs:
                 with self.assertRaises(patch_auth.SsoAccountError):
-                    await patch_auth.authorize(auth, "owner", "password")
+                    await patch_auth.ToyotaOneAuth.authorize(auth, "owner", "password")
 
         session.post.assert_called_once()
         self.assertIn("Google", " ".join(logs.output))
@@ -1096,6 +1165,8 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         session.get.return_value = redirect
         auth = types.SimpleNamespace(_extract_tokens=MagicMock())
         with patch.object(patch_auth.aiohttp, "ClientSession", return_value=session):
-            self.assertEqual(await patch_auth.authorize(auth, "owner", "password"), "code")
+            self.assertEqual(
+                await patch_auth.ToyotaOneAuth.authorize(auth, "owner", "password"), "code"
+            )
 
         self.assertEqual(sent[-1]["callbacks"][0]["input"][0]["value"], 0)

@@ -11,9 +11,9 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
-from toyota_na.exceptions import TokenExpired
 
 from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.exceptions import TokenExpired
 from custom_components.toyota_na.wake_policy import CONF_WAKE_INTERVAL, LAST_VEHICLE_WAKES
 
 VIN = "TESTVIN24"

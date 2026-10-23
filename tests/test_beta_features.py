@@ -15,10 +15,10 @@ from common import (
 )
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
-from toyota_na.exceptions import LoginError
 
 from custom_components.toyota_na.charging_helpers import CHARGE_SETTINGS
 from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.exceptions import LoginError
 from custom_components.toyota_na.patch_base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,

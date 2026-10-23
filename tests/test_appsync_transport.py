@@ -1,10 +1,8 @@
 """Protocol tests for AppSync status and 24MM remote commands."""
 
 import base64
-import importlib.util
 import json
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
@@ -12,11 +10,7 @@ from uuid import UUID
 
 import aiohttp
 
-ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "custom_components/toyota_na/patch_client.py"
-SPEC = importlib.util.spec_from_file_location("appsync_patch_client", MODULE_PATH)
-patch_client = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(patch_client)
+from custom_components.toyota_na import patch_client
 
 # AppSync reports a field missing from the schema as a validation error message.
 SCHEMA_ERROR = {"message": "Validation error of type FieldUndefined: actualChargingRate"}

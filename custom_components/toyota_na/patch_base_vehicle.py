@@ -8,7 +8,6 @@ from enum import Enum, auto, unique
 import aiohttp
 
 from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import AuthError
 
 from .charging_helpers import (
     CHARGE_SETTINGS,
@@ -19,6 +18,7 @@ from .charging_helpers import (
 )
 from .climate_helpers import apply_climate_changes
 from .climate_schedule_helpers import build_climate_schedule, climate_schedule_matches
+from .exceptions import AuthError
 from .vehicle_helpers import (
     can_extend_remote_runtime,
     endpoint_generation,

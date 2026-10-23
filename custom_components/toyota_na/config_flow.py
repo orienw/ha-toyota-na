@@ -5,9 +5,9 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 
 from toyota_na import ToyotaOneClient
-from toyota_na.exceptions import AuthError
 
 from .const import DOMAIN, REFRESH_STATUS_INTERVAL
+from .exceptions import AuthError
 from .patch_auth import PasswordHistoryError, SsoAccountError
 from .wake_policy import (
     CONF_WAKE_INTERVAL,

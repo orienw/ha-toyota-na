@@ -2,7 +2,6 @@ import logging
 from copy import deepcopy
 
 from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
@@ -10,6 +9,7 @@ from toyota_na.vehicle.base_vehicle import (
     VehicleFeatures,
 )
 
+from .exceptions import AuthError
 from .vehicle_helpers import (
     backdoor_candidates,
     can_extend_remote_runtime,

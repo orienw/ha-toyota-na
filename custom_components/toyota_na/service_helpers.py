@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from aiohttp import ClientError, ClientResponseError
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
-from toyota_na.exceptions import AuthError
+from .exceptions import AuthError
 
 
 @contextmanager

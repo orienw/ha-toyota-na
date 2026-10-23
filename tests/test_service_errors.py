@@ -15,10 +15,10 @@ from common import FakeVehicle, entity_id, get_entity, make_24mm_vehicle, settle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import TokenExpired
 
 from custom_components.toyota_na import patch_client
 from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.exceptions import TokenExpired
 from custom_components.toyota_na.patch_base_vehicle import RemoteRequestCommand
 
 

@@ -12,10 +12,10 @@ import voluptuous as vol
 from aiohttp import ClientConnectionError
 from common import entity_id, make_vehicle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from toyota_na.exceptions import AuthError
 
 from custom_components.toyota_na import patch_client
 from custom_components.toyota_na.climate_helpers import climate_parameters
+from custom_components.toyota_na.exceptions import AuthError
 
 
 def operation(category, *parameters):

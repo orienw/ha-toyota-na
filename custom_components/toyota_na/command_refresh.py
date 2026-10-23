@@ -3,8 +3,9 @@
 import asyncio
 import logging
 
-from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import RemoteRequestCommand
+
+from .exceptions import AuthError
 
 _LOGGER = logging.getLogger(__name__)
 ENGINE_STATUS_INTERVAL = 20

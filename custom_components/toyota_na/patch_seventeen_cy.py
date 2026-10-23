@@ -1,7 +1,6 @@
 import logging
 
 from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import AuthError
 from toyota_na.vehicle.base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
@@ -9,6 +8,7 @@ from toyota_na.vehicle.base_vehicle import (
     VehicleFeatures,
 )
 
+from .exceptions import AuthError
 from .vehicle_helpers import (
     normalize_charging_state,
     normalize_engine_state,
