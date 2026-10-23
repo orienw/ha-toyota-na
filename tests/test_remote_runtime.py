@@ -79,7 +79,7 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaisesRegex(RuntimeError, "accepted.*did not report completion"):
-                await transport.patch_client.remote_request_24mm(
+                await transport.patch_client.ToyotaOneClient.remote_request_24mm(
                     transport._CommandClient(), "TESTVIN24", "add-runtime"
                 )
 
@@ -101,12 +101,12 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 return_value=transport._HttpSession(),
             ),
         ):
-            result = await transport.patch_client.graphql_get_vehicle_status(
+            result = await transport.patch_client.ToyotaOneClient.graphql_get_vehicle_status(
                 transport._HttpClient(), "TESTVIN24"
             )
             self.assertEqual(payload["data"]["getVehicleStatus"], result)
             with self.assertRaisesRegex(RuntimeError, "No access"):
-                await transport.patch_client.graphql_request(
+                await transport.patch_client.ToyotaOneClient.graphql_request(
                     transport._HttpClient(),
                     "SendRemoteCommand",
                     "mutation {}",

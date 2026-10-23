@@ -58,9 +58,9 @@ def appsync_client():
         ),
         get_telemetry=AsyncMock(return_value={}),
     )
-    client.graphql_request = types.MethodType(patch_client.graphql_request, client)
+    client.graphql_request = types.MethodType(patch_client.ToyotaOneClient.graphql_request, client)
     client.graphql_get_vehicle_status = types.MethodType(
-        patch_client.graphql_get_vehicle_status, client
+        patch_client.ToyotaOneClient.graphql_get_vehicle_status, client
     )
     return client
 
@@ -122,7 +122,9 @@ async def test_21mm_legacy_fallback_restores_all_nine_ev_entities(hass, setup_ve
         get_engine_status_21mm=AsyncMock(return_value={}),
         get_climate_settings=AsyncMock(return_value=None),
     )
-    client.get_electric_status = types.MethodType(patch_client.get_electric_status, client)
+    client.get_electric_status = types.MethodType(
+        patch_client.ToyotaOneClient.get_electric_status, client
+    )
     vehicle = make_vehicle(client)
     vehicle._has_electric = True
     await vehicle.update()

@@ -14,9 +14,8 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 
-from toyota_na.client import ToyotaOneClient
-
 from .const import DOMAIN
+from .patch_client import ToyotaOneClient
 from .vehicle_helpers import endpoint_generation, is_appsync_generation
 
 _LOGGER = logging.getLogger(__name__)

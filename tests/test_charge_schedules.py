@@ -182,7 +182,7 @@ async def test_ev_fallback_preserves_primary_schedules_and_source_times(cloud, p
     before = deepcopy((primary, legacy))
     cloud.client.api_get = AsyncMock(side_effect=[primary, legacy])
     cloud.client.get_electric_status = types.MethodType(
-        patch_client.get_electric_status, cloud.client
+        patch_client.ToyotaOneClient.get_electric_status, cloud.client
     )
     assert await vehicle._read_charge_schedules() == []
     assert vehicle.charge_settings["schedules"] == []
@@ -207,7 +207,7 @@ async def test_ev_fallback_failure_keeps_valid_primary_schedules(cloud, fallback
     }
     cloud.client.api_get = AsyncMock(side_effect=[primary, fallback])
     cloud.client.get_electric_status = types.MethodType(
-        patch_client.get_electric_status, cloud.client
+        patch_client.ToyotaOneClient.get_electric_status, cloud.client
     )
     assert await vehicle._read_charge_schedules() == [SCHEDULE]
     assert vehicle.charge_settings["maxNoOfChargeSchedules"] == 3
@@ -721,7 +721,7 @@ async def test_schedule_writes_match_response_ids_when_callbacks_include_them(
     with patch.object(
         patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
     ):
-        result = await patch_client.save_charge_schedule(
+        result = await patch_client.ToyotaOneClient.save_charge_schedule(
             client, "TESTVIN24", generation, body, delete=method == "DELETE"
         )
     assert result == callback
@@ -745,7 +745,7 @@ async def test_routed_schedule_subscribes_before_write_and_waits_for_callback():
     with patch.object(
         patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
     ):
-        result = await patch_client.save_charge_schedule(
+        result = await patch_client.ToyotaOneClient.save_charge_schedule(
             client,
             "TESTVIN24",
             "26BEV",

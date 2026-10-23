@@ -98,7 +98,7 @@ class NotificationHistoryTests(unittest.IsolatedAsyncioTestCase):
             api_get=AsyncMock(return_value=[]),
             auth=types.SimpleNamespace(get_guid=AsyncMock(return_value="account-guid")),
         )
-        self.assertEqual(await patch_client.get_notification_history(client), [])
+        self.assertEqual(await patch_client.ToyotaOneClient.get_notification_history(client), [])
         client.api_get.assert_awaited_once_with("v2/notification/history", {"GUID": "account-guid"})
 
 

@@ -423,7 +423,7 @@ async def test_setting_mutations_wait_for_callback_after_subscription(
     with patch.object(
         patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
     ):
-        result = await patch_client.update_charge_settings(
+        result = await patch_client.ToyotaOneClient.update_charge_settings(
             client, "TESTVIN24", variable, value, "CA"
         )
     assert result["status"] == "COMPLETED"

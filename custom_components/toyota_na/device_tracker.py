@@ -9,11 +9,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-
 from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
+from .patch_base_vehicle import ToyotaVehicle, VehicleFeatures
 from .vehicle_values import ToyotaLocation
 
 _LOGGER = logging.getLogger(__name__)

@@ -1,15 +1,14 @@
 import logging
 from copy import deepcopy
 
-from toyota_na.client import ToyotaOneClient
-from toyota_na.vehicle.base_vehicle import (
+from .exceptions import AuthError
+from .patch_base_vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     ToyotaVehicle,
     VehicleFeatures,
 )
-
-from .exceptions import AuthError
+from .patch_client import ToyotaOneClient
 from .vehicle_helpers import (
     backdoor_candidates,
     can_extend_remote_runtime,

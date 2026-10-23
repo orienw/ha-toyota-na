@@ -8,11 +8,10 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle
-
 from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN, NOTIFICATION_EVENT_TYPES
 from .entity_discovery import setup_entity_discovery
+from .patch_base_vehicle import ToyotaVehicle
 from .vehicle_helpers import app_string, parse_api_timestamp
 
 _OLDEST = datetime.min.replace(tzinfo=UTC)

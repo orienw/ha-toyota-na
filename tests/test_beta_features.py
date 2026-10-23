@@ -24,7 +24,7 @@ from custom_components.toyota_na.patch_base_vehicle import (
     RemoteRequestCommand,
     VehicleFeatures,
 )
-from custom_components.toyota_na.patch_client import get_vehicle_status_21mm
+from custom_components.toyota_na.patch_client import ToyotaOneClient
 from custom_components.toyota_na.patch_vehicle import get_vehicles
 from custom_components.toyota_na.vehicle_values import ToyotaLockableOpening, ToyotaNumeric
 
@@ -211,7 +211,8 @@ async def test_app_maintenance_does_not_hide_observed_lock_state(hass, setup_veh
 
 async def test_21mm_zero_status_locked_values_reach_lock_controls(hass, setup_vehicles, subtests):
     class Client:
-        get_vehicle_status_21mm = get_vehicle_status_21mm
+        get_vehicle_status_21mm = ToyotaOneClient.get_vehicle_status_21mm
+        get_vehicle_status_route = ToyotaOneClient.get_vehicle_status_route
         api_get = AsyncMock()
         get_telemetry = AsyncMock(return_value=None)
         get_engine_status_21mm = AsyncMock(return_value=None)

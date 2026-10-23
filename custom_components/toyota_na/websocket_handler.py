@@ -40,7 +40,7 @@ class ToyotaWebSocketHandler:
         client,
         status_callback: Callable[[str, dict], None] | None = None,
     ):
-        """Initialize with a ToyotaOneClient instance (already monkey-patched)."""
+        """Initialize with a ToyotaOneClient instance."""
         self._client = client
         self._status_callback = status_callback
         self._session = None

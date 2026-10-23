@@ -10,13 +10,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util.unit_conversion import PressureConverter
 
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-
 from .base_entity import ToyotaNABaseEntity
 from .climate_schedule_helpers import local_climate_schedule
 from .const import DOMAIN, HEALTH_SENSORS, REMOTE_ACCESS_STATES, SENSORS
 from .entity_discovery import setup_entity_discovery
 from .health_helpers import health_reading
+from .patch_base_vehicle import ToyotaVehicle, VehicleFeatures
 from .vehicle_values import ToyotaNumeric
 
 # Toyota reports tire pressure units in varying case, such as "kpa".

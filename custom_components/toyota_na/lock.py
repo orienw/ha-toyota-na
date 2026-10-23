@@ -10,8 +10,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle
-
 from .base_entity import ToyotaNABaseEntity
 from .command_refresh import cancel_on_unload, refresh_after_command
 from .const import (
@@ -22,6 +20,7 @@ from .const import (
     DOOR_UNLOCK,
 )
 from .entity_discovery import setup_entity_discovery
+from .patch_base_vehicle import ToyotaVehicle
 from .service_helpers import translate_service_errors
 from .wake_policy import record_vehicle_wake
 

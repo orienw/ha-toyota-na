@@ -304,7 +304,7 @@ class TestClimateControls:
         client = types.SimpleNamespace(_auth_headers=AsyncMock(return_value={}))
 
         async def request(*args):
-            return await patch_client.api_request(client, "PUT", "climate-settings")
+            return await patch_client.ToyotaOneClient.api_request(client, "PUT", "climate-settings")
 
         with (
             patch.object(patch_client.aiohttp, "ClientSession", return_value=session),
