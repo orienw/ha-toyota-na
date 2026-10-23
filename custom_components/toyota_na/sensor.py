@@ -15,7 +15,7 @@ from .climate_schedule_helpers import local_climate_schedule
 from .const import DOMAIN, HEALTH_SENSORS, REMOTE_ACCESS_STATES, SENSORS
 from .entity_discovery import setup_entity_discovery
 from .health_helpers import health_reading
-from .patch_base_vehicle import ToyotaVehicle, VehicleFeatures
+from .vehicle import ToyotaVehicle, VehicleFeatures
 from .vehicle_values import ToyotaNumeric
 
 # Toyota reports tire pressure units in varying case, such as "kpa".

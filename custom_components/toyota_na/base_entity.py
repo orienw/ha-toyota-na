@@ -5,7 +5,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DOMAIN
-from .patch_base_vehicle import ToyotaVehicle, VehicleFeatures
+from .vehicle import ToyotaVehicle, VehicleFeatures
 
 
 def vehicle_entity_unique_id(vin: str, sensor_name: str) -> str:

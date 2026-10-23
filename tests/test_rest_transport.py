@@ -12,9 +12,9 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from custom_components.toyota_na import patch_client as client_module
+from custom_components.toyota_na import client as client_module
+from custom_components.toyota_na.client import ToyotaOneClient
 from custom_components.toyota_na.exceptions import LoginError
-from custom_components.toyota_na.patch_client import ToyotaOneClient
 
 
 class Client(ToyotaOneClient):

@@ -15,13 +15,13 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.seventeen_cy import SeventeenCYToyotaVehicle
+from custom_components.toyota_na.seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     ToyotaVehicle,
 )
-from custom_components.toyota_na.patch_seventeen_cy import SeventeenCYToyotaVehicle
-from custom_components.toyota_na.patch_seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
 from custom_components.toyota_na.vehicle_helpers import (
     has_remote_subscription,
     is_electric_vehicle,

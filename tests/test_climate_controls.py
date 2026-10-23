@@ -13,7 +13,7 @@ from aiohttp import ClientConnectionError
 from common import entity_id, make_vehicle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
-from custom_components.toyota_na import patch_client
+from custom_components.toyota_na import client as client_module
 from custom_components.toyota_na.climate_helpers import climate_parameters
 from custom_components.toyota_na.exceptions import AuthError
 
@@ -304,10 +304,12 @@ class TestClimateControls:
         client = types.SimpleNamespace(_auth_headers=AsyncMock(return_value={}))
 
         async def request(*args):
-            return await patch_client.ToyotaOneClient.api_request(client, "PUT", "climate-settings")
+            return await client_module.ToyotaOneClient.api_request(
+                client, "PUT", "climate-settings"
+            )
 
         with (
-            patch.object(patch_client.aiohttp, "ClientSession", return_value=session),
+            patch.object(client_module.aiohttp, "ClientSession", return_value=session),
             patch.object(controls.cloud, "update_climate_settings", request),
             pytest.raises(HomeAssistantError) as raised,
         ):

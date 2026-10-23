@@ -10,7 +10,7 @@ from time import monotonic
 
 import aiohttp
 
-from .patch_client import (
+from .client import (
     GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS,
     GRAPHQL_VEHICLE_STATUS_FIELDS,
     GRAPHQL_WS_ENDPOINT,

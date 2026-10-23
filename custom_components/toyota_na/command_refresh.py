@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from .exceptions import AuthError
-from .patch_base_vehicle import RemoteRequestCommand
+from .vehicle import RemoteRequestCommand
 
 _LOGGER = logging.getLogger(__name__)
 ENGINE_STATUS_INTERVAL = 20

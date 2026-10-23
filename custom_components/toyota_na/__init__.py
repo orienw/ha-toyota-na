@@ -9,6 +9,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .auth import ToyotaOneAuth
+from .client import ToyotaOneClient
 from .command_refresh import cancel_on_unload, refresh_after_command
 from .const import (
     COMMAND_MAP,
@@ -18,12 +20,10 @@ from .const import (
     UPDATE_INTERVAL,
 )
 from .exceptions import AuthError
-from .patch_auth import ToyotaOneAuth
-from .patch_base_vehicle import ApiVehicleGeneration, RemoteRequestCommand, ToyotaVehicle
-from .patch_client import ToyotaOneClient
-from .patch_vehicle import get_vehicles
 from .remote_access import sync_remote_access_issues
 from .service_helpers import translate_service_errors
+from .vehicle import ApiVehicleGeneration, RemoteRequestCommand, ToyotaVehicle
+from .vehicle_discovery import get_vehicles
 from .wake_policy import automatic_wake_due, record_vehicle_wake
 from .websocket_handler import ToyotaWebSocketHandler
 

@@ -629,7 +629,7 @@ class ToyotaOneClient:
     """Toyota cloud requests for account and vehicle data."""
 
     def __init__(self, auth=None):
-        from .patch_auth import ToyotaOneAuth
+        from .auth import ToyotaOneAuth
 
         self.auth = auth or ToyotaOneAuth()
 

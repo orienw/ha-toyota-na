@@ -15,7 +15,7 @@ from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
 from .const import BINARY_SENSORS, DOMAIN, HEALTH_BINARY_SENSORS
 from .entity_discovery import setup_entity_discovery
 from .health_helpers import health_reading
-from .patch_base_vehicle import ToyotaVehicle, VehicleFeatures
+from .vehicle import ToyotaVehicle, VehicleFeatures
 from .vehicle_values import ToyotaLockableOpening, ToyotaOpening, ToyotaRemoteStart
 
 _LOGGER = logging.getLogger(__name__)

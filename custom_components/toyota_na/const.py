@@ -13,7 +13,7 @@ from .health_helpers import (
     software_update_details,
     vehicle_alerts,
 )
-from .patch_base_vehicle import RemoteRequestCommand, VehicleFeatures
+from .vehicle import RemoteRequestCommand, VehicleFeatures
 
 DOMAIN = "toyota_na"
 

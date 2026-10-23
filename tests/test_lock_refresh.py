@@ -11,7 +11,7 @@ from homeassistant.helpers import entity_registry as er
 from custom_components.toyota_na.command_refresh import refresh_after_command
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.exceptions import TokenExpired
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
 )

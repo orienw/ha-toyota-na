@@ -10,8 +10,8 @@ from .base_entity import ToyotaNABaseEntity
 from .command_refresh import cancel_on_unload, refresh_after_command
 from .const import COMMAND_BUTTONS, COMMAND_REFRESH_DELAY, DOMAIN
 from .entity_discovery import setup_entity_discovery
-from .patch_base_vehicle import RemoteRequestCommand, ToyotaVehicle
 from .service_helpers import translate_service_errors
+from .vehicle import RemoteRequestCommand, ToyotaVehicle
 from .wake_policy import record_vehicle_wake
 
 

@@ -11,9 +11,9 @@ from common import entity_id, make_17cy_vehicle, make_24mm_vehicle, make_vehicle
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.toyota_na import patch_client
+from custom_components.toyota_na import client as client_module
 from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
@@ -58,9 +58,9 @@ def appsync_client():
         ),
         get_telemetry=AsyncMock(return_value={}),
     )
-    client.graphql_request = types.MethodType(patch_client.ToyotaOneClient.graphql_request, client)
+    client.graphql_request = types.MethodType(client_module.ToyotaOneClient.graphql_request, client)
     client.graphql_get_vehicle_status = types.MethodType(
-        patch_client.ToyotaOneClient.graphql_get_vehicle_status, client
+        client_module.ToyotaOneClient.graphql_get_vehicle_status, client
     )
     return client
 
@@ -85,7 +85,7 @@ def reading_names(hass, entry, vin):
     [
         {"vehicleInfo": {"chargeInfo": None}},
         {"vehicleInfo": {"chargeInfo": {"gasolineTravelableDistance": 0}}},
-        patch_client.aiohttp.ClientResponseError(MagicMock(), (), status=401),
+        client_module.aiohttp.ClientResponseError(MagicMock(), (), status=401),
     ],
 )
 async def test_21mm_legacy_fallback_restores_all_nine_ev_entities(hass, setup_vehicles, response):
@@ -123,7 +123,7 @@ async def test_21mm_legacy_fallback_restores_all_nine_ev_entities(hass, setup_ve
         get_climate_settings=AsyncMock(return_value=None),
     )
     client.get_electric_status = types.MethodType(
-        patch_client.ToyotaOneClient.get_electric_status, client
+        client_module.ToyotaOneClient.get_electric_status, client
     )
     vehicle = make_vehicle(client)
     vehicle._has_electric = True
@@ -187,7 +187,7 @@ async def test_recovery_creates_battery_and_charging_entities_after_vehicle_upda
         _Response(200, deepcopy(response)),
         _Response(200, {"data": {"getVehicleStatus": healthy}}),
     ]
-    with patch.object(patch_client.aiohttp, "ClientSession", return_value=session):
+    with patch.object(client_module.aiohttp, "ClientSession", return_value=session):
         await vehicle.update()
 
     await setup_vehicles([vehicle])
@@ -262,7 +262,7 @@ class StatusRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.client = appsync_client()
         self.session = http_session()
         session_patch = patch.object(
-            patch_client.aiohttp, "ClientSession", return_value=self.session
+            client_module.aiohttp, "ClientSession", return_value=self.session
         )
         session_patch.start()
         self.addCleanup(session_patch.stop)

@@ -11,8 +11,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import aiohttp
 import jwt
 
+from .client import HTTP_TIMEOUT
 from .exceptions import LoginError, NotLoggedIn, TokenExpired
-from .patch_client import HTTP_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 

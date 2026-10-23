@@ -1,13 +1,13 @@
 import logging
 
+from .client import ToyotaOneClient
 from .exceptions import AuthError
-from .patch_base_vehicle import (
+from .vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     ToyotaVehicle,
     VehicleFeatures,
 )
-from .patch_client import ToyotaOneClient
 from .vehicle_helpers import (
     normalize_charging_state,
     normalize_engine_state,

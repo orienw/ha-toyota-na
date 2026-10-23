@@ -12,7 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
-from .patch_base_vehicle import ToyotaVehicle, VehicleFeatures
+from .vehicle import ToyotaVehicle, VehicleFeatures
 from .vehicle_values import ToyotaLocation
 
 _LOGGER = logging.getLogger(__name__)

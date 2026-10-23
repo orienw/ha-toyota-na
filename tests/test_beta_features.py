@@ -17,15 +17,15 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.toyota_na.charging_helpers import CHARGE_SETTINGS
+from custom_components.toyota_na.client import ToyotaOneClient
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.exceptions import LoginError
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
 )
-from custom_components.toyota_na.patch_client import ToyotaOneClient
-from custom_components.toyota_na.patch_vehicle import get_vehicles
+from custom_components.toyota_na.vehicle_discovery import get_vehicles
 from custom_components.toyota_na.vehicle_values import ToyotaLockableOpening, ToyotaNumeric
 
 CLIMATE_SETTINGS = {

@@ -15,10 +15,11 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
-from custom_components.toyota_na import patch_base_vehicle, patch_client
+from custom_components.toyota_na import client as client_module
+from custom_components.toyota_na import vehicle as vehicle_module
 from custom_components.toyota_na.charging_helpers import build_charge_schedule
 from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration, VehicleFeatures
+from custom_components.toyota_na.vehicle import ApiVehicleGeneration, VehicleFeatures
 
 SCHEDULE = {
     "settingId": 1,
@@ -129,11 +130,11 @@ def fake_clock():
 
     with (
         patch.object(
-            patch_base_vehicle.asyncio,
+            vehicle_module.asyncio,
             "get_running_loop",
             return_value=types.SimpleNamespace(time=lambda: elapsed),
         ),
-        patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=sleep),
+        patch.object(vehicle_module.asyncio, "sleep", side_effect=sleep),
     ):
         yield sleeps
 
@@ -182,7 +183,7 @@ async def test_ev_fallback_preserves_primary_schedules_and_source_times(cloud, p
     before = deepcopy((primary, legacy))
     cloud.client.api_get = AsyncMock(side_effect=[primary, legacy])
     cloud.client.get_electric_status = types.MethodType(
-        patch_client.ToyotaOneClient.get_electric_status, cloud.client
+        client_module.ToyotaOneClient.get_electric_status, cloud.client
     )
     assert await vehicle._read_charge_schedules() == []
     assert vehicle.charge_settings["schedules"] == []
@@ -207,7 +208,7 @@ async def test_ev_fallback_failure_keeps_valid_primary_schedules(cloud, fallback
     }
     cloud.client.api_get = AsyncMock(side_effect=[primary, fallback])
     cloud.client.get_electric_status = types.MethodType(
-        patch_client.ToyotaOneClient.get_electric_status, cloud.client
+        client_module.ToyotaOneClient.get_electric_status, cloud.client
     )
     assert await vehicle._read_charge_schedules() == [SCHEDULE]
     assert vehicle.charge_settings["maxNoOfChargeSchedules"] == 3
@@ -424,7 +425,7 @@ async def test_schedule_read_back_without_its_id_does_not_confirm_a_delete(cloud
 async def test_schedule_already_without_an_id_does_not_block_a_delete(cloud, generation):
     vehicle = cloud.make_vehicle(generation)
     cloud.schedules.append({**deepcopy(SCHEDULE), "settingId": None})
-    with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep:
+    with patch.object(vehicle_module.asyncio, "sleep", AsyncMock()) as sleep:
         await vehicle.update_charge_schedule(1, delete=True)
     sleep.assert_not_awaited()
     assert [item["settingId"] for item in vehicle.charge_settings["schedules"]] == [None]
@@ -441,7 +442,7 @@ async def test_failed_read_back_is_retried_until_the_change_appears(cloud):
         return await graphql(*args)
 
     cloud.client.graphql_get_vehicle_status.side_effect = fail_once_after_save
-    with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep:
+    with patch.object(vehicle_module.asyncio, "sleep", AsyncMock()) as sleep:
         await vehicle.update_charge_schedule(1, enabled=False)
     sleep.assert_awaited_once_with(5)
     assert not vehicle.charge_settings["schedules"][0]["enabled"]
@@ -455,7 +456,7 @@ async def test_stale_read_back_does_not_confirm_a_change_on_each_transport(
 ):
     vehicle = cloud.make_vehicle(generation)
     cloud.timestamped_reads(vehicle, ["2026-09-14T15:00:00Z", stale, "2026-09-14T16:00:00Z"])
-    with patch.object(patch_base_vehicle.asyncio, "sleep", AsyncMock()) as sleep:
+    with patch.object(vehicle_module.asyncio, "sleep", AsyncMock()) as sleep:
         await vehicle.update_charge_schedule(1, enabled=False)
     sleep.assert_awaited_once_with(5)
     assert not vehicle.charge_settings["schedules"][0]["enabled"]
@@ -478,7 +479,7 @@ async def test_unconfirmed_change_does_not_set_state_optimistically(cloud):
     vehicle = cloud.make_vehicle()
     cloud.client.save_charge_schedule.side_effect = None
     with (
-        patch.object(patch_base_vehicle, "SCHEDULE_UPDATE_TIMEOUT", 0),
+        patch.object(vehicle_module, "SCHEDULE_UPDATE_TIMEOUT", 0),
         pytest.raises(RuntimeError, match="accepted.*did not return"),
     ):
         await vehicle.update_charge_schedule(1, enabled=False)
@@ -507,7 +508,7 @@ async def test_readback_stops_as_soon_as_toyota_reports_the_saved_change(cloud):
     async def saved_after_delay(delay):
         cloud.schedules[0]["enabled"] = False
 
-    with patch.object(patch_base_vehicle.asyncio, "sleep", side_effect=saved_after_delay) as sleep:
+    with patch.object(vehicle_module.asyncio, "sleep", side_effect=saved_after_delay) as sleep:
         await vehicle.update_charge_schedule(1, enabled=False)
     sleep.assert_awaited_once_with(5)
     assert cloud.client.graphql_get_vehicle_status.await_count == 3
@@ -719,9 +720,9 @@ async def test_schedule_writes_match_response_ids_when_callbacks_include_them(
     )
     body = {key: value for key, value in SCHEDULE.items() if method != "POST" or key != "settingId"}
     with patch.object(
-        patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
+        client_module.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
     ):
-        result = await patch_client.ToyotaOneClient.save_charge_schedule(
+        result = await client_module.ToyotaOneClient.save_charge_schedule(
             client, "TESTVIN24", generation, body, delete=method == "DELETE"
         )
     assert result == callback
@@ -743,9 +744,9 @@ async def test_routed_schedule_subscribes_before_write_and_waits_for_callback():
 
     client = types.SimpleNamespace(auth=_Auth(), api_request=AsyncMock(side_effect=request))
     with patch.object(
-        patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
+        client_module.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
     ):
-        result = await patch_client.ToyotaOneClient.save_charge_schedule(
+        result = await client_module.ToyotaOneClient.save_charge_schedule(
             client,
             "TESTVIN24",
             "26BEV",

@@ -1,14 +1,14 @@
 import logging
 
+from .client import ToyotaOneClient
 from .exceptions import AuthError
-from .patch_base_vehicle import (
+from .seventeen_cy import SeventeenCYToyotaVehicle
+from .seventeen_cy_plus import (
+    SeventeenCYPlusToyotaVehicle,
+)
+from .vehicle import (
     ApiVehicleGeneration,
     ToyotaVehicle,
-)
-from .patch_client import ToyotaOneClient
-from .patch_seventeen_cy import SeventeenCYToyotaVehicle
-from .patch_seventeen_cy_plus import (
-    SeventeenCYPlusToyotaVehicle,
 )
 from .vehicle_helpers import has_remote_subscription, is_electric_vehicle, normalize_remote_display
 

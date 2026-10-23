@@ -15,7 +15,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,

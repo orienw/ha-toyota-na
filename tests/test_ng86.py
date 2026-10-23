@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock
 
 from common import LEXUS_21MM_COUPE, make_vehicle
 
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
 )
-from custom_components.toyota_na.patch_vehicle import get_vehicles
+from custom_components.toyota_na.vehicle_discovery import get_vehicles
 
 
 class NG86Tests(unittest.IsolatedAsyncioTestCase):

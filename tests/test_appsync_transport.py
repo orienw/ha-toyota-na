@@ -10,7 +10,7 @@ from uuid import UUID
 
 import aiohttp
 
-from custom_components.toyota_na import patch_client
+from custom_components.toyota_na import client as client_module
 
 # AppSync reports a field missing from the schema as a validation error message.
 SCHEMA_ERROR = {"message": "Validation error of type FieldUndefined: actualChargingRate"}
@@ -191,7 +191,7 @@ class _HttpSession:
 
 class _HttpClient:
     auth = _Auth()
-    graphql_request = patch_client.ToyotaOneClient.graphql_request
+    graphql_request = client_module.ToyotaOneClient.graphql_request
 
 
 class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
@@ -217,11 +217,11 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
                     )
                     client = _CommandClient()
                     with patch.object(
-                        patch_client.aiohttp,
+                        client_module.aiohttp,
                         "ClientSession",
                         return_value=_WebSocketSession(websocket),
                     ):
-                        result = await patch_client.ToyotaOneClient.remote_request_24mm(
+                        result = await client_module.ToyotaOneClient.remote_request_24mm(
                             client, "TESTVIN24", command
                         )
                     self.assertEqual(callback, result)
@@ -243,12 +243,12 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
                         ]
                     )
                     with patch.object(
-                        patch_client.aiohttp,
+                        client_module.aiohttp,
                         "ClientSession",
                         return_value=_WebSocketSession(websocket),
                     ):
                         with self.assertRaisesRegex(RuntimeError, "Vehicle rejected the operation"):
-                            await patch_client.ToyotaOneClient.remote_request_24mm(
+                            await client_module.ToyotaOneClient.remote_request_24mm(
                                 _CommandClient(), "TESTVIN24", command
                             )
                     self.assertEqual([], websocket.callbacks)
@@ -258,10 +258,12 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(status=status):
                 websocket = _StatusWebSocket([status])
                 with patch.object(
-                    patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
+                    client_module.aiohttp,
+                    "ClientSession",
+                    return_value=_WebSocketSession(websocket),
                 ):
                     with self.assertRaisesRegex(RuntimeError, "Vehicle rejected"):
-                        await patch_client.ToyotaOneClient.remote_request_24mm(
+                        await client_module.ToyotaOneClient.remote_request_24mm(
                             _CommandClient(), "TESTVIN24", "engine-start"
                         )
                 self.assertEqual([], websocket.statuses)
@@ -277,9 +279,11 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(command=command):
                 websocket = _StatusWebSocket(statuses)
                 with patch.object(
-                    patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
+                    client_module.aiohttp,
+                    "ClientSession",
+                    return_value=_WebSocketSession(websocket),
                 ):
-                    result = await patch_client.ToyotaOneClient.remote_request_24mm(
+                    result = await client_module.ToyotaOneClient.remote_request_24mm(
                         _CommandClient(), "TESTVIN24", command
                     )
                 self.assertEqual("completed", result["status"])
@@ -298,11 +302,11 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
         client.graphql_send_remote_command = send_after_subscribing
 
         with patch.object(
-            patch_client.aiohttp,
+            client_module.aiohttp,
             "ClientSession",
             return_value=session,
         ):
-            result = await patch_client.ToyotaOneClient.remote_request_24mm(
+            result = await client_module.ToyotaOneClient.remote_request_24mm(
                 client,
                 "TESTVIN24",
                 "door-lock",
@@ -334,11 +338,11 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
         session = _HttpSession()
 
         with patch.object(
-            patch_client.aiohttp,
+            client_module.aiohttp,
             "ClientSession",
             return_value=session,
         ):
-            result = await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+            result = await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                 _HttpClient(),
                 "TESTVIN24",
                 "hatch",
@@ -351,8 +355,8 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("T", session.headers["X-APPBRAND"])
         self.assertEqual("hatch", session.headers["backdoorType"])
         self.assertEqual("TESTVIN24", session.headers["vin"])
-        self.assertEqual(patch_client.APP_VERSION, session.headers["X-APPVERSION"])
-        self.assertEqual(patch_client.USER_AGENT, session.headers["User-Agent"])
+        self.assertEqual(client_module.APP_VERSION, session.headers["X-APPVERSION"])
+        self.assertEqual(client_module.USER_AGENT, session.headers["User-Agent"])
         self.assertEqual(4, UUID(session.headers["X-CORRELATIONID"]).version)
         self.assertIn("X-DEVICE-TIMEZONE", session.headers)
         self.assertEqual("GetVehicleStatus", session.payload["operationName"])
@@ -371,7 +375,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.session = MagicMock()
         self.session.__aenter__.return_value = self.session
         session_patch = patch.object(
-            patch_client.aiohttp, "ClientSession", return_value=self.session
+            client_module.aiohttp, "ClientSession", return_value=self.session
         )
         session_patch.start()
         self.addCleanup(session_patch.stop)
@@ -388,7 +392,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 self.session.post.reset_mock()
                 self.session.post.return_value = _Response(200, body)
                 self.assertIsNone(
-                    await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+                    await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                         self.client, "TESTVIN24"
                     )
                 )
@@ -400,7 +404,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 self.session.post.reset_mock()
                 self.session.post.return_value = _Response(200, body)
                 with self.assertRaisesRegex(RuntimeError, "invalid response"):
-                    await patch_client.ToyotaOneClient.graphql_refresh_status(
+                    await client_module.ToyotaOneClient.graphql_refresh_status(
                         self.client, "TESTVIN24"
                     )
                 self.session.post.assert_called_once()
@@ -455,7 +459,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                         },
                     ),
                 ]
-                result = await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+                result = await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                     self.client, "TESTVIN24"
                 )
                 self.assertEqual({**state, path[0]: restored}, result)
@@ -489,7 +493,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(
                     state,
-                    await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+                    await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                         self.client, "TESTVIN24"
                     ),
                 )
@@ -525,10 +529,10 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(failure=failure):
                 self.session.post.reset_mock()
                 self.session.post.side_effect = [original, *([failure] * 3)]
-                with patch.object(patch_client.asyncio, "sleep", AsyncMock()):
+                with patch.object(client_module.asyncio, "sleep", AsyncMock()):
                     self.assertEqual(
                         state,
-                        await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+                        await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                             self.client, "TESTVIN24"
                         ),
                     )
@@ -556,15 +560,15 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     _Response(401, body),
                     _Response(401, body),
                 ]
-                with self.assertRaises(patch_client.TokenExpired):
-                    await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+                with self.assertRaises(client_module.TokenExpired):
+                    await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                         self.client, "TESTVIN24"
                     )
                 self.assertEqual(3, self.session.post.call_count)
                 self.auth.check_tokens.assert_awaited_once()
-        self.session.post.side_effect = [original, patch_client.asyncio.CancelledError()]
-        with self.assertRaises(patch_client.asyncio.CancelledError):
-            await patch_client.ToyotaOneClient.graphql_get_vehicle_status(self.client, "TESTVIN24")
+        self.session.post.side_effect = [original, client_module.asyncio.CancelledError()]
+        with self.assertRaises(client_module.asyncio.CancelledError):
+            await client_module.ToyotaOneClient.graphql_get_vehicle_status(self.client, "TESTVIN24")
 
     async def test_optional_error_can_recover_a_null_vehicle_result(self):
         self.session.post.side_effect = [
@@ -588,7 +592,9 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(
             {"vin": "TESTVIN24"},
-            await patch_client.ToyotaOneClient.graphql_get_vehicle_status(self.client, "TESTVIN24"),
+            await client_module.ToyotaOneClient.graphql_get_vehicle_status(
+                self.client, "TESTVIN24"
+            ),
         )
         self.assertEqual(2, self.session.post.call_count)
 
@@ -599,9 +605,9 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
             _Response(503, {}),
             _Response(503, {}),
         ]
-        with patch.object(patch_client.asyncio, "sleep", AsyncMock()) as sleep:
+        with patch.object(client_module.asyncio, "sleep", AsyncMock()) as sleep:
             self.assertIsNone(
-                await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+                await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                     self.client, "TESTVIN24"
                 )
             )
@@ -609,9 +615,9 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(4, self.session.post.call_count)
 
     def test_resolver_validation_errors_are_not_schema_errors(self):
-        self.assertTrue(patch_client.graphql_schema_errors([SCHEMA_ERROR]))
+        self.assertTrue(client_module.graphql_schema_errors([SCHEMA_ERROR]))
         self.assertFalse(
-            patch_client.graphql_schema_errors(
+            client_module.graphql_schema_errors(
                 [{"errorType": "ValidationError", "message": "Invalid VIN"}]
             )
         )
@@ -635,7 +641,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     _Response(status, {"errors": [error], "data": data}),
                     _Response(200, {"data": {"getVehicleStatus": state}}),
                 ]
-                result = await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+                result = await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                     self.client, "TESTVIN24", "hatch", "CA"
                 )
                 self.assertEqual(state, result)
@@ -667,12 +673,12 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_status_fallback_is_bounded_and_does_not_replay_mutations(self):
         self.session.post.return_value = _Response(200, {"errors": [SCHEMA_ERROR]})
         self.assertIsNone(
-            await patch_client.ToyotaOneClient.graphql_get_vehicle_status(self.client, "TESTVIN24")
+            await client_module.ToyotaOneClient.graphql_get_vehicle_status(self.client, "TESTVIN24")
         )
         self.assertEqual(2, self.session.post.call_count)
         self.session.post.reset_mock()
         with self.assertRaises(RuntimeError):
-            await patch_client.ToyotaOneClient.graphql_request(
+            await client_module.ToyotaOneClient.graphql_request(
                 self.client,
                 "Write",
                 "mutation Write { command }",
@@ -691,7 +697,9 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(
             {"vin": "TESTVIN24"},
-            await patch_client.ToyotaOneClient.graphql_get_vehicle_status(self.client, "TESTVIN24"),
+            await client_module.ToyotaOneClient.graphql_get_vehicle_status(
+                self.client, "TESTVIN24"
+            ),
         )
         self.assertEqual(3, self.session.post.call_count)
         for call in self.session.post.call_args_list[1:]:
@@ -717,8 +725,8 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(status=status, data=data):
                 self.session.post.reset_mock()
                 self.session.post.return_value = _Response(status, {"data": data, "errors": errors})
-                with patch.object(patch_client.asyncio, "sleep", AsyncMock()):
-                    result = await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+                with patch.object(client_module.asyncio, "sleep", AsyncMock()):
+                    result = await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                         self.client, "TESTVIN24"
                     )
                 self.assertEqual(data["getVehicleStatus"] if data else None, result)
@@ -739,7 +747,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 self.auth.check_tokens.reset_mock()
                 self.session.post.reset_mock()
                 self.session.post.side_effect = [response, _Response()]
-                result = await patch_client.ToyotaOneClient.graphql_request(
+                result = await client_module.ToyotaOneClient.graphql_request(
                     self.client, "Read", "query Read { vin }", {}, read_only=True
                 )
                 self.assertEqual({"getVehicleStatus": {"vin": "TESTVIN24"}}, result)
@@ -752,8 +760,8 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_rejected_refreshed_token_requests_reauthentication(self):
         self.session.post.return_value = _Response(401, {})
-        with self.assertRaises(patch_client.TokenExpired):
-            await patch_client.ToyotaOneClient.graphql_request(
+        with self.assertRaises(client_module.TokenExpired):
+            await client_module.ToyotaOneClient.graphql_request(
                 self.client, "Read", "query Read { vin }", {}, read_only=True
             )
         self.assertEqual(2, self.session.post.call_count)
@@ -774,7 +782,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 self.session.post.return_value = response
                 self.assertEqual(
                     expected,
-                    await patch_client.ToyotaOneClient.graphql_request(
+                    await client_module.ToyotaOneClient.graphql_request(
                         self.client, "Read", "query Read { vin }", {}, read_only=True
                     ),
                 )
@@ -783,7 +791,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_mutation_auth_failure_refreshes_without_replaying(self):
         self.session.post.return_value = _Response(401, {})
         with self.assertRaisesRegex(RuntimeError, "Credentials were refreshed"):
-            await patch_client.ToyotaOneClient.graphql_request(
+            await client_module.ToyotaOneClient.graphql_request(
                 self.client, "Write", "mutation Write { command }", {}, raise_errors=True
             )
         self.session.post.assert_called_once()
@@ -793,9 +801,9 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         for status in (429, 503):
             self.session.post.return_value = _Response(status, {})
             self.session.post.reset_mock()
-            with patch.object(patch_client.asyncio, "sleep", AsyncMock()) as sleep:
+            with patch.object(client_module.asyncio, "sleep", AsyncMock()) as sleep:
                 self.assertIsNone(
-                    await patch_client.ToyotaOneClient.graphql_request(
+                    await client_module.ToyotaOneClient.graphql_request(
                         self.client, "Read", "query Read { vin }", {}, read_only=True
                     )
                 )
@@ -803,7 +811,7 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(3, self.session.post.call_count)
             self.session.post.reset_mock()
             with self.assertRaises(RuntimeError):
-                await patch_client.ToyotaOneClient.graphql_request(
+                await client_module.ToyotaOneClient.graphql_request(
                     self.client, "Write", "mutation Write { command }", {}, raise_errors=True
                 )
             self.session.post.assert_called_once()
@@ -818,9 +826,9 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     self.auth.check_tokens.reset_mock()
                     self.session.post.reset_mock()
                     self.session.post.return_value = _Response(status, {})
-                    with patch.object(patch_client.asyncio, "sleep", AsyncMock()) as sleep:
+                    with patch.object(client_module.asyncio, "sleep", AsyncMock()) as sleep:
                         with self.assertRaises(RuntimeError):
-                            await patch_client.ToyotaOneClient.graphql_request(
+                            await client_module.ToyotaOneClient.graphql_request(
                                 self.client,
                                 operation,
                                 document,
@@ -839,8 +847,8 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(status=status):
                 self.session.post.reset_mock()
                 self.session.post.side_effect = [_Response(status, {}), _Response()]
-                with patch.object(patch_client.asyncio, "sleep", AsyncMock()):
-                    result = await patch_client.ToyotaOneClient.graphql_get_vehicle_status(
+                with patch.object(client_module.asyncio, "sleep", AsyncMock()):
+                    result = await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                         self.client, "TESTVIN24"
                     )
                 self.assertEqual({"vin": "TESTVIN24"}, result)

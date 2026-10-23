@@ -6,7 +6,7 @@ from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import EntityCategory
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.toyota_na.patch_base_vehicle import VehicleFeatures as F
+from custom_components.toyota_na.vehicle import VehicleFeatures as F
 from custom_components.toyota_na.vehicle_values import ToyotaNumeric
 
 SENSORS = (

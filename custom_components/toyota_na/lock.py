@@ -20,8 +20,8 @@ from .const import (
     DOOR_UNLOCK,
 )
 from .entity_discovery import setup_entity_discovery
-from .patch_base_vehicle import ToyotaVehicle
 from .service_helpers import translate_service_errors
+from .vehicle import ToyotaVehicle
 from .wake_policy import record_vehicle_wake
 
 _LOGGER = logging.getLogger(__name__)

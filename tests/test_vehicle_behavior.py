@@ -14,15 +14,15 @@ from common import (
 )
 
 from custom_components.toyota_na import websocket_handler as websocket_module
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.client import ToyotaOneClient
+from custom_components.toyota_na.seventeen_cy import SeventeenCYToyotaVehicle
+from custom_components.toyota_na.seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
 )
-from custom_components.toyota_na.patch_client import ToyotaOneClient
-from custom_components.toyota_na.patch_seventeen_cy import SeventeenCYToyotaVehicle
-from custom_components.toyota_na.patch_seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
-from custom_components.toyota_na.patch_vehicle import get_vehicles
+from custom_components.toyota_na.vehicle_discovery import get_vehicles
 from custom_components.toyota_na.vehicle_helpers import (
     has_remote_subscription,
     normalize_remote_display,
