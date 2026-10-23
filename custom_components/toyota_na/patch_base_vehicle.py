@@ -300,6 +300,24 @@ class ToyotaVehicle(ABC):
         """Provides a programmatic representation of all the features of the vehicle and their current states."""
         return self._features
 
+    @property
+    def doors_locked(self) -> bool | None:
+        """Combine the reported door locks without including cargo openings."""
+        states = [
+            feature.locked
+            for key, feature in self.features.items()
+            if key
+            in (
+                VehicleFeatures.FrontDriverDoor,
+                VehicleFeatures.FrontPassengerDoor,
+                VehicleFeatures.RearDriverDoor,
+                VehicleFeatures.RearPassengerDoor,
+            )
+            and isinstance(feature, ToyotaLockableOpening)
+            and feature.locked is not None
+        ]
+        return all(states) if states else None
+
     async def poll_engine_status(self):
         """Read REST engine state without waking the vehicle or replacing a push."""
         if self.uses_appsync:

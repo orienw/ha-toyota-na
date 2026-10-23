@@ -163,36 +163,10 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 _LOGGER.debug("Error parsing cached vehicle status: %s", e)
 
             try:
-                if self.uses_appsync:
-                    vehicle_status = await self._client.graphql_get_vehicle_status(
-                        self._vin,
-                        self._backdoor_type,
-                        self._region,
-                    )
-                    if vehicle_status:
-                        self.apply_graphql_status(vehicle_status)
-                    elif self._last_graphql_status:
+                if not await self.poll_vehicle_status():
+                    if self.uses_appsync and self._last_graphql_status:
                         self._parse_graphql_vehicle_status(self._last_graphql_status)
-                else:
-                    if self._generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86):
-                        vehicle_status = await self._client.get_vehicle_status_route(
-                            self.vin,
-                            self.api_generation,
-                            self.region,
-                            self.brand,
-                        )
-                    elif self._generation == ApiVehicleGeneration.MM21:
-                        vehicle_status = await self._client.get_vehicle_status_21mm(
-                            self._vin, self._region
-                        )
-                    else:
-                        vehicle_status = await self._client.get_vehicle_status_17cyplus(
-                            self._vin, self._region
-                        )
-                    if vehicle_status:
-                        self._last_vehicle_status = vehicle_status
-                        self._parse_vehicle_status(vehicle_status)
-                    elif self._last_vehicle_status:
+                    elif not self.uses_appsync and self._last_vehicle_status:
                         self._parse_vehicle_status(self._last_vehicle_status)
             except AuthError:
                 raise
@@ -246,6 +220,28 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             raise
         except Exception as e:
             _LOGGER.debug("Error fetching vehicle health: %s", e)
+
+    async def poll_vehicle_status(self) -> bool:
+        """Read cached status for this vehicle, without waking it."""
+        if self.uses_appsync:
+            status = await self._client.graphql_get_vehicle_status(
+                self.vin, self.backdoor_type, self.region
+            )
+            if status:
+                self.apply_graphql_status(status)
+        else:
+            if self.generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86):
+                status = await self._client.get_vehicle_status_route(
+                    self.vin, self.api_generation, self.region, self.brand
+                )
+            elif self.generation == ApiVehicleGeneration.MM21:
+                status = await self._client.get_vehicle_status_21mm(self.vin, self.region)
+            else:
+                status = await self._client.get_vehicle_status_17cyplus(self.vin, self.region)
+            if status:
+                self._last_vehicle_status = status
+                self._parse_vehicle_status(status)
+        return bool(status)
 
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""

@@ -17,13 +17,26 @@ from custom_components.toyota_na.patch_base_vehicle import VehicleFeatures
 
 @pytest.fixture
 async def lock_control(hass, setup_vehicles, monkeypatch):
-    vehicle = make_24mm_vehicle(types.SimpleNamespace(remote_request_24mm=AsyncMock()))
+    vehicle = make_24mm_vehicle(
+        types.SimpleNamespace(
+            remote_request_24mm=AsyncMock(), graphql_get_vehicle_status=AsyncMock(return_value=None)
+        )
+    )
     vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaLockableOpening(
         closed=True, locked=False
     )
     account = await setup_vehicles([vehicle])
     monkeypatch.setattr(lock_module, "COMMAND_REFRESH_DELAY", 10)
     return vehicle, account, entity_id(hass, "lock", "TESTVIN24.")
+
+
+async def finish_lock_reads(hass, freezer):
+    for _ in range(3):
+        freezer.tick(timedelta(seconds=11))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        # The mocked status read completes as soon as the sleeping task resumes.
+        await asyncio.sleep(0)
+    await hass.async_block_till_done()
 
 
 def push_lock_state(account, locked):
@@ -57,9 +70,7 @@ async def test_command_progress_keeps_its_requested_direction(
     if locked is not None and locked != desired:
         expected = "locking" if desired else "unlocking"
     assert hass.states.get(lock_id).state == expected
-    freezer.tick(timedelta(seconds=11))
-    async_fire_time_changed(hass, dt_util.utcnow())
-    await hass.async_block_till_done()
+    await finish_lock_reads(hass, freezer)
     assert hass.states.get(lock_id).state == final
 
 
@@ -77,9 +88,7 @@ async def test_status_push_finishes_progress_without_reversing_it(
 
     final = "locked" if desired else "unlocked"
     assert hass.states.get(lock_id).state == final
-    freezer.tick(timedelta(seconds=11))
-    async_fire_time_changed(hass, dt_util.utcnow())
-    await hass.async_block_till_done()
+    await finish_lock_reads(hass, freezer)
     assert hass.states.get(lock_id).state == final
 
 
@@ -91,8 +100,8 @@ async def test_older_followup_does_not_clear_newer_command_progress(
     finished = asyncio.Event()
     original_refresh = lock_module.ToyotaLock._background_refresh
 
-    async def refresh(entity, command_id):
-        await original_refresh(entity, command_id)
+    async def refresh(entity, command_id, command):
+        await original_refresh(entity, command_id, command)
         finished.set()
 
     monkeypatch.setattr(lock_module.ToyotaLock, "_background_refresh", refresh)
@@ -103,27 +112,27 @@ async def test_older_followup_does_not_clear_newer_command_progress(
             push_lock_state(account, services[index - 1] == "lock")
         await hass.services.async_call("lock", service, {"entity_id": lock_id}, blocking=True)
 
-    freezer.move_to(started + timedelta(seconds=11))
-    async_fire_time_changed(hass, dt_util.utcnow())
+    for seconds in (11, 22, 33):
+        freezer.move_to(started + timedelta(seconds=seconds))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await asyncio.sleep(0)
     # The first follow-up finishes while the newer one is still sleeping.
     await asyncio.wait_for(finished.wait(), 1)
     assert hass.states.get(lock_id).state == ("locking" if services[-1] == "lock" else "unlocking")
-    freezer.move_to(started + timedelta(seconds=30))
-    async_fire_time_changed(hass, dt_util.utcnow())
-    await hass.async_block_till_done()
+    await finish_lock_reads(hass, freezer)
+    assert hass.states.get(lock_id).state == ("unlocked" if services[-1] == "lock" else "locked")
+    assert get_entity(hass, lock_id)._requested_command is None
 
 
 async def test_failed_followup_clears_command_progress(hass, lock_control, freezer, monkeypatch):
-    _, account, lock_id = lock_control
+    vehicle, _, lock_id = lock_control
     monkeypatch.setattr(
-        account.coordinator, "async_request_refresh", AsyncMock(side_effect=RuntimeError("offline"))
+        vehicle, "poll_vehicle_status", AsyncMock(side_effect=RuntimeError("offline"))
     )
     await hass.services.async_call("lock", "lock", {"entity_id": lock_id}, blocking=True)
     assert hass.states.get(lock_id).state == "locking"
 
-    freezer.tick(timedelta(seconds=11))
-    async_fire_time_changed(hass, dt_util.utcnow())
-    await hass.async_block_till_done()
+    await finish_lock_reads(hass, freezer)
 
     assert hass.states.get(lock_id).state == "unlocked"
     assert get_entity(hass, lock_id)._requested_command is None

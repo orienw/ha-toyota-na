@@ -139,13 +139,16 @@ async def test_service_finds_the_vehicle_through_its_device(hass, loaded):
     entry, client, _ = loaded
     device_id = er.async_get(hass).async_get(LOCK).device_id
 
-    await hass.services.async_call(DOMAIN, "door_lock", {"vehicle": device_id}, blocking=True)
-    await settle(hass)
+    read_status = AsyncMock(wraps=client.graphql_get_vehicle_status)
+    with patch.object(client, "graphql_get_vehicle_status", read_status):
+        await hass.services.async_call(DOMAIN, "door_lock", {"vehicle": device_id}, blocking=True)
+        await settle(hass)
 
     client.remote_request_24mm.assert_awaited_once_with(VIN, ANY, "CA")
     assert [wake["vin"] for wake in entry.data[LAST_VEHICLE_WAKES]] == [VIN]
-    # The command is followed by a fresh read of the account.
-    assert client.get_user_vehicle_list.await_count == 2
+    # Only this vehicle's cached status is re-read after the command.
+    assert client.get_user_vehicle_list.await_count == 1
+    assert read_status.await_count == 3
 
 
 async def test_sign_in_with_a_one_time_code_creates_the_account(hass):

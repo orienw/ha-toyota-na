@@ -131,7 +131,8 @@ class TestButtons:
 
         assert vehicle.sent == [RemoteRequestCommand.DoorLock]
         assert vehicle.refresh_requests == 0
-        assert account.get_vehicles.await_count == polls + 1
+        assert account.get_vehicles.await_count == polls
+        assert vehicle.status_reads == 3
         assert LAST_WAKE_AT in account.entry.data
 
     async def test_primary_lock_ignores_other_lockable_openings(self, hass, controls, subtests):

@@ -102,6 +102,7 @@ class FakeVehicle:
     _feature_flags = None
     uses_appsync = True
     feature_enabled = ToyotaVehicle.feature_enabled
+    doors_locked = ToyotaVehicle.doors_locked
     # Setup starts a status push only for the generations that support it.
     generation = None
 
@@ -111,6 +112,7 @@ class FakeVehicle:
         self.supported = set(supported)
         self.sent = []
         self.refresh_requests = 0
+        self.status_reads = 0
         self.features = {}
         self.electric = False
         self.region = "US"
@@ -135,6 +137,10 @@ class FakeVehicle:
 
     async def poll_vehicle_refresh(self):
         self.refresh_requests += 1
+
+    async def poll_vehicle_status(self):
+        self.status_reads += 1
+        return False
 
     def supports_charge_setting(self, field):
         return False

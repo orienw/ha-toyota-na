@@ -10,11 +10,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
+from toyota_na.vehicle.base_vehicle import ToyotaVehicle
 
 from .base_entity import ToyotaNABaseEntity
-from .command_refresh import cancel_on_unload
+from .command_refresh import cancel_on_unload, refresh_after_command
 from .const import (
     COMMAND_MAP,
     COMMAND_REFRESH_DELAY,
@@ -86,24 +85,7 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
         if self.vehicle is None:
             return None
 
-        lock_states = [
-            feature.locked
-            for key, feature in self.vehicle.features.items()
-            if key
-            in (
-                VehicleFeatures.FrontDriverDoor,
-                VehicleFeatures.FrontPassengerDoor,
-                VehicleFeatures.RearDriverDoor,
-                VehicleFeatures.RearPassengerDoor,
-            )
-            and isinstance(feature, ToyotaLockableOpening)
-            and feature.locked is not None
-        ]
-
-        if not lock_states:
-            return None
-
-        return all(lock_states)
+        return self.vehicle.doors_locked
 
     @property
     def is_locking(self):
@@ -137,14 +119,15 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
                     self.async_write_ha_state()
                 raise
             record_vehicle_wake(self.hass, self._config_entry, self.vin)
-            task = self.hass.async_create_task(self._background_refresh(command_id))
+            task = self.hass.async_create_task(self._background_refresh(command_id, command))
             cancel_on_unload(self._config_entry, task)
 
-    async def _background_refresh(self, command_id):
+    async def _background_refresh(self, command_id, command):
         """Refresh coordinator state after a remote command."""
         try:
-            await asyncio.sleep(COMMAND_REFRESH_DELAY)
-            await self.coordinator.async_request_refresh()
+            await refresh_after_command(
+                self.coordinator, self.vin, COMMAND_MAP[command], delay=COMMAND_REFRESH_DELAY
+            )
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Post-command refresh failed: %s", err)
         finally:

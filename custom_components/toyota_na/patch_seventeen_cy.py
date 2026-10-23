@@ -136,10 +136,7 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
 
         try:
             if self.can_receive_status:
-                # vehicle_health_status
-                vehicle_status = await self._client.get_vehicle_status_17cy(self._vin, self._region)
-                if vehicle_status:
-                    self._parse_vehicle_status(vehicle_status)
+                await self.poll_vehicle_status()
         except AuthError:
             raise
         except Exception as e:
@@ -210,6 +207,13 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             raise
         except Exception as e:
             _LOGGER.debug("Error fetching vehicle health: %s", e)
+
+    async def poll_vehicle_status(self) -> bool:
+        """Read cached status for this vehicle, without waking it."""
+        status = await self._client.get_vehicle_status_17cy(self.vin, self.region)
+        if status:
+            self._parse_vehicle_status(status)
+        return bool(status)
 
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
