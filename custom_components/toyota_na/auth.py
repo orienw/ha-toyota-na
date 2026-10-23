@@ -66,10 +66,6 @@ class ToyotaOneAuth:
             except KeyError, TypeError:
                 pass
 
-    async def login(self, username, password):
-        code = await self.authorize(username, password)
-        await self.request_tokens(code)
-
     async def get_access_token(self):
         await self.check_tokens()
         return self._access_token
@@ -157,9 +153,6 @@ class ToyotaOneAuth:
                     await self.refresh_tokens()
                 except LoginError as err:
                     raise TokenExpired() from err
-
-    def logged_in(self):
-        return self._expires_at is not None and time.time() < self._expires_at
 
     def _extract_tokens(self, response):
         """Replace tokens atomically, retaining fields omitted during refresh."""

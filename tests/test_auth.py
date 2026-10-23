@@ -94,9 +94,10 @@ class TokenStorageTests(unittest.IsolatedAsyncioTestCase):
                     auth = auth_module.ToyotaOneAuth(refresh_secs=-30)
                     with patch.object(auth_module.time, "time", return_value=1800000000):
                         auth._extract_tokens(self.token_response())
+                        auth.refresh_tokens = AsyncMock()
                         self.assertEqual(1800003600, auth.get_tokens()["expires_at"])
-                        self.assertTrue(auth.logged_in())
-                    auth.refresh_tokens = AsyncMock()
+                        self.assertEqual("access", await auth.get_access_token())
+                        auth.refresh_tokens.assert_not_awaited()
                     with patch.object(auth_module.time, "time", return_value=1800003570):
                         await auth.check_tokens()
                     auth.refresh_tokens.assert_awaited_once()

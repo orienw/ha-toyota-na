@@ -97,12 +97,8 @@ class ToyotaLocation:
 class ToyotaRemoteStart:
     """Reported engine state and optional remote-start session timing."""
 
-    def __init__(self, date: str | None, on: bool, timer: float | None):
-        self._start_time = (
-            datetime.strptime(str(date), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-            if date is not None
-            else None
-        )
+    def __init__(self, on: bool, timer: float | None):
+        self._start_time: datetime | None = None
         self._on = on
         self._timer = timer
 

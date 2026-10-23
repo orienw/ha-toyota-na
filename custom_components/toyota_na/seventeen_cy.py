@@ -25,9 +25,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class SeventeenCYToyotaVehicle(ToyotaVehicle):
-    _has_remote_subscription = False
-    _has_electric = False
-
     _command_map = {
         RemoteRequestCommand.DoorLock: "DL",
         RemoteRequestCommand.DoorUnlock: "DL",
@@ -103,9 +100,6 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         legacy_capabilities: list | None = None,
         remote_display: int | None = None,
     ):
-        self._has_remote_subscription = has_remote_subscription
-        self._has_electric = has_electric
-
         ToyotaVehicle.__init__(
             self,
             client,
@@ -268,7 +262,6 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
         if running is None:
             return
         self._features[VehicleFeatures.RemoteStartStatus] = ToyotaRemoteStart(
-            date=None,
             on=running,
             timer=engine_status.get("timer"),
         )
