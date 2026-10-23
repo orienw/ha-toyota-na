@@ -8,16 +8,18 @@ from toyota_na.vehicle.base_vehicle import (
     ToyotaVehicle,
     VehicleFeatures,
 )
-from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .vehicle_helpers import (
     normalize_charging_state,
     normalize_engine_state,
     parse_api_timestamp,
+)
+from .vehicle_values import (
+    ToyotaLocation,
+    ToyotaLockableOpening,
+    ToyotaNumeric,
+    ToyotaOpening,
+    ToyotaRemoteStart,
 )
 
 _LOGGER = logging.getLogger(__name__)

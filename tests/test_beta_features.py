@@ -16,8 +16,6 @@ from common import (
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from toyota_na.exceptions import LoginError
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 
 from custom_components.toyota_na.charging_helpers import CHARGE_SETTINGS
 from custom_components.toyota_na.const import DOMAIN
@@ -28,6 +26,7 @@ from custom_components.toyota_na.patch_base_vehicle import (
 )
 from custom_components.toyota_na.patch_client import get_vehicle_status_21mm
 from custom_components.toyota_na.patch_vehicle import get_vehicles
+from custom_components.toyota_na.vehicle_values import ToyotaLockableOpening, ToyotaNumeric
 
 CLIMATE_SETTINGS = {
     "temperature": 22.0,

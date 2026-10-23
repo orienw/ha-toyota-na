@@ -9,11 +9,6 @@ import aiohttp
 
 from toyota_na.client import ToyotaOneClient
 from toyota_na.exceptions import AuthError
-from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .charging_helpers import (
     CHARGE_SETTINGS,
@@ -32,6 +27,13 @@ from .vehicle_helpers import (
     merge_opening_states,
     opening_state_from_values,
     parse_api_timestamp,
+)
+from .vehicle_values import (
+    ToyotaLocation,
+    ToyotaLockableOpening,
+    ToyotaNumeric,
+    ToyotaOpening,
+    ToyotaRemoteStart,
 )
 
 _LOGGER = logging.getLogger(__name__)

@@ -9,11 +9,6 @@ from toyota_na.vehicle.base_vehicle import (
     ToyotaVehicle,
     VehicleFeatures,
 )
-from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
 
 from .vehicle_helpers import (
     backdoor_candidates,
@@ -22,6 +17,13 @@ from .vehicle_helpers import (
     normalize_engine_state,
     opening_state_from_graphql,
     parse_api_timestamp,
+)
+from .vehicle_values import (
+    ToyotaLocation,
+    ToyotaLockableOpening,
+    ToyotaNumeric,
+    ToyotaOpening,
+    ToyotaRemoteStart,
 )
 
 _LOGGER = logging.getLogger(__name__)
