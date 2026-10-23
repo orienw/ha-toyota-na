@@ -12,13 +12,13 @@ from common import entity_id, make_24mm_vehicle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.toyota_na import patch_client
+from custom_components.toyota_na import client as client_module
 from custom_components.toyota_na.charging_helpers import (
     CHARGE_SETTINGS,
     charge_options,
     current_charge_option,
 )
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
@@ -421,9 +421,9 @@ async def test_setting_mutations_wait_for_callback_after_subscription(
 
     client = types.SimpleNamespace(auth=_Auth(), graphql_request=AsyncMock(side_effect=mutate))
     with patch.object(
-        patch_client.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
+        client_module.aiohttp, "ClientSession", return_value=_WebSocketSession(websocket)
     ):
-        result = await patch_client.update_charge_settings(
+        result = await client_module.ToyotaOneClient.update_charge_settings(
             client, "TESTVIN24", variable, value, "CA"
         )
     assert result["status"] == "COMPLETED"
@@ -442,9 +442,9 @@ async def test_commands_for_one_vehicle_are_serialized():
         await asyncio.sleep(0)
         active -= 1
 
-    with patch.object(patch_client, "_execute_appsync_operation", side_effect=execute):
+    with patch.object(client_module, "_execute_appsync_operation", side_effect=execute):
         await asyncio.gather(
-            *(patch_client._run_appsync_operation(client, "TESTVIN", None, "CA") for _ in range(3))
+            *(client_module._run_appsync_operation(client, "TESTVIN", None, "CA") for _ in range(3))
         )
     assert peak == 1
 

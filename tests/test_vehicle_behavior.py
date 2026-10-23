@@ -14,21 +14,15 @@ from common import (
 )
 
 from custom_components.toyota_na import websocket_handler as websocket_module
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.client import ToyotaOneClient
+from custom_components.toyota_na.seventeen_cy import SeventeenCYToyotaVehicle
+from custom_components.toyota_na.seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
 )
-from custom_components.toyota_na.patch_client import (
-    get_telemetry,
-    get_vehicle_status_17cyplus,
-    get_vehicle_status_21mm,
-    graphql_confirm_subscription,
-    remote_request_17cy,
-)
-from custom_components.toyota_na.patch_seventeen_cy import SeventeenCYToyotaVehicle
-from custom_components.toyota_na.patch_seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
-from custom_components.toyota_na.patch_vehicle import get_vehicles
+from custom_components.toyota_na.vehicle_discovery import get_vehicles
 from custom_components.toyota_na.vehicle_helpers import (
     has_remote_subscription,
     normalize_remote_display,
@@ -1712,7 +1706,8 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         }
 
         class Client:
-            get_vehicle_status_21mm = get_vehicle_status_21mm
+            get_vehicle_status_21mm = ToyotaOneClient.get_vehicle_status_21mm
+            get_vehicle_status_route = ToyotaOneClient.get_vehicle_status_route
             api_get = AsyncMock(return_value={"status": status})
             get_telemetry = AsyncMock(return_value=None)
             get_engine_status_21mm = AsyncMock(return_value=None)
@@ -1891,7 +1886,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 calls.append(args)
                 return {"vehicleStatus": [{"category": "Driver Side"}]}
 
-        result = await get_vehicle_status_17cyplus(Client(), "TESTVIN", "US")
+        result = await ToyotaOneClient.get_vehicle_status_17cyplus(Client(), "TESTVIN", "US")
 
         self.assertIsNotNone(result)
         self.assertEqual(calls[0][0], "v1/global/remote/status")
@@ -2128,7 +2123,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 calls.append(args)
                 return {}
 
-        await get_telemetry(Client(), "TESTVIN", "CA", "17CYPLUS")
+        await ToyotaOneClient.get_telemetry(Client(), "TESTVIN", "CA", "17CYPLUS")
 
         self.assertEqual(calls[0][1]["X-BRAND"], "T")
         self.assertNotIn("X-APPBRAND", calls[0][1])
@@ -2151,7 +2146,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 calls.append(args)
                 return {}
 
-        await remote_request_17cy(Client(), "TESTVIN", "DL", 1, "CA")
+        await ToyotaOneClient.remote_request_17cy(Client(), "TESTVIN", "DL", 1, "CA")
 
         self.assertEqual(calls[0][2]["X-BRAND"], "T")
         self.assertNotIn("X-APPBRAND", calls[0][2])
@@ -2165,7 +2160,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 calls.append((args, kwargs))
                 return {}
 
-        await graphql_confirm_subscription(Client(), "TESTVIN", "trunk", "CA")
+        await ToyotaOneClient.graphql_confirm_subscription(Client(), "TESTVIN", "trunk", "CA")
 
         args, kwargs = calls[0]
         _, _, variables = args

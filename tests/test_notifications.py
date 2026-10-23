@@ -13,12 +13,13 @@ from common import LEXUS_21MM_COUPE, FakeVehicle, entity_id
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import async_capture_events
-from toyota_na.exceptions import AuthError
 
-from custom_components.toyota_na import event, patch_client
+from custom_components.toyota_na import client as client_module
+from custom_components.toyota_na import event
 from custom_components.toyota_na.const import NOTIFICATION_EVENT_TYPES
-from custom_components.toyota_na.patch_seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
-from custom_components.toyota_na.patch_vehicle import get_vehicles
+from custom_components.toyota_na.exceptions import AuthError
+from custom_components.toyota_na.seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
+from custom_components.toyota_na.vehicle_discovery import get_vehicles
 
 INTEGRATION = Path(__file__).parents[1] / "custom_components/toyota_na"
 HISTORY = [
@@ -98,7 +99,7 @@ class NotificationHistoryTests(unittest.IsolatedAsyncioTestCase):
             api_get=AsyncMock(return_value=[]),
             auth=types.SimpleNamespace(get_guid=AsyncMock(return_value="account-guid")),
         )
-        self.assertEqual(await patch_client.get_notification_history(client), [])
+        self.assertEqual(await client_module.ToyotaOneClient.get_notification_history(client), [])
         client.api_get.assert_awaited_once_with("v2/notification/history", {"GUID": "account-guid"})
 
 

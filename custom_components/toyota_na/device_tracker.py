@@ -1,6 +1,5 @@
 """Device tracker platform for Toyota Connected Services"""
 
-import logging
 from typing import Any, cast
 
 from homeassistant.components.device_tracker import SourceType, TrackerEntity
@@ -9,14 +8,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
-
 from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
-
-_LOGGER = logging.getLogger(__name__)
+from .vehicle import ToyotaVehicle, VehicleFeatures
+from .vehicle_values import ToyotaLocation
 
 features_sensors = [
     {"feature": VehicleFeatures.ParkingLocation, "name": "Last Parked Location"},
@@ -57,7 +53,6 @@ async def async_setup_entry(
 
 class ToyotaDeviceTracker(ToyotaNABaseEntity, TrackerEntity):
     _icon = "mdi:map-marker"
-    _vehicle_feature: VehicleFeatures
 
     def __init__(self, feature: VehicleFeatures, *args: Any):
         super().__init__(*args)

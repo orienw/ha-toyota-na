@@ -13,16 +13,18 @@ from pytest_homeassistant_custom_component.common import (
     async_capture_events,
     async_fire_time_changed,
 )
-from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
 
 from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
+)
+from custom_components.toyota_na.vehicle_values import (
+    ToyotaLocation,
+    ToyotaLockableOpening,
+    ToyotaNumeric,
+    ToyotaOpening,
 )
 from custom_components.toyota_na.wake_policy import (
     CONF_WAKE_INTERVAL,
@@ -131,7 +133,8 @@ class TestButtons:
 
         assert vehicle.sent == [RemoteRequestCommand.DoorLock]
         assert vehicle.refresh_requests == 0
-        assert account.get_vehicles.await_count == polls + 1
+        assert account.get_vehicles.await_count == polls
+        assert vehicle.status_reads == 3
         assert LAST_WAKE_AT in account.entry.data
 
     async def test_primary_lock_ignores_other_lockable_openings(self, hass, controls, subtests):

@@ -3,8 +3,8 @@
 import asyncio
 import logging
 
-from toyota_na.exceptions import AuthError
-from toyota_na.vehicle.base_vehicle import RemoteRequestCommand
+from .exceptions import AuthError
+from .vehicle import RemoteRequestCommand
 
 _LOGGER = logging.getLogger(__name__)
 ENGINE_STATUS_INTERVAL = 20
@@ -23,6 +23,28 @@ def cancel_on_unload(entry, task) -> None:
 
 async def refresh_after_command(coordinator, vin=None, command=None, *, delay=10):
     try:
+        if command in (RemoteRequestCommand.DoorLock, RemoteRequestCommand.DoorUnlock):
+            for _ in range(3):
+                await asyncio.sleep(delay)
+                vehicle = next((item for item in coordinator.data or [] if item.vin == vin), None)
+                if vehicle is None or not vehicle.can_receive_status:
+                    return
+                try:
+                    received = await vehicle.poll_vehicle_status()
+                except AuthError:
+                    if coordinator.config_entry is not None:
+                        coordinator.config_entry.async_start_reauth_if_available(coordinator.hass)
+                    return
+                except Exception as err:
+                    _LOGGER.debug("Post-command vehicle status failed: %s", err)
+                    continue
+                vehicle = next((item for item in coordinator.data or [] if item.vin == vin), None)
+                if vehicle is None:
+                    return
+                coordinator.async_update_listeners()
+                if received and vehicle.doors_locked is (command == RemoteRequestCommand.DoorLock):
+                    return
+            return
         if command in (RemoteRequestCommand.EngineStart, RemoteRequestCommand.EngineStop):
             vehicle = next((item for item in coordinator.data or [] if item.vin == vin), None)
             if vehicle is None:

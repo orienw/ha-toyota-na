@@ -10,7 +10,7 @@ from time import monotonic
 
 import aiohttp
 
-from .patch_client import (
+from .client import (
     GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS,
     GRAPHQL_VEHICLE_STATUS_FIELDS,
     GRAPHQL_WS_ENDPOINT,
@@ -40,7 +40,7 @@ class ToyotaWebSocketHandler:
         client,
         status_callback: Callable[[str, dict], None] | None = None,
     ):
-        """Initialize with a ToyotaOneClient instance (already monkey-patched)."""
+        """Initialize with a ToyotaOneClient instance."""
         self._client = client
         self._status_callback = status_callback
         self._session = None

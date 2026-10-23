@@ -7,14 +7,6 @@ from enum import Enum, auto, unique
 
 import aiohttp
 
-from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import AuthError
-from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
-
 from .charging_helpers import (
     CHARGE_SETTINGS,
     build_charge_schedule,
@@ -22,8 +14,10 @@ from .charging_helpers import (
     schedule_identifier,
     schedule_matches,
 )
+from .client import ToyotaOneClient
 from .climate_helpers import apply_climate_changes
 from .climate_schedule_helpers import build_climate_schedule, climate_schedule_matches
+from .exceptions import AuthError
 from .vehicle_helpers import (
     can_extend_remote_runtime,
     endpoint_generation,
@@ -32,6 +26,13 @@ from .vehicle_helpers import (
     merge_opening_states,
     opening_state_from_values,
     parse_api_timestamp,
+)
+from .vehicle_values import (
+    ToyotaLocation,
+    ToyotaLockableOpening,
+    ToyotaNumeric,
+    ToyotaOpening,
+    ToyotaRemoteStart,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -299,6 +300,24 @@ class ToyotaVehicle(ABC):
     ]:
         """Provides a programmatic representation of all the features of the vehicle and their current states."""
         return self._features
+
+    @property
+    def doors_locked(self) -> bool | None:
+        """Combine the reported door locks without including cargo openings."""
+        states = [
+            feature.locked
+            for key, feature in self.features.items()
+            if key
+            in (
+                VehicleFeatures.FrontDriverDoor,
+                VehicleFeatures.FrontPassengerDoor,
+                VehicleFeatures.RearDriverDoor,
+                VehicleFeatures.RearPassengerDoor,
+            )
+            and isinstance(feature, ToyotaLockableOpening)
+            and feature.locked is not None
+        ]
+        return all(states) if states else None
 
     async def poll_engine_status(self):
         """Read REST engine state without waking the vehicle or replacing a push."""

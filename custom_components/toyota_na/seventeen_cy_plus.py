@@ -1,20 +1,14 @@
 import logging
 from copy import deepcopy
 
-from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import AuthError
-from toyota_na.vehicle.base_vehicle import (
+from .client import ToyotaOneClient
+from .exceptions import AuthError
+from .vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     ToyotaVehicle,
     VehicleFeatures,
 )
-from toyota_na.vehicle.entity_types.ToyotaLocation import ToyotaLocation
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
-
 from .vehicle_helpers import (
     backdoor_candidates,
     can_extend_remote_runtime,
@@ -23,13 +17,18 @@ from .vehicle_helpers import (
     opening_state_from_graphql,
     parse_api_timestamp,
 )
+from .vehicle_values import (
+    ToyotaLocation,
+    ToyotaLockableOpening,
+    ToyotaNumeric,
+    ToyotaOpening,
+    ToyotaRemoteStart,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
-    _has_remote_subscription = False
-    _has_electric = False
     _command_map = {
         RemoteRequestCommand.DoorLock: "door-lock",
         RemoteRequestCommand.DoorUnlock: "door-unlock",
@@ -99,9 +98,6 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         legacy_capabilities: list | None = None,
         remote_display: int | None = None,
     ):
-        self._has_remote_subscription = has_remote_subscription
-        self._has_electric = has_electric
-
         ToyotaVehicle.__init__(
             self,
             client,
@@ -163,36 +159,10 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                 _LOGGER.debug("Error parsing cached vehicle status: %s", e)
 
             try:
-                if self.uses_appsync:
-                    vehicle_status = await self._client.graphql_get_vehicle_status(
-                        self._vin,
-                        self._backdoor_type,
-                        self._region,
-                    )
-                    if vehicle_status:
-                        self.apply_graphql_status(vehicle_status)
-                    elif self._last_graphql_status:
+                if not await self.poll_vehicle_status():
+                    if self.uses_appsync and self._last_graphql_status:
                         self._parse_graphql_vehicle_status(self._last_graphql_status)
-                else:
-                    if self._generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86):
-                        vehicle_status = await self._client.get_vehicle_status_route(
-                            self.vin,
-                            self.api_generation,
-                            self.region,
-                            self.brand,
-                        )
-                    elif self._generation == ApiVehicleGeneration.MM21:
-                        vehicle_status = await self._client.get_vehicle_status_21mm(
-                            self._vin, self._region
-                        )
-                    else:
-                        vehicle_status = await self._client.get_vehicle_status_17cyplus(
-                            self._vin, self._region
-                        )
-                    if vehicle_status:
-                        self._last_vehicle_status = vehicle_status
-                        self._parse_vehicle_status(vehicle_status)
-                    elif self._last_vehicle_status:
+                    elif not self.uses_appsync and self._last_vehicle_status:
                         self._parse_vehicle_status(self._last_vehicle_status)
             except AuthError:
                 raise
@@ -246,6 +216,28 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             raise
         except Exception as e:
             _LOGGER.debug("Error fetching vehicle health: %s", e)
+
+    async def poll_vehicle_status(self) -> bool:
+        """Read cached status for this vehicle, without waking it."""
+        if self.uses_appsync:
+            status = await self._client.graphql_get_vehicle_status(
+                self.vin, self.backdoor_type, self.region
+            )
+            if status:
+                self.apply_graphql_status(status)
+        else:
+            if self.generation in (ApiVehicleGeneration.NG86, ApiVehicleGeneration.GR86):
+                status = await self._client.get_vehicle_status_route(
+                    self.vin, self.api_generation, self.region, self.brand
+                )
+            elif self.generation == ApiVehicleGeneration.MM21:
+                status = await self._client.get_vehicle_status_21mm(self.vin, self.region)
+            else:
+                status = await self._client.get_vehicle_status_17cyplus(self.vin, self.region)
+            if status:
+                self._last_vehicle_status = status
+                self._parse_vehicle_status(status)
+        return bool(status)
 
     async def poll_vehicle_refresh(self) -> None:
         """Instructs Toyota's systems to ping the vehicle to upload a fresh status."""
@@ -389,7 +381,6 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         if running is None:
             return
         self._features[VehicleFeatures.RemoteStartStatus] = ToyotaRemoteStart(
-            date=None,
             on=running,
             timer=engine_status.get("timer"),
         )
@@ -510,7 +501,6 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         if observed_at is not None:
             self._feature_timestamps[(feature, "running")] = observed_at
         self._features[feature] = ToyotaRemoteStart(
-            date=None,
             on=running,
             timer=None,
         )

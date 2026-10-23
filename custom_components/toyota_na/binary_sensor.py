@@ -11,15 +11,12 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from toyota_na.vehicle.base_vehicle import ToyotaVehicle, VehicleFeatures
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
-from toyota_na.vehicle.entity_types.ToyotaOpening import ToyotaOpening
-from toyota_na.vehicle.entity_types.ToyotaRemoteStart import ToyotaRemoteStart
-
 from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
 from .const import BINARY_SENSORS, DOMAIN, HEALTH_BINARY_SENSORS
 from .entity_discovery import setup_entity_discovery
 from .health_helpers import health_reading
+from .vehicle import ToyotaVehicle, VehicleFeatures
+from .vehicle_values import ToyotaLockableOpening, ToyotaOpening, ToyotaRemoteStart
 
 _LOGGER = logging.getLogger(__name__)
 

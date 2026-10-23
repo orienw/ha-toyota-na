@@ -14,8 +14,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 
-from toyota_na.client import ToyotaOneClient
-
+from .client import ToyotaOneClient
 from .const import DOMAIN
 from .vehicle_helpers import endpoint_generation, is_appsync_generation
 

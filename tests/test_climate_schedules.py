@@ -16,16 +16,17 @@ from common import entity_id, make_vehicle, settle
 from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
-from toyota_na.exceptions import LoginError
 
-from custom_components.toyota_na import climate_schedule_helpers, patch_base_vehicle
+from custom_components.toyota_na import climate_schedule_helpers
+from custom_components.toyota_na import vehicle as vehicle_module
 from custom_components.toyota_na.climate_schedule_helpers import (
     build_climate_schedule,
     climate_schedule_matches,
     local_climate_schedule,
 )
 from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.patch_base_vehicle import ApiVehicleGeneration
+from custom_components.toyota_na.exceptions import LoginError
+from custom_components.toyota_na.vehicle import ApiVehicleGeneration
 
 ZONE = ZoneInfo("America/Los_Angeles")
 NOW = datetime(2026, 9, 21, 12, tzinfo=ZONE)
@@ -451,7 +452,7 @@ def fake_clock():
     # Patch the vehicle module's asyncio rather than asyncio itself, which
     # Home Assistant is running on.
     clock = FakeClock()
-    with patch.object(patch_base_vehicle, "asyncio", clock):
+    with patch.object(vehicle_module, "asyncio", clock):
         yield clock
 
 

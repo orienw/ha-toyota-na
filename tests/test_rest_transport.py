@@ -1,11 +1,9 @@
-"""REST routing through the integration and upstream client wrappers."""
+"""REST routing through the integration client."""
 
 import asyncio
-import importlib.util
 import json
 import types
 import unittest
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -13,24 +11,15 @@ import aiohttp
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
-from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import LoginError
 
-SPEC = importlib.util.spec_from_file_location(
-    "rest_patch_client",
-    Path(__file__).resolve().parents[1] / "custom_components/toyota_na/patch_client.py",
-)
-client_module = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(client_module)
+from custom_components.toyota_na import client as client_module
+from custom_components.toyota_na.client import ToyotaOneClient
+from custom_components.toyota_na.exceptions import LoginError
 
 
-class Client:
-    api_get = ToyotaOneClient.api_get
-    api_post = ToyotaOneClient.api_post
-    api_request = client_module.api_request
-    get_electric_status = client_module.get_electric_status
-    get_user_vehicle_list = client_module.get_user_vehicle_list
-    auth = types.SimpleNamespace(get_device_id=lambda: "device")
+class Client(ToyotaOneClient):
+    def __init__(self):
+        super().__init__(auth=types.SimpleNamespace(get_device_id=lambda: "device"))
 
     async def _auth_headers(self):
         return {"AUTHORIZATION": "Bearer test-token"}
@@ -52,7 +41,7 @@ class RequestTimeoutTests(unittest.IsolatedAsyncioTestCase):
         async with TestServer(app) as server:
             with patch.object(client_module, "HTTP_TIMEOUT", aiohttp.ClientTimeout(total=0.02)):
                 with self.assertRaises(TimeoutError):
-                    await client_module.api_request(
+                    await client_module.ToyotaOneClient.api_request(
                         Client(), "POST", str(server.make_url("/command")), json={}
                     )
         self.assertEqual(["POST"], calls)
@@ -85,7 +74,7 @@ class ElectricStatusHttpTests(unittest.IsolatedAsyncioTestCase):
             get_access_token=AsyncMock(return_value="test-token"),
             get_guid=AsyncMock(return_value="test-guid"),
         )
-        client._auth_headers = types.MethodType(client_module._auth_headers, client)
+        client._auth_headers = types.MethodType(client_module.ToyotaOneClient._auth_headers, client)
         async with TestServer(app) as server:
             with (
                 patch.object(client_module, "API_GATEWAY", str(server.make_url("/oneapi/"))),
@@ -175,7 +164,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             get_access_token=AsyncMock(return_value="test-token"),
             get_guid=AsyncMock(return_value="test-guid"),
         )
-        client._auth_headers = types.MethodType(client_module._auth_headers, client)
+        client._auth_headers = types.MethodType(client_module.ToyotaOneClient._auth_headers, client)
         await client.api_get(
             "v1/global/remote/status",
             {
@@ -245,7 +234,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             "endTime": "07:00",
             "daysOfTheWeek": ["Monday"],
         }
-        await client_module.save_charge_schedule(Client(), "TESTVIN", "21MM", body, "CA", "L")
+        await client_module.ToyotaOneClient.save_charge_schedule(
+            Client(), "TESTVIN", "21MM", body, "CA", "L"
+        )
         args, kwargs = self.session.request.call_args
         self.assertEqual(
             ("PUT", "https://onecdn.telematicsct.com/oneapi/v1/electric/charging"), args
@@ -260,7 +251,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.response.json.return_value = {
             "payload": {"returnCode": "ONE-RES-10000", "appRequestNo": "123"}
         }
-        await client_module.save_charge_schedule(
+        await client_module.ToyotaOneClient.save_charge_schedule(
             Client(), "TESTVIN", "21MM", {"settingId": 2}, delete=True
         )
         args, kwargs = self.session.request.call_args
@@ -273,10 +264,10 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         client = Client()
         client._auth_headers = AsyncMock(side_effect=LoginError())
         for getter in (
-            client_module.get_telemetry,
-            client_module.get_vehicle_status_17cy,
-            client_module.get_vehicle_status_17cyplus,
-            client_module.get_engine_status_17cyplus,
+            client_module.ToyotaOneClient.get_telemetry,
+            client_module.ToyotaOneClient.get_vehicle_status_17cy,
+            client_module.ToyotaOneClient.get_vehicle_status_17cyplus,
+            client_module.ToyotaOneClient.get_engine_status_17cyplus,
         ):
             with self.subTest(getter=getter.__name__), self.assertRaises(LoginError):
                 await getter(client, "TESTVIN")
@@ -288,7 +279,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         for generation in ("17CY", "17CYPLUS", "21MM", "24MM", "26BEV"):
             with self.subTest(generation=generation):
                 self.assertEqual(
-                    await client_module.get_climate_settings(
+                    await client_module.ToyotaOneClient.get_climate_settings(
                         Client(), "TESTVIN", generation, "CA", "L"
                     ),
                     settings,
@@ -301,7 +292,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(call.kwargs["headers"]["X-GENERATION"], generation)
                 self.assertEqual(call.kwargs["headers"]["X-BRAND"], "L")
                 self.assertEqual(call.kwargs["headers"]["x-region"], "CA")
-                await client_module.update_climate_settings(
+                await client_module.ToyotaOneClient.update_climate_settings(
                     Client(), "TESTVIN", generation, settings, "CA", "L"
                 )
                 call = self.session.request.call_args
@@ -318,7 +309,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(generation=generation):
                 self.assertEqual(
                     payload,
-                    await client_module.get_tire_pressure(
+                    await client_module.ToyotaOneClient.get_tire_pressure(
                         Client(), "TESTVIN", generation, "CA", "L"
                     ),
                 )
@@ -335,7 +326,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.response.json.return_value = {"payload": {"airConditioningReservation": []}}
         self.assertEqual(
             {"airConditioningReservation": []},
-            await client_module.get_climate_schedules(Client(), "TESTVIN", "21MM", "CA", "L"),
+            await client_module.ToyotaOneClient.get_climate_schedules(
+                Client(), "TESTVIN", "21MM", "CA", "L"
+            ),
         )
         self.assertEqual(
             ("GET", "https://onecdn.telematicsct.com/v1/remote/route/ac-reservation"),
@@ -355,7 +348,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(
                         1,
                         (
-                            await client_module.save_climate_schedule(
+                            await client_module.ToyotaOneClient.save_climate_schedule(
                                 Client(),
                                 "TESTVIN",
                                 "21MM",
@@ -392,14 +385,16 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(response=response):
                 self.response.json.return_value = {"payload": response}
-                result = await client_module.save_climate_schedule(Client(), "TESTVIN", "21MM", {})
+                result = await client_module.ToyotaOneClient.save_climate_schedule(
+                    Client(), "TESTVIN", "21MM", {}
+                )
                 self.assertEqual({"returnCode": "FAILED", "message": "Request failed"}, result)
 
     async def test_extended_commands_keep_generation_brand_and_buzzer_parameters(self):
         for generation in ("17CY", "17CYPLUS", "21MM", "NG86", "GR86"):
             for command in ("sound-horn", "buzzer-warning"):
                 with self.subTest(generation=generation, command=command):
-                    await client_module.remote_request_route(
+                    await client_module.ToyotaOneClient.remote_request_route(
                         Client(), "TESTVIN", generation, command, "CA", "L"
                     )
                     call = self.session.request.call_args
@@ -426,7 +421,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             {"payload": completed},
         ]
         with patch.object(client_module.asyncio, "sleep", AsyncMock()):
-            result = await client_module.electric_command(
+            result = await client_module.ToyotaOneClient.electric_command(
                 Client(), "TESTVIN", "21MM", "immediate-charge", "CA", "L"
             )
         call, pending, followup = self.session.request.call_args_list
@@ -453,7 +448,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             {"payload": {"appRequestNo": "charge/123", "returnCode": "ONE-RES-10000"}},
             {"payload": {"remoteControlResult": {"status": 0, "result": 0}}},
         ]
-        await client_module.electric_command(Client(), "TESTVIN", "17CY", "immediate-charge")
+        await client_module.ToyotaOneClient.electric_command(
+            Client(), "TESTVIN", "17CY", "immediate-charge"
+        )
         self.assertEqual(
             self.session.request.call_args.args,
             (
@@ -464,7 +461,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_software_update_check_reaches_the_cdn_path_with_app_headers(self):
         self.response.json.return_value = {"payload": {"updateAvailable": True}, "status": {}}
-        result = await client_module.get_software_update(Client(), "TESTVIN")
+        result = await client_module.ToyotaOneClient.get_software_update(Client(), "TESTVIN")
         call = self.session.request.call_args
         self.assertEqual(
             call.args, ("GET", "https://onecdn.telematicsct.com/oa24mm/v1/ota/update/check")
@@ -489,7 +486,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                     {"payload": {"remoteControlResult": completion}},
                 ]
                 with self.assertRaisesRegex(RuntimeError, message):
-                    await client_module.electric_command(
+                    await client_module.ToyotaOneClient.electric_command(
                         Client(), "TESTVIN", "21MM", "immediate-charge"
                     )
                 self.assertEqual(self.session.request.call_count, 2)
@@ -504,7 +501,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             {"payload": {"remoteControlResult": {"status": 0, "result": 0}}},
         ]
         with patch.object(client_module.asyncio, "sleep", AsyncMock()):
-            await client_module.electric_command(Client(), "TESTVIN", "21MM", "immediate-charge")
+            await client_module.ToyotaOneClient.electric_command(
+                Client(), "TESTVIN", "21MM", "immediate-charge"
+            )
         self.assertEqual(self.session.request.call_count, 6)
 
     async def test_charging_acceptance_without_completion_times_out(self):
@@ -513,7 +512,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         }
         with patch.object(client_module, "ELECTRIC_COMMAND_TIMEOUT", 0):
             with self.assertRaisesRegex(RuntimeError, "did not confirm completion"):
-                await client_module.electric_command(
+                await client_module.ToyotaOneClient.electric_command(
                     Client(), "TESTVIN", "21MM", "immediate-charge"
                 )
 
@@ -528,7 +527,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertRaisesRegex(RuntimeError, "did not accept"),
             ):
                 self.response.json.return_value = {"payload": payload}
-                await client_module.electric_command(
+                await client_module.ToyotaOneClient.electric_command(
                     Client(), "TESTVIN", "17CY", "immediate-charge"
                 )
 
@@ -716,7 +715,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                     {"payload": {}},
                     {"payload": status},
                 ]
-                result = await client_module.get_electric_realtime_status(
+                result = await client_module.ToyotaOneClient.get_electric_realtime_status(
                     Client(), "TESTVIN", generation, "CA"
                 )
                 wake, current, legacy = self.session.request.call_args_list
@@ -757,7 +756,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                     {"payload": {"appRequestNo": "request/123", "returnCode": "ONE-RES-10000"}},
                     {"payload": status},
                 ]
-                result = await client_module.get_electric_realtime_status(
+                result = await client_module.ToyotaOneClient.get_electric_realtime_status(
                     Client(),
                     "TESTVIN",
                     generation,
@@ -783,7 +782,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result, status)
 
     async def test_21mm_command_reaches_cdn_root_with_vehicle_headers(self):
-        await client_module.remote_request_21mm(Client(), "TESTVIN", "engine-start", "CA")
+        await client_module.ToyotaOneClient.remote_request_21mm(
+            Client(), "TESTVIN", "engine-start", "CA"
+        )
 
         args, kwargs = self.session.request.call_args
         self.assertEqual(args, ("POST", "https://onecdn.telematicsct.com/v1/remote/route/command"))
@@ -799,9 +800,13 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_routed_reads_and_refresh_keep_generation(self):
         for generation in ("NG86", "GR86"):
             for method, path, verb in (
-                (client_module.get_vehicle_status_route, "status", "GET"),
-                (client_module.get_engine_status_route, "engine-status", "GET"),
-                (client_module.send_refresh_request_route, "refresh-status", "POST"),
+                (client_module.ToyotaOneClient.get_vehicle_status_route, "status", "GET"),
+                (client_module.ToyotaOneClient.get_engine_status_route, "engine-status", "GET"),
+                (
+                    client_module.ToyotaOneClient.send_refresh_request_route,
+                    "refresh-status",
+                    "POST",
+                ),
             ):
                 with self.subTest(generation=generation, path=path):
                     await method(Client(), "TESTVIN", generation, "CA", "T")
@@ -814,7 +819,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual("T", kwargs["headers"]["X-BRAND"])
 
     async def test_21mm_engine_status_reaches_cdn_root(self):
-        result = await client_module.get_engine_status_21mm(Client(), "TESTVIN", "CA")
+        result = await client_module.ToyotaOneClient.get_engine_status_21mm(
+            Client(), "TESTVIN", "CA"
+        )
 
         args, kwargs = self.session.request.call_args
         self.assertEqual(
@@ -830,7 +837,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(payload=payload):
                 self.response.json.return_value = {"payload": payload}
 
-                result = await client_module.get_vehicle_status_21mm(Client(), "TESTVIN", "CA")
+                result = await client_module.ToyotaOneClient.get_vehicle_status_21mm(
+                    Client(), "TESTVIN", "CA"
+                )
 
                 args, kwargs = self.session.request.call_args
                 self.assertEqual(
@@ -842,7 +851,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result, status)
 
     async def test_21mm_refresh_uses_route_request_body(self):
-        await client_module.send_refresh_request_21mm(Client(), "TESTVIN", "CA")
+        await client_module.ToyotaOneClient.send_refresh_request_21mm(Client(), "TESTVIN", "CA")
 
         args, kwargs = self.session.request.call_args
         self.assertEqual(
@@ -882,7 +891,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.response.raise_for_status.side_effect = error
 
                 with self.assertRaises(aiohttp.ClientResponseError) as caught:
-                    await client_module.remote_request_21mm(Client(), "TESTVIN", "engine-start")
+                    await client_module.ToyotaOneClient.remote_request_21mm(
+                        Client(), "TESTVIN", "engine-start"
+                    )
 
                 self.assertIs(caught.exception, error)
                 self.assertEqual(caught.exception.message, expected)
@@ -915,7 +926,9 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.response.raise_for_status.side_effect = error
 
                 with self.assertRaises(aiohttp.ClientResponseError) as caught:
-                    await client_module.remote_request_21mm(Client(), "TESTVIN", "engine-start")
+                    await client_module.ToyotaOneClient.remote_request_21mm(
+                        Client(), "TESTVIN", "engine-start"
+                    )
 
                 self.assertIs(caught.exception, error)
                 self.assertEqual(caught.exception.message, "Bad Request")

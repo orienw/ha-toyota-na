@@ -9,7 +9,9 @@ from common import FakeVehicle, make_17cy_vehicle, make_vehicle
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.toyota_na import health_helpers, patch_base_vehicle, patch_client
+from custom_components.toyota_na import client as client_module
+from custom_components.toyota_na import health_helpers
+from custom_components.toyota_na import vehicle as vehicle_module
 
 REPORT = {"vehicleStatus": {"engOilLevelStatus": "Normal"}}
 STATUS = {"warning": []}
@@ -70,12 +72,12 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
     async def test_reads_are_hourly_across_polls(self):
         client = health_client()
         previous = make_vehicle(client)
-        with patch.object(patch_base_vehicle.time, "monotonic", return_value=1000.0):
+        with patch.object(vehicle_module.time, "monotonic", return_value=1000.0):
             await previous.update_health()
         vehicle = make_vehicle(client)
         self.assertTrue(vehicle.inherit_state(previous))
         for now, reads in ((4599.0, 1), (4600.0, 2)):
-            with patch.object(patch_base_vehicle.time, "monotonic", return_value=now):
+            with patch.object(vehicle_module.time, "monotonic", return_value=now):
                 await vehicle.update_health()
             self.assertEqual(client.get_vehicle_health_report.await_count, reads)
         self.assertIs(vehicle.health, previous.health)
@@ -83,14 +85,14 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_or_unusable_reads_keep_the_last_response(self):
         client = health_client()
         vehicle = make_vehicle(client)
-        with patch.object(patch_base_vehicle.time, "monotonic", return_value=1000.0):
+        with patch.object(vehicle_module.time, "monotonic", return_value=1000.0):
             await vehicle.update_health()
         client.get_vehicle_health_report.side_effect = RuntimeError("[APIGW-403]")
         client.get_vehicle_health_status.return_value = {}
         client.get_service_campaigns.return_value = {"status": "error"}
         with (
-            patch.object(patch_base_vehicle.time, "monotonic", return_value=4600.0),
-            self.assertLogs(patch_base_vehicle.__name__, level="DEBUG"),
+            patch.object(vehicle_module.time, "monotonic", return_value=4600.0),
+            self.assertLogs(vehicle_module.__name__, level="DEBUG"),
         ):
             await vehicle.update_health()
         self.assertEqual(
@@ -105,12 +107,12 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
         )
         vehicle = make_vehicle(client)
         for now in (1000.0, 1600.0, 2200.0, 2800.0, 4599.0):
-            with patch.object(patch_base_vehicle.time, "monotonic", return_value=now):
+            with patch.object(vehicle_module.time, "monotonic", return_value=now):
                 await vehicle.update_health()
         self.assertEqual(client.get_vehicle_health_report.await_count, 3)
         self.assertEqual(client.get_service_campaigns.await_count, 1)
         self.assertEqual((vehicle.health["report"], vehicle.health["campaigns"]), (REPORT, []))
-        with patch.object(patch_base_vehicle.time, "monotonic", return_value=5800.0):
+        with patch.object(vehicle_module.time, "monotonic", return_value=5800.0):
             await vehicle.update_health()
         self.assertEqual(client.get_vehicle_health_report.await_count, 4)
 
@@ -139,14 +141,15 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(body=body):
                 client = types.SimpleNamespace(api_get=AsyncMock(return_value=body))
                 self.assertEqual(
-                    await patch_client.get_service_campaigns(client, "TESTVIN"), expected
+                    await client_module.ToyotaOneClient.get_service_campaigns(client, "TESTVIN"),
+                    expected,
                 )
                 client.api_get.assert_awaited_once_with("v2/service-campaign", {"vin": "TESTVIN"})
 
     async def test_report_and_status_send_brand_generation_and_region(self):
         for function, endpoint in (
-            (patch_client.get_vehicle_health_report, "v1/vehiclehealth/report"),
-            (patch_client.get_vehicle_health_status, "v1/vehiclehealth/status"),
+            (client_module.ToyotaOneClient.get_vehicle_health_report, "v1/vehiclehealth/report"),
+            (client_module.ToyotaOneClient.get_vehicle_health_status, "v1/vehiclehealth/status"),
         ):
             with self.subTest(endpoint=endpoint):
                 client = types.SimpleNamespace(
@@ -174,7 +177,8 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(body=body):
                 client = types.SimpleNamespace(api_request=AsyncMock(return_value=body))
                 self.assertEqual(
-                    await patch_client.get_software_update(client, "TESTVIN"), expected
+                    await client_module.ToyotaOneClient.get_software_update(client, "TESTVIN"),
+                    expected,
                 )
                 client.api_request.assert_awaited_once_with(
                     "GET",
@@ -189,8 +193,8 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
         }
         for body in (error, {**error, "payload": None}, [], None):
             for function in (
-                patch_client.get_vehicle_health_report,
-                patch_client.get_vehicle_health_status,
+                client_module.ToyotaOneClient.get_vehicle_health_report,
+                client_module.ToyotaOneClient.get_vehicle_health_status,
             ):
                 with self.subTest(body=body, function=function.__name__):
                     client = types.SimpleNamespace(api_request=AsyncMock(return_value=body))

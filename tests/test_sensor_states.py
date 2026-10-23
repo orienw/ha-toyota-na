@@ -5,9 +5,9 @@ from common import FakeVehicle, entity_id
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import EntityCategory
 from homeassistant.helpers import entity_registry as er
-from toyota_na.vehicle.entity_types.ToyotaNumeric import ToyotaNumeric
 
-from custom_components.toyota_na.patch_base_vehicle import VehicleFeatures as F
+from custom_components.toyota_na.vehicle import VehicleFeatures as F
+from custom_components.toyota_na.vehicle_values import ToyotaNumeric
 
 SENSORS = (
     "Plug Status",

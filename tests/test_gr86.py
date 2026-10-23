@@ -4,12 +4,12 @@ import types
 import unittest
 from unittest.mock import AsyncMock
 
-from custom_components.toyota_na.patch_base_vehicle import (
+from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
     VehicleFeatures,
 )
-from custom_components.toyota_na.patch_vehicle import get_vehicles
+from custom_components.toyota_na.vehicle_discovery import get_vehicles
 
 
 class GR86Tests(unittest.IsolatedAsyncioTestCase):

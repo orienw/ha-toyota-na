@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 import test_appsync_transport as transport
 from common import make_24mm_vehicle
 
-from custom_components.toyota_na.patch_base_vehicle import RemoteRequestCommand
+from custom_components.toyota_na.vehicle import RemoteRequestCommand
 
 
 def remote_status(**changes):
@@ -70,16 +70,16 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
         websocket = transport._WebSocket()
         with (
             patch.object(
-                transport.patch_client.aiohttp,
+                transport.client_module.aiohttp,
                 "ClientSession",
                 return_value=transport._WebSocketSession(websocket),
             ),
             patch.object(
-                transport.patch_client, "_wait_for_remote_command_result", side_effect=TimeoutError
+                transport.client_module, "_wait_for_remote_command_result", side_effect=TimeoutError
             ),
         ):
             with self.assertRaisesRegex(RuntimeError, "accepted.*did not report completion"):
-                await transport.patch_client.remote_request_24mm(
+                await transport.client_module.ToyotaOneClient.remote_request_24mm(
                     transport._CommandClient(), "TESTVIN24", "add-runtime"
                 )
 
@@ -96,17 +96,17 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(transport._Response, "text", AsyncMock(return_value=json.dumps(payload))),
             patch.object(
-                transport.patch_client.aiohttp,
+                transport.client_module.aiohttp,
                 "ClientSession",
                 return_value=transport._HttpSession(),
             ),
         ):
-            result = await transport.patch_client.graphql_get_vehicle_status(
+            result = await transport.client_module.ToyotaOneClient.graphql_get_vehicle_status(
                 transport._HttpClient(), "TESTVIN24"
             )
             self.assertEqual(payload["data"]["getVehicleStatus"], result)
             with self.assertRaisesRegex(RuntimeError, "No access"):
-                await transport.patch_client.graphql_request(
+                await transport.client_module.ToyotaOneClient.graphql_request(
                     transport._HttpClient(),
                     "SendRemoteCommand",
                     "mutation {}",

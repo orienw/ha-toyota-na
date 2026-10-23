@@ -14,12 +14,12 @@ from aiohttp import ClientResponseError
 from common import FakeVehicle, entity_id, get_entity, make_24mm_vehicle, settle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
-from toyota_na.client import ToyotaOneClient
-from toyota_na.exceptions import TokenExpired
 
-from custom_components.toyota_na import patch_client
+from custom_components.toyota_na import client as client_module
+from custom_components.toyota_na.client import ToyotaOneClient
 from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.patch_base_vehicle import RemoteRequestCommand
+from custom_components.toyota_na.exceptions import TokenExpired
+from custom_components.toyota_na.vehicle import RemoteRequestCommand
 
 
 @pytest.fixture
@@ -97,8 +97,8 @@ async def test_expected_command_failures_use_home_assistant_errors(hass, command
                 assert str(raised.value) == message
                 assert raised.value.__cause__ is error
                 send.assert_awaited_once()
-                # With no door lock states the lock can't show locking, so read the flag itself.
-                assert not get_entity(hass, lock)._state_changing
+                # Without door lock states, inspect the cleared command directly.
+                assert get_entity(hass, lock)._requested_command is None
                 assert account.entry.data == data
                 assert account.get_vehicles.await_count == polls
 
@@ -115,8 +115,8 @@ async def test_cancellation_and_unexpected_errors_propagate(hass, commands, subt
                         await hass.services.async_call(domain, service, target, blocking=True)
                     await hass.async_block_till_done()
                 assert raised.value is error
-                # With no door lock states the lock can't show locking, so read the flag itself.
-                assert not get_entity(hass, lock)._state_changing
+                # Without door lock states, inspect the cleared command directly.
+                assert get_entity(hass, lock)._requested_command is None
                 assert account.entry.data == data
                 assert account.get_vehicles.await_count == polls
 
@@ -160,7 +160,7 @@ async def test_remote_connection_errors_keep_credentials_out_of_errors_and_logs(
     connection = (
         patch.object(aiohttp.TCPConnector, "connect", AsyncMock(side_effect=timeout))
         if failure == "timeout"
-        else patch.object(patch_client.aiohttp, "ClientSession", return_value=session)
+        else patch.object(client_module.aiohttp, "ClientSession", return_value=session)
     )
     caplog.clear()
     with caplog.at_level(logging.DEBUG), connection:

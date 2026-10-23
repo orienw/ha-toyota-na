@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 
 import pytest
 from common import entity_id, make_17cy_vehicle, make_24mm_vehicle, make_vehicle
-from toyota_na.vehicle.entity_types.ToyotaLockableOpening import ToyotaLockableOpening
 
-from custom_components.toyota_na.patch_base_vehicle import VehicleFeatures
+from custom_components.toyota_na.vehicle import VehicleFeatures
+from custom_components.toyota_na.vehicle_values import ToyotaLockableOpening
 
 STATUS = {
     "telemetry": {
