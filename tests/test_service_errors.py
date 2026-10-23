@@ -97,8 +97,8 @@ async def test_expected_command_failures_use_home_assistant_errors(hass, command
                 assert str(raised.value) == message
                 assert raised.value.__cause__ is error
                 send.assert_awaited_once()
-                # With no door lock states the lock can't show locking, so read the flag itself.
-                assert not get_entity(hass, lock)._state_changing
+                # Without door lock states, inspect the cleared command directly.
+                assert get_entity(hass, lock)._requested_command is None
                 assert account.entry.data == data
                 assert account.get_vehicles.await_count == polls
 
@@ -115,8 +115,8 @@ async def test_cancellation_and_unexpected_errors_propagate(hass, commands, subt
                         await hass.services.async_call(domain, service, target, blocking=True)
                     await hass.async_block_till_done()
                 assert raised.value is error
-                # With no door lock states the lock can't show locking, so read the flag itself.
-                assert not get_entity(hass, lock)._state_changing
+                # Without door lock states, inspect the cleared command directly.
+                assert get_entity(hass, lock)._requested_command is None
                 assert account.entry.data == data
                 assert account.get_vehicles.await_count == polls
 
