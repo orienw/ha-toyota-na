@@ -1,5 +1,7 @@
 # ha-toyota-na
 
+[![Latest stable release](https://img.shields.io/github/v/release/orienw/ha-toyota-na?sort=date&style=for-the-badge&label=stable)](https://github.com/orienw/ha-toyota-na/releases/latest)
+
 ## Introduction
 This is a Home Assistant integration for Toyota and Lexus connected services in
 North America, maintained by [@orienw](https://github.com/orienw). It is a fork of
@@ -24,10 +26,6 @@ To check a vehicle's generation, download diagnostics from the Toyota
 integration under **Settings > Devices & services**. Each vehicle's
 `generation` is listed under `vehicle_list`.
 
-## Releases
-
-[![Latest stable release](https://img.shields.io/github/v/release/orienw/ha-toyota-na?sort=date&style=for-the-badge&label=stable)](https://github.com/orienw/ha-toyota-na/releases/latest)
-
 ## Installation
 Requires Home Assistant 2026.8 or newer.
 
@@ -47,8 +45,8 @@ Use the button above, or add the repository manually:
    **Settings > Devices & services**.
 
 To get beta releases, open this repository's device under the HACS
-integration, enable its **Pre-release** switch, and turn it on. HACS then
-offers beta updates.
+integration. Enable its **Pre-release** switch entity, then turn the switch
+on. HACS then offers beta updates.
 
 ### Switching from upstream
 
@@ -99,111 +97,98 @@ remain unchanged until the vehicle contacts Toyota. **Refresh Status** and
 remote commands remain available. Use **Configure** to choose an interval
 if you want automatic vehicle wakes.
 
-Existing installations without a saved wake interval also use this default.
-An interval you previously selected in **Configure** is preserved.
+## Entities
 
-## Current features
+Entities depend on the vehicle and the Toyota account, and not every vehicle
+reports every item below. Cached readings can work without Remote Connect if
+Toyota grants access. Commands and vehicle wakes need remote access.
 
-Available sensors and controls depend on the vehicle and Toyota account.
-Cached readings can work without Remote Connect if Toyota grants access.
-Remote commands and vehicle wake requests need remote access.
+### Sensors
 
-Not every vehicle reports every item below.
-
-Sensors:
-
-* Door Lock Status
-* Window/Moonroof Status
-* Trunk or Tailgate Status
-* Last Parked Location, and Current Location (disabled by default)
-* Tire Pressure and Tire Pressure Warnings
-* Fuel Level
-* Odometer
-* Engine Oil and Key Fob Battery
-* Vehicle Alerts, Safety Recalls, and Service Campaigns
-* Maintenance Required
-* Software Update
-* Last Update
-* Last Tire Pressure Update
-* Remote Access
-* Speed
-* EV Plug Status
-* EV Remaining Charge Time
-* EV Travel Distance
-* EV Charge Type
-* EV Charge Start Time
-* EV Charge End Time
-* EV Connector Status
-* EV Charging Status
-* Charging Rate and Glass Hatch
-* Charge Target and Remaining Charge Time to 80%
+* Door, window, Moonroof, Hood, Glass Hatch, and Trunk or Tailgate open state
+* A lock sensor for each door, and Trunk Door Lock or Tailgate Lock
+* Tire pressure and a pressure warning for each tire, including the spare
+* Fuel Level, Distance To Empty, Gasoline Range, and Average and Trip Fuel
+  Consumption
+* Odometer, Next Service, Trip Details A and B, and Trip Count
+* EV Battery Level, EV Range, EV Range AC, and EV Travelable Distance
+* Plug Status, Connector Status, Charging Status, Charge Type, and Charging Rate
+* Remaining Charge Time, Remaining Charge Time to 80%, and Charge Target
 * Battery and Gasoline Power Supply Time
-* Average and Trip Fuel Consumption, Trip Count, and Gasoline Range
+* Remote Start running state, Speed, and Remote Access
+* Vehicle Alerts, Safety Recalls, Service Campaigns, Maintenance Required,
+  Engine Oil, Key Fob Battery, and Software Update
+* Last Update Timestamp and Last Tire Pressure Update Timestamp
+* Last Parked Location, and Current Location (disabled by default)
 * Charge Schedules and Climate Schedules
 * Notifications event
 
-Lock, remote start, hazards, and find-vehicle commands need a remote
-subscription.
+Plug Status, Connector Status, and Remote Access show readable states.
+Unrecognized values show Unknown; Toyota's original value is in `raw_value`.
+Remaining Charge Time shows Unknown when Toyota has no estimate. Unplugging
+the vehicle clears Charging Status. Choose km/h or mph in the Speed sensor's
+settings.
+
+### Controls
+
+* Door lock
+* Remote Start, Remote Stop, and Extend Remote Runtime. Extend Remote Runtime
+  appears during an eligible remote-start session.
+* Flash Hazards, Find Vehicle, Sound Horn, Turn On Headlights, and Sound Buzzer
+* Open Windows, Close Windows, Close Sunroof, Lock Cargo Door, and Unlock
+  Cargo Door
+* Charge Now, Resume Charging, Stop Charging, and Stop Power Supply. Stop
+  Power Supply appears while external power is active.
+* Refresh Status
+* Climate Temperature, Climate Fan Speed, Climate Airflow, and a seat climate
+  setting for each seat
+* Front Defroster, Rear Defroster, Steering Wheel Heat, Recirculate Air, and
+  Longer Climate Runtime
+* Use Climate Settings
+* Charge Limit, AC Charging Current, DC Charging Power, and Power Supply
+  Battery Limit
+* An on/off switch for each saved charge schedule and climate schedule
+
+The lock and command buttons are also `toyota_na` actions for scripts and
+automations, such as `toyota_na.door_lock`. `toyota_na.hazards_off` turns the
+hazards off and has no button.
+
+The door lock reports the vehicle's door locks, like the Doors tile in Toyota's
+app. Check cargo sensors separately in automations that monitor whether the
+whole vehicle is secured; on vehicles with a tailgate, use Tailgate Lock.
+
+### Remote access
 
 The Remote Access sensor shows the vehicle's remote activation state in Toyota's
 app, such as Active, Activation pending, or Subscription expired. When Toyota
 needs you to act in its app, for example to authorize remote access or renew a
 subscription, Home Assistant raises a repair. The repair clears itself once
-Toyota reports the vehicle active. While a vehicle is reported stolen, its
-commands and controls, including Refresh Status and climate and charging
-settings, are unavailable and scheduled wakes stop, like Toyota's app. Its last reported data, including location, stays visible.
+Toyota reports the vehicle active.
 
-Actions:
+While a vehicle is reported stolen, its commands and controls, including
+Refresh Status and climate and charging settings, are unavailable and scheduled
+wakes stop, like Toyota's app. Its last reported data, including location,
+stays visible.
 
-* Lock/Unlock Doors and Lock/Unlock Cargo Door
-* Remote Start/Stop Engine and Extend Remote Runtime
-* Hazards On/Off
-* Find Vehicle
-* Sound Horn, Turn On Headlights, and Sound Buzzer
-* Open/Close Windows and Close Sunroof
-* Charge Now, Resume Charging, and Stop Charging
-* Stop Power Supply
-* Refresh Data
-* Create, update, or delete multi-day charge schedules
-* Create, update, or delete climate schedules
-
-Native controls:
-
-* Door lock
-* Remote Start and Remote Stop buttons
-* Extend Remote Runtime button during an eligible remote-start session
-* Flash Hazards button
-* Find Vehicle button
-* Horn, headlights, and buzzer buttons
-* Open/close windows, close sunroof, and cargo-door controls
-* Refresh Status button
-* Charge Now, Resume Charging, and Stop Charging buttons
-* Saved climate temperature, fan speed, airflow, and seat preferences
-* Defroster, steering-wheel heat, recirculation, and longer climate runtime preferences
-* Use Climate Settings switch
-* Charge limit, AC current, DC power, and power supply battery limit
-* Stop Power Supply button, while external power is active
-* Enable/disable switches for saved multi-day charge schedules
-
-The main lock reports the vehicle's door locks, like the Doors tile in Toyota's
-app. Check cargo sensors separately in automations that monitor whether the
-whole vehicle is secured; on vehicles with a tailgate, use Tailgate Lock.
+### Location
 
 Current Location only takes the position from Toyota's telemetry. Last Parked
 Location takes that same position and also newer ones from vehicle status, so
-Current Location can lag behind it. Current Location starts disabled for
-vehicles added from 2.11 on. Enable it in the entity's settings if you use it;
-vehicles already set up keep it as it was.
+Current Location can lag behind it. Current Location starts disabled on newly
+added vehicles. Enable it in the entity's settings if you use it.
+
+### Vehicle health
 
 The health sensors mirror the Health tab in Toyota's app and appear only when
 Toyota offers that tab's tiles for the vehicle. Home Assistant reads them
 hourly without waking the vehicle, retrying at each update until Toyota first
-answers. Vehicle Alerts, Safety Recalls,
-and Service Campaigns count items and list them in their attributes. Like
-Toyota's app, Engine Oil and Key Fob Battery read Toyota's English status text.
-Software Update shows whether Toyota offers a vehicle software update, with its
-name, version, and status in attributes, on vehicles where Toyota's app checks
-for updates.
+answers. Vehicle Alerts, Safety Recalls, and Service Campaigns count items and
+list them in their attributes. Like Toyota's app, Engine Oil and Key Fob
+Battery read Toyota's English status text. Software Update shows whether
+Toyota offers a vehicle software update, with its name, version, and status in
+attributes, on vehicles where Toyota's app checks for updates.
+
+### Notifications
 
 The Notifications event fires once for each new notification Toyota lists for
 the vehicle, such as remote command results, service warnings, and software
@@ -212,11 +197,15 @@ Toyota's category, title, and message. Home Assistant checks at each update
 without waking the vehicle. Notifications that Toyota dates before Home
 Assistant started don't fire.
 
+### Climate and charging settings
+
 Climate preferences for Remote Start appear under device configuration.
 Remote Start runs the engine or climate system the vehicle supports.
 Charging settings and buttons follow the vehicle's reported options and state.
-The charge limit remains selectable when Toyota explicitly reports support but
+Charge Limit remains selectable when Toyota explicitly reports support but
 omits the current target; its current value stays Unknown until reported.
+
+### Charge schedules
 
 The Charge Schedules sensor lists saved schedules in its attributes.
 `toyota_na.set_charge_schedule` creates a schedule (start, end, days of the
@@ -225,13 +214,16 @@ vehicle's local time. `toyota_na.delete_charge_schedule` removes a schedule by
 ID. While eco charging is on, Toyota's app locks manual schedules, so enabling
 one here with its switch or `set_charge_schedule` can conflict with eco charging.
 
+### Climate schedules
+
 Like Toyota's app, climate schedules are available on climate-capable 24MM and
 newer vehicles and on electric vehicles other than 17CY and NG86. The Climate
 Schedules sensor lists saved preconditioning reservations and their temperature
 range. Use `toyota_na.set_climate_schedule` with a start time, temperature, and
-either a date or repeating days to create one. Pass a schedule ID to edit selected fields;
-existing seat and defroster options are preserved. Each schedule has an on/off
-switch, and `toyota_na.delete_climate_schedule` removes it.
+either a date or repeating days to create one. Pass a schedule ID to edit
+selected fields; existing seat and defroster options are preserved. Each
+schedule has an on/off switch, and `toyota_na.delete_climate_schedule` removes
+it.
 
 Climate schedule dates and times use Home Assistant's configured timezone.
 Toyota stores these reservations in UTC. Like Toyota's app, the Climate Schedules
@@ -241,17 +233,7 @@ changes. Check that the first run after a change starts when expected. If it
 runs an hour off, set its time again. Charge schedule times continue to use the
 vehicle's local time.
 
-### Sensor display
-
-Plug Status, Connector Status, and Remote Access show readable states.
-Unrecognized values show Unknown; Toyota's original value is in `raw_value`.
-Last Update Timestamp and Last Tire Pressure Update Timestamp show dates and
-times. Choose km/h or mph in the Speed sensor's settings.
-
-Remaining Charge Time shows Unknown when Toyota has no estimate. Unplugging
-the vehicle clears Charging Status.
-
-### Removing a vehicle
+## Removing a vehicle
 
 After you remove a vehicle from the Toyota account, delete its device under
 **Settings > Devices & services**. The integration checks the account first.
