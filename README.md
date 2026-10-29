@@ -5,7 +5,24 @@
 ## Introduction
 This is a Home Assistant integration for Toyota and Lexus connected services in
 North America, maintained by [@orienw](https://github.com/orienw). It is a fork of
-[widewing/ha-toyota-na](https://github.com/widewing/ha-toyota-na).
+[widewing/ha-toyota-na](https://github.com/widewing/ha-toyota-na). Compared with
+upstream, it adds:
+
+* 26BEV and NG86 vehicles, plus experimental GR86 support
+* 24MM status and remote commands through Toyota's AppSync service, and 21MM
+  remote commands through Toyota's newer command route
+* Buttons for remote commands, such as Remote Start, Flash Hazards, and Find
+  Vehicle
+* Climate preferences for Remote Start, charging settings, and charge and
+  climate schedules
+* Vehicle health, recalls, software updates, and a Notifications event
+* Remote Access status, with a repair when Toyota needs you to act in its app
+* Cloud-only updates by default, so Home Assistant doesn't wake the vehicle on
+  a schedule
+
+Switching keeps your account, devices, entity IDs, and automations, except
+trunk entities on vehicles with a tailgate. See
+[Switching from upstream](#switching-from-upstream).
 
 Report problems and request features in [this fork's issue tracker](https://github.com/orienw/ha-toyota-na/issues).
 
@@ -13,14 +30,6 @@ Report problems and request features in [this fork's issue tracker](https://gith
 
 Supported generations: `17CY`, `17CYPLUS`, `21MM`, `24MM`, `26BEV`, and `NG86`.
 `GR86` support is experimental and needs owner testing.
-
-This fork adds:
-
-* 24MM and 26BEV status and remote commands through Toyota's AppSync service
-* 21MM remote commands through Toyota's newer command route
-* NG86 vehicles, plus experimental GR86 support
-* More remote controls, charging and climate settings, and schedules, offered
-  only where the vehicle reports support
 
 To check a vehicle's generation, download diagnostics from the Toyota
 integration under **Settings > Devices & services**. Each vehicle's
