@@ -19,6 +19,8 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
     api_vehicles = await client.get_user_vehicle_list()
     supported_generations = {item.value for item in ApiVehicleGeneration}
     state_cache = getattr(client, "_vehicle_state_cache", {})
+    # VINs already reported as unsupported, so each warns once per setup, not every poll.
+    reported = client._unsupported_vins = getattr(client, "_unsupported_vins", set())
     vehicles = []
 
     for api_vehicle in api_vehicles or []:
@@ -30,6 +32,15 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
             continue
         generation_name = generation_name.strip().upper()
         if generation_name not in supported_generations:
+            if generation_name and vin not in reported:
+                reported.add(vin)
+                _LOGGER.warning(
+                    "Skipping %s %s: unsupported vehicle generation %s. Please open an issue "
+                    "with the model, year and this code",
+                    api_vehicle.get("modelYear") or "",
+                    api_vehicle.get("modelName") or "vehicle",
+                    generation_name,
+                )
             continue
         generation = ApiVehicleGeneration(generation_name)
         brand = api_vehicle.get("brand")

@@ -33,7 +33,9 @@ Supported generations: `17CY`, `17CYPLUS`, `21MM`, `24MM`, `26BEV`, and `NG86`.
 
 To check a vehicle's generation, download diagnostics from the Toyota
 integration under **Settings > Devices & services**. Each vehicle's
-`generation` is listed under `vehicle_list`.
+`generation` is listed under `vehicle_list`. A vehicle whose generation the
+integration doesn't recognize is skipped, and the Home Assistant log names the
+vehicle and its generation code.
 
 ## Installation
 Requires Home Assistant 2026.8 or newer.

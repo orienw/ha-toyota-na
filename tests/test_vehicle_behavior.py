@@ -144,10 +144,25 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
                 + [{**LEXUS_21MM_COUPE, "vin": "SUPPORTED"}]
             )
         )
-        with patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()) as update:
+        logger = "custom_components.toyota_na.vehicle_discovery"
+        with (
+            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()) as update,
+            self.assertLogs(logger, "WARNING") as logs,
+        ):
             vehicles = await get_vehicles(client)
         self.assertEqual(["SUPPORTED"], [vehicle.vin for vehicle in vehicles])
         update.assert_awaited_once()
+        # Only codes Toyota actually reported, and PRE17CY is known, not new.
+        self.assertEqual(
+            ["FUTURE", "21MM-NEW", "GR86-NEW"],
+            [record.args[-1] for record in logs.records],
+        )
+
+        with (
+            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
+            self.assertNoLogs(logger, "WARNING"),
+        ):
+            await get_vehicles(client)
 
     async def test_missing_vehicle_names_do_not_block_other_vehicles(self):
         client = types.SimpleNamespace(
