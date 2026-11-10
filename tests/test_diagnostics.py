@@ -1,5 +1,6 @@
 """Ensure diagnostic payloads use exact account identifier redaction keys."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
@@ -82,6 +83,51 @@ async def test_raw_vehicle_and_config_data_use_account_identifier_redaction(
             "modelName": "RAV4",
         }
     ]
+
+
+async def test_personal_and_device_details_are_redacted(diagnostics):
+    contact = {"firstName": "SampleGiven", "lastName": "SampleSurname", "phoneNumber": "555-0100"}
+    private = {
+        "nickName": "Test vehicle nickname",
+        "contractId": "test-contract-id",
+        "registrationNumber": "TESTPLATE",
+        "oldImei": "test-old-imei",
+    }
+    dcm = {"euiccid": "test-esim-iccid", "vehicleUnitTerminalNumber": "test-terminal-number"}
+    descriptive = {
+        "modelName": "RAV4",
+        "exteriorColor": "Blue",
+        "katashikiCode": "TEST-MODEL-CODE",
+        "manufactureDate": "2024-01-01",
+        "imageUrl": "https://example.invalid/vehicle.png",
+    }
+    parking_notes = "Test parking notes"
+    _, result = await diagnostics(
+        [
+            {
+                "vin": "TESTVIN24",
+                "generation": "24MM",
+                "emergencyContact": contact,
+                "dcm": dcm,
+                **private,
+                **descriptive,
+            }
+        ],
+        graphql_get_vehicle_status={},
+        get_telemetry={"parkingNotes": parking_notes},
+    )
+
+    serialized = json.dumps(result)
+    for value in (*contact.values(), *private.values(), *dcm.values(), parking_notes):
+        assert value not in serialized
+    vehicle = result["vehicle_list"]["data"][0]
+    assert vehicle["emergencyContact"] == REDACTED
+    for key in private:
+        assert vehicle[key] == REDACTED
+    assert vehicle["dcm"] == dict.fromkeys(dcm, REDACTED)
+    assert result["telemetry"]["data"] == [{"parkingNotes": REDACTED}]
+    for key, value in descriptive.items():
+        assert vehicle[key] == value
 
 
 async def test_climate_schedules_come_from_the_last_poll(diagnostics):
