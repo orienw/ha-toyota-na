@@ -1,5 +1,6 @@
 """Run the integration in a real Home Assistant with Toyota's cloud stubbed."""
 
+import logging
 from copy import deepcopy
 from datetime import timedelta
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
@@ -133,6 +134,32 @@ async def test_push_preserves_failed_poll_and_its_retry_behavior(hass, freezer, 
     else:
         assert coordinator.last_update_success
         assert client.get_user_vehicle_list.await_count == reads + 1
+
+
+async def test_failed_polls_keep_tracebacks_at_debug(hass, setup_vehicles, caplog):
+    account = await setup_vehicles([])
+    await settle(hass)
+    polls = account.get_vehicles.await_count
+    error = ValueError("Vehicle read failed")
+    account.get_vehicles.side_effect = error
+    caplog.clear()
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.toyota_na"):
+        for _ in range(2):
+            await account.coordinator.async_refresh()
+            await settle(hass)
+
+    assert account.get_vehicles.await_count == polls + 2
+    assert not account.coordinator.last_update_success
+    records = [record for record in caplog.records if record.name == "custom_components.toyota_na"]
+    errors = [record for record in records if record.levelno >= logging.WARNING]
+    assert [record.getMessage() for record in errors] == [
+        "Error fetching toyota_na data: Vehicle read failed"
+    ]
+    tracebacks = [record for record in records if record.getMessage() == "Error fetching data"]
+    assert len(tracebacks) == 2
+    assert all(record.levelno == logging.DEBUG for record in tracebacks)
+    assert all(record.exc_info and record.exc_info[1] is error for record in tracebacks)
 
 
 async def test_service_finds_the_vehicle_through_its_device(hass, loaded):

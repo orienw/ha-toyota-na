@@ -311,7 +311,7 @@ async def update_vehicles_status(
     except AuthError as e:
         raise ConfigEntryAuthFailed(e) from e
     except Exception as e:
-        _LOGGER.exception("Error fetching data")
+        _LOGGER.debug("Error fetching data", exc_info=True)
         raise UpdateFailed(e) from e
 
 
