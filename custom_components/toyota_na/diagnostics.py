@@ -68,13 +68,15 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, config_entry: ConfigEntry
 ) -> dict:
     """Return diagnostics for a config entry."""
-    client: ToyotaOneClient = hass.data[DOMAIN][config_entry.entry_id]["toyota_na_client"]
+    entry_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {})
+    client: ToyotaOneClient | None = entry_data.get("toyota_na_client")
 
     # We don't directly expose this from the vehicle api abstraction, but it's critical to dump this in diagnostics for debugging
     # Keep the report available while Toyota's vehicle list is failing.
     vehicle_list = {"data": None}
     try:
-        vehicle_list["data"] = await client.get_user_vehicle_list()
+        if client is not None:
+            vehicle_list["data"] = await client.get_user_vehicle_list()
     except Exception as err:
         _LOGGER.debug("Vehicle list diagnostics failed: %s", err)
         # Toyota's message text can carry account details that redaction can't see.
@@ -91,7 +93,7 @@ async def async_get_config_entry_diagnostics(
         vehicle_list["data"] = None
     user_vehicle_list = vehicle_list["data"] or []
     # Climate schedules and vehicle health as the last poll read them, to see what Toyota reports.
-    coordinator = hass.data[DOMAIN][config_entry.entry_id].get("coordinator")
+    coordinator = entry_data.get("coordinator")
     vehicles = {vehicle.vin: vehicle for vehicle in getattr(coordinator, "data", None) or []}
 
     vehicle_status = []

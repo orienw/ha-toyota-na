@@ -11,6 +11,8 @@ from pytest_homeassistant_custom_component.components.diagnostics import (
     get_diagnostics_for_config_entry,
 )
 
+from custom_components.toyota_na.const import DOMAIN
+
 
 @pytest.fixture
 def diagnostics(hass, hass_client, setup_vehicles):
@@ -275,6 +277,43 @@ async def test_report_survives_a_failed_or_unusable_vehicle_list(
 
     assert result["vehicle_list"] == vehicle_list
     assert result["vehicle_status"]["data"] == []
+
+
+@pytest.mark.parametrize("runtime", ["missing_domain", "missing_entry", "empty_entry"])
+async def test_report_without_a_client_keeps_config_redacted(
+    hass, hass_client, setup_vehicles, runtime
+):
+    wakes = [{"vin": "TESTVIN24", "timestamp": 1234}]
+    account = await setup_vehicles([], data={"last_vehicle_wakes": wakes})
+    assert await hass.config_entries.async_unload(account.entry.entry_id)
+    if runtime == "missing_domain":
+        hass.data.pop(DOMAIN)
+    elif runtime == "empty_entry":
+        hass.data[DOMAIN][account.entry.entry_id] = {}
+
+    result = await get_diagnostics_for_config_entry(hass, hass_client, account.entry)
+
+    config = result["config_entry"]
+    serialized = json.dumps(result)
+    for key in ("access_token", "refresh_token", "id_token", "guid"):
+        assert config["tokens"][key] == REDACTED
+        assert account.entry.data["tokens"][key] not in serialized
+    for key in ("email", "username", "device_id"):
+        assert config[key] == REDACTED
+        assert account.entry.data[key] not in serialized
+    assert config["last_vehicle_wakes"] == [{"vin": REDACTED, "timestamp": 1234}]
+    assert "TESTVIN24" not in serialized
+    assert {key: value for key, value in result.items() if key != "config_entry"} == {
+        "vehicle_list": {"data": None},
+        "vehicle_status": {"data": []},
+        "telemetry": {"data": []},
+        "engine_status": {"data": []},
+        "electric_status": {"data": []},
+        "climate_schedules": {"data": []},
+        "vehicle_health": {"data": []},
+        "notification_history": {"data": []},
+    }
+    account.client.get_user_vehicle_list.assert_not_awaited()
 
 
 async def test_vehicle_entries_without_a_vin_are_skipped(diagnostics):
