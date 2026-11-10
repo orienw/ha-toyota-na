@@ -85,10 +85,11 @@ def reading_names(hass, entry, vin):
     [
         {"vehicleInfo": {"chargeInfo": None}},
         {"vehicleInfo": {"chargeInfo": {"gasolineTravelableDistance": 0}}},
+        {"vehicleInfo": {"chargeInfo": {"evTravelableDistance": 200}}},
         client_module.aiohttp.ClientResponseError(MagicMock(), (), status=401),
     ],
 )
-async def test_21mm_legacy_fallback_restores_all_nine_ev_entities(hass, setup_vehicles, response):
+async def test_21mm_legacy_fallback_restores_all_eight_ev_entities(hass, setup_vehicles, response):
     status = {
         "vehicleInfo": {
             "acquisitionDatetime": "2026-09-27T12:00:00Z",
@@ -111,7 +112,6 @@ async def test_21mm_legacy_fallback_restores_all_nine_ev_entities(hass, setup_ve
         "EV Battery Level": "85",
         "Plug Status": "charging",
         "Remaining Charge Time": "90",
-        "EV Travelable Distance": "200",
         "Charge Type": "2",
         "Connector Status": "locked",
     }

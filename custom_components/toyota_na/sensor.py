@@ -6,6 +6,7 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, Sen
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfPressure
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util.unit_conversion import PressureConverter
@@ -31,6 +32,16 @@ async def async_setup_entry(
     coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
         config_entry.entry_id
     ]["coordinator"]
+
+    # EV Travelable Distance was removed. It repeated EV Range, in kilometers on older vehicles.
+    registry = er.async_get(hass)
+    for entry in er.async_entries_for_config_entry(registry, config_entry.entry_id):
+        if (
+            entry.domain == "sensor"
+            and entry.platform == DOMAIN
+            and entry.unique_id.endswith(".EV Travelable Distance")
+        ):
+            registry.async_remove(entry.entity_id)
 
     def discover_sensors():
         for vehicle in coordinator.data or []:

@@ -1012,7 +1012,6 @@ class ToyotaOneClient:
                             "chargeRemainingAmount",
                             "plugStatus",
                             "remainingChargeTime",
-                            "evTravelableDistance",
                             "chargeType",
                             "connectorStatus",
                         )

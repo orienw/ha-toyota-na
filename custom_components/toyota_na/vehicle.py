@@ -99,7 +99,6 @@ class VehicleFeatures(Enum):
     Speed = auto()
     PlugStatus = auto()
     RemainingChargeTime = auto()
-    EvTravelableDistance = auto()
     ChargeType = auto()
     ConnectorStatus = auto()
     RemainingChargeTimeTo80 = auto()

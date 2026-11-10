@@ -290,7 +290,6 @@ class SeventeenCYToyotaVehicle(ToyotaVehicle):
             ("chargeRemainingAmount", VehicleFeatures.ChargeLevel, "%"),
             ("plugStatus", VehicleFeatures.PlugStatus, ""),
             ("remainingChargeTime", VehicleFeatures.RemainingChargeTime, "min"),
-            ("evTravelableDistance", VehicleFeatures.EvTravelableDistance, distance_unit),
             ("gasolineTravelableDistance", VehicleFeatures.GasolineRange, distance_unit),
             ("chargeType", VehicleFeatures.ChargeType, ""),
             ("connectorStatus", VehicleFeatures.ConnectorStatus, ""),

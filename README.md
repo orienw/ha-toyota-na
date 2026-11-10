@@ -122,7 +122,7 @@ Toyota grants access. Commands and vehicle wakes need remote access.
 * Fuel Level, Distance To Empty, Gasoline Range, and Average and Trip Fuel
   Consumption
 * Odometer, Next Service, Trip Details A and B, and Trip Count
-* EV Battery Level, EV Range, EV Range AC, and EV Travelable Distance
+* EV Battery Level, EV Range, and EV Range AC
 * Plug Status, Connector Status, Charging Status, Charge Type, and Charging Rate
 * Remaining Charge Time, Remaining Charge Time to 80%, and Charge Target
 * Battery and Gasoline Power Supply Time

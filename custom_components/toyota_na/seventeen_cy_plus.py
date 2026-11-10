@@ -416,7 +416,6 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             ("chargeRemainingAmount", VehicleFeatures.ChargeLevel, "%"),
             ("plugStatus", VehicleFeatures.PlugStatus, ""),
             ("remainingChargeTime", VehicleFeatures.RemainingChargeTime, "min"),
-            ("evTravelableDistance", VehicleFeatures.EvTravelableDistance, distance_unit),
             ("gasolineTravelableDistance", VehicleFeatures.GasolineRange, distance_unit),
             ("chargeType", VehicleFeatures.ChargeType, ""),
             ("connectorStatus", VehicleFeatures.ConnectorStatus, ""),
@@ -812,18 +811,12 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             )
 
         electric_range = battery.get("travelableDistance") or {}
-        if self._store_numeric(
+        self._store_numeric(
             VehicleFeatures.ChargeDistance,
             electric_range.get("value"),
             electric_range.get("unit", ""),
             battery_observed_at,
-        ):
-            self._store_numeric(
-                VehicleFeatures.EvTravelableDistance,
-                electric_range.get("value"),
-                electric_range.get("unit", ""),
-                battery_observed_at,
-            )
+        )
 
         electric_range_ac = battery.get("travelableDistanceAC") or {}
         self._store_numeric(

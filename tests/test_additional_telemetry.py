@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 
 import pytest
 from common import entity_id, make_17cy_vehicle, make_24mm_vehicle, make_vehicle
+from homeassistant.helpers import entity_registry as er
 
+from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.vehicle import VehicleFeatures
 from custom_components.toyota_na.vehicle_values import ToyotaLockableOpening
 
@@ -106,12 +108,33 @@ async def test_rest_ranges_keep_zero_values_and_report_distance_units(
     for name, value in (
         ("EV Range", "24"),
         ("EV Range AC", "20"),
-        ("EV Travelable Distance", "24"),
         ("Gasoline Range", "0"),
     ):
         state = hass.states.get(entity_id(hass, "sensor", f"TESTVIN.{name}"))
         assert state.state == value
         assert state.attributes["unit_of_measurement"] == unit
+    assert entity_id(hass, "sensor", "TESTVIN.EV Travelable Distance") is None
+
+
+async def test_removed_ev_travelable_distance_sensor_leaves_the_registry(hass, setup_vehicles):
+    vehicle = make_vehicle()
+    vehicle._has_electric = True
+    vehicle._has_remote_subscription = False
+    vehicle._parse_electric_status(
+        {"vehicleInfo": {"chargeInfo": {"evDistance": 24, "evTravelableDistance": 39}}}
+    )
+    account = await setup_vehicles([vehicle])
+    registry = er.async_get(hass)
+    # An earlier version created this sensor.
+    stale = registry.async_get_or_create(
+        "sensor", DOMAIN, "TESTVIN.EV Travelable Distance", config_entry=account.entry
+    )
+
+    assert await hass.config_entries.async_reload(account.entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert registry.async_get(stale.entity_id) is None
+    assert hass.states.get(entity_id(hass, "sensor", "TESTVIN.EV Range")).state == "24"
 
 
 async def test_graphql_updates_timestamp_sensors_without_regressing_other_sections(

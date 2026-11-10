@@ -629,14 +629,6 @@ SENSORS = [
         "electric": True,
     },
     {
-        "state_class": SensorStateClass.MEASUREMENT,
-        "icon": "mdi:gauge",
-        "feature": VehicleFeatures.EvTravelableDistance,
-        "name": "EV Travelable Distance",
-        "unit": None,
-        "electric": True,
-    },
-    {
         "state_class": None,
         "icon": "mdi:ev-plug-type1",
         "feature": VehicleFeatures.ChargeType,

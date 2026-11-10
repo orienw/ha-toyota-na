@@ -1744,7 +1744,6 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
             VehicleFeatures.ChargingStatus,
             VehicleFeatures.PlugStatus,
             VehicleFeatures.RemainingChargeTime,
-            VehicleFeatures.EvTravelableDistance,
             VehicleFeatures.ChargeType,
             VehicleFeatures.ConnectorStatus,
         ):
