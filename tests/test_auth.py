@@ -527,6 +527,34 @@ class TestAuthFlow:
         assert auth_type.call_args.kwargs["refresh_secs"] == -180
 
 
+@pytest.mark.parametrize("error", [aiohttp.ClientConnectionError("Offline"), TimeoutError()])
+async def test_startup_token_refresh_network_failure_retries_setup(hass, error):
+    entry = account_entry(
+        data={
+            "tokens": {
+                "access_token": "test-expired-access",
+                "refresh_token": "test-refresh",
+                "id_token": "test-id",
+                "expires_at": time.time() - 3600,
+                "updated_at": time.time() - 7200,
+                "guid": "test-guid",
+                "clock": "unix",
+            }
+        }
+    )
+    entry.add_to_hass(hass)
+    with patch.object(auth_module.ToyotaOneAuth, "refresh_tokens", side_effect=error) as refresh:
+        try:
+            assert not await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+            refresh.assert_awaited_once()
+            assert entry.state is ConfigEntryState.SETUP_RETRY
+            assert not reauth_flows(hass, entry)
+        finally:
+            assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.auth = types.SimpleNamespace()

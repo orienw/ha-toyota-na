@@ -2,9 +2,14 @@ import logging
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -187,6 +192,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     except AuthError as e:
         _LOGGER.exception(e)
         raise ConfigEntryAuthFailed(e) from e
+    except (aiohttp.ClientError, TimeoutError) as e:
+        raise ConfigEntryNotReady(e) from e
 
     # Notifications Toyota dates before setup are history, not new events.
     started = datetime.now(UTC)
