@@ -1032,7 +1032,7 @@ class VehicleStateTests(unittest.TestCase):
                             }
                         )
                         door = vehicle.features.get(VehicleFeatures.FrontDriverDoor)
-                        self.assertIs(door.locked if door else None, expected)
+                        self.assertIs(getattr(door, "locked", None), expected)
 
     def test_rest_tailgate_section_reports_trunk_feature(self):
         for make in (make_17cy_vehicle, make_vehicle):
@@ -1396,23 +1396,52 @@ class VehicleStateTests(unittest.TestCase):
 
         self.assertFalse(vehicle.features[VehicleFeatures.Trunk].closed)
 
-    def test_lock_only_rest_state_remains_position_unknown(self):
-        vehicle = make_vehicle()
-        vehicle._parse_vehicle_status(
-            {
-                "occurrenceDate": "2026-08-13T12:00:00Z",
-                "vehicleStatus": [
-                    {
-                        "category": "Driver Side",
-                        "sections": [{"section": "Door", "values": [{"value": "locked"}]}],
-                    }
-                ],
-            }
-        )
+    def test_rest_opening_reporting_only_its_lock_reads_as_closed(self):
+        for make in (make_17cy_vehicle, make_vehicle):
+            for values, expected in (
+                ([{"value": "Locked", "status": 0}], (True, True)),
+                ([{"value": "locked"}], (True, True)),
+                ([{"value": "Unlocked", "status": 1}], (True, False)),
+                ([{"value": "Unlocked", "status": 0}], (True, None)),
+                ([{"value": "Open", "status": 0}, {"value": "Locked", "status": 0}], (False, True)),
+                # A value that isn't a lock state may be a position, so it stays unknown.
+                ([{"value": "Ajar", "status": 0}, {"value": "Locked", "status": 0}], (None, True)),
+                ([{"value": None}, {"value": "Locked", "status": 0}], (None, True)),
+            ):
+                with self.subTest(make=make.__name__, values=values):
+                    vehicle = make()
+                    vehicle._parse_vehicle_status(
+                        {
+                            "vehicleStatus": [
+                                {
+                                    "category": "Driver Side",
+                                    "sections": [{"section": "Door", "values": values}],
+                                }
+                            ]
+                        }
+                    )
+                    door = vehicle.features[VehicleFeatures.FrontDriverDoor]
+                    self.assertEqual((door.closed, getattr(door, "locked", None)), expected)
 
-        door = vehicle.features[VehicleFeatures.FrontDriverDoor]
-        self.assertIsNone(door.closed)
-        self.assertTrue(door.locked)
+    def test_rest_backdoor_reporting_only_its_lock_does_not_hide_an_open_section(self):
+        lock_only = {"section": "Hatch", "values": [{"value": "Locked", "status": 0}]}
+        open_unlocked = {
+            "section": "Trunk",
+            "values": [{"value": "Open", "status": 0}, {"value": "Unlocked", "status": 1}],
+        }
+        for make in (make_17cy_vehicle, make_vehicle):
+            for sections, expected in (
+                ([lock_only], (True, True)),
+                ([lock_only, open_unlocked], (False, False)),
+                ([open_unlocked, lock_only], (False, False)),
+            ):
+                with self.subTest(make=make.__name__, sections=[s["section"] for s in sections]):
+                    vehicle = make()
+                    vehicle._parse_vehicle_status(
+                        {"vehicleStatus": [{"category": "Other", "sections": sections}]}
+                    )
+                    backdoor = vehicle.features[VehicleFeatures.Trunk]
+                    self.assertEqual((backdoor.closed, backdoor.locked), expected)
 
     def test_windows_come_from_status_not_telemetry(self):
         for factory in (make_17cy_vehicle, make_vehicle):

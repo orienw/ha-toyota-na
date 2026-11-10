@@ -73,6 +73,28 @@ async def test_legacy_glass_hatch_reports_position_without_adding_a_lock(
     assert hass.states.get(entity_id(hass, "binary_sensor", "TESTVIN.Glass Hatch")).state == "on"
 
 
+@pytest.mark.parametrize("factory", [make_17cy_vehicle, make_vehicle])
+async def test_door_reporting_only_its_lock_shows_closed(hass, setup_vehicles, factory):
+    vehicle = factory()
+    vehicle._parse_vehicle_status(
+        {
+            "vehicleStatus": [
+                {
+                    "category": "Driver Side",
+                    "sections": [{"section": "Door", "values": [{"value": "Locked", "status": 0}]}],
+                }
+            ]
+        }
+    )
+
+    await setup_vehicles([vehicle])
+
+    door = entity_id(hass, "binary_sensor", "TESTVIN.Front Driver Door")
+    lock = entity_id(hass, "binary_sensor", "TESTVIN.Front Driver Door Lock")
+    assert hass.states.get(door).state == "off"
+    assert hass.states.get(lock).state == "off"
+
+
 @pytest.mark.parametrize(
     ("extra", "unit"),
     [

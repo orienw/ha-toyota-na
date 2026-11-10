@@ -167,6 +167,7 @@ def opening_state_from_values(
     values: Iterable[Mapping[str, Any]],
 ) -> tuple[bool | None, bool | None]:
     """Extract position and lock state without relying on response order."""
+    values = list(values)
     closed = None
     active_locks = set()
     fallback_locks = set()
@@ -181,6 +182,10 @@ def opening_state_from_values(
                 fallback_locks.add(locked)
             if item.get("status") == 1:
                 active_locks.add(locked)
+    if values and all(normalize_lock(item.get("value")) is not None for item in values):
+        # Some vehicles report only a lock state. Toyota's app shows an opening as
+        # closed unless a value says it is open.
+        closed = True
     locks = active_locks or fallback_locks
     return closed, next(iter(locks)) if len(locks) == 1 else None
 
