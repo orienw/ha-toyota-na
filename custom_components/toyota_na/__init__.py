@@ -56,21 +56,22 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
     async def async_service_handle(service_call: ServiceCall) -> None:
         """Handle dispatched services."""
 
+        device_id = service_call.data.get("vehicle")
+        if device_id is None:
+            raise ServiceValidationError("Select a vehicle.")
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get(service_call.data["vehicle"])
+        device = device_registry.async_get(device_id)
         remote_action = service_call.service
 
         if device is None:
-            _LOGGER.warning("Device does not exist")
-            return
+            raise ServiceValidationError("Device does not exist.")
 
         vin = next(
             (identifier[1] for identifier in device.identifiers if identifier[0] == DOMAIN),
             None,
         )
         if vin is None:
-            _LOGGER.warning("Device has no %s identifier", DOMAIN)
-            return
+            raise ServiceValidationError("Device is not a Toyota or Lexus vehicle.")
 
         entry_id = device.config_entry_id
         coordinator = hass.data[DOMAIN].get(entry_id, {}).get("coordinator")
@@ -79,8 +80,9 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             or coordinator.data is None
             or not any(vehicle.vin == vin for vehicle in coordinator.data)
         ):
-            _LOGGER.warning("No loaded coordinator found for device")
-            return
+            raise ServiceValidationError(
+                "Vehicle is unavailable. Check that the integration is loaded."
+            )
         config_entry = hass.config_entries.async_get_entry(entry_id)
 
         vehicle = next(item for item in coordinator.data if item.vin == vin)

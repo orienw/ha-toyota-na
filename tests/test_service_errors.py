@@ -13,6 +13,7 @@ import pytest
 from aiohttp import ClientResponseError
 from common import FakeVehicle, entity_id, get_entity, make_24mm_vehicle, settle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.toyota_na import client as client_module
@@ -47,6 +48,35 @@ async def commands(hass, setup_vehicles):
         (DOMAIN, "refresh", {"vehicle": device_id}, "poll_vehicle_refresh"),
     ]
     return vehicle, account, lock, actions
+
+
+@pytest.mark.parametrize(
+    ("target", "message"),
+    [
+        ("missing", "Select a vehicle."),
+        ("unknown", "Device does not exist."),
+        ("foreign", "Device is not a Toyota or Lexus vehicle."),
+        ("unloaded", "Vehicle is unavailable. Check that the integration is loaded."),
+    ],
+)
+async def test_invalid_service_targets_raise_validation_errors(hass, commands, target, message):
+    vehicle, account, lock, _ = commands
+    device_id = er.async_get(hass).async_get(lock).device_id
+    data = {"vehicle": device_id}
+    if target == "missing":
+        data = {}
+    elif target == "unknown":
+        data = {"vehicle": "unknown-device"}
+    elif target == "foreign":
+        dr.async_get(hass).async_update_device(device_id, new_identifiers={("other", "TESTVIN")})
+    else:
+        assert await hass.config_entries.async_unload(account.entry.entry_id)
+
+    with pytest.raises(ServiceValidationError) as raised:
+        await hass.services.async_call(DOMAIN, "door_lock", data, blocking=True)
+
+    assert str(raised.value) == message
+    assert vehicle.sent == []
 
 
 async def test_expected_command_failures_use_home_assistant_errors(hass, commands, subtests):
