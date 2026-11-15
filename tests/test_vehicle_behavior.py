@@ -132,6 +132,23 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
             [vehicle.api_generation for vehicle in vehicles],
         )
 
+    async def test_window_telemetry_option_reaches_every_vehicle_class(self):
+        client = types.SimpleNamespace(
+            get_user_vehicle_list=AsyncMock(
+                return_value=[
+                    {"vin": "LEGACY", "generation": "17CY"},
+                    {"vin": "CURRENT", "generation": "21MM"},
+                ]
+            )
+        )
+        with (
+            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
+            patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
+        ):
+            for enabled in (False, True, False):
+                vehicles = await get_vehicles(client, window_telemetry=enabled)
+                self.assertEqual([enabled, enabled], [v._window_telemetry for v in vehicles])
+
     async def test_unknown_generations_do_not_block_supported_vehicles(self):
         client = types.SimpleNamespace(
             get_user_vehicle_list=AsyncMock(
@@ -1479,6 +1496,72 @@ class VehicleStateTests(unittest.TestCase):
                     self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
                     self.assertNotIn(VehicleFeatures.FrontPassengerWindow, vehicle.features)
                     self.assertNotIn(VehicleFeatures.Moonroof, vehicle.features)
+
+    def test_opted_in_telemetry_reports_windows_and_sunroof(self):
+        openings = {
+            "driverWindow": VehicleFeatures.FrontDriverWindow,
+            "passengerWindow": VehicleFeatures.FrontPassengerWindow,
+            "rlWindow": VehicleFeatures.RearDriverWindow,
+            "rrWindow": VehicleFeatures.RearPassengerWindow,
+            "sunRoof": VehicleFeatures.Moonroof,
+        }
+        for factory in (make_17cy_vehicle, make_vehicle):
+            vehicle = factory()
+            vehicle._window_telemetry = True
+            vehicle._parse_telemetry({key: 0 for key in openings})
+            for feature in openings.values():
+                self.assertNotIn(feature, vehicle.features)
+            # Values other than 1 (open) and 2 (closed) keep the last reading.
+            for value, closed in (
+                (1, False),
+                (2, True),
+                (True, True),
+                (3, True),
+                ("1", True),
+                ({}, True),
+            ):
+                vehicle._parse_telemetry(
+                    {"lastTimestamp": "2026-10-31T00:07:38Z", **{key: value for key in openings}}
+                )
+                for feature in openings.values():
+                    with self.subTest(factory=factory.__name__, value=value, feature=feature):
+                        self.assertEqual(closed, vehicle.features[feature].closed)
+
+    def test_opted_in_telemetry_never_overrides_status_windows(self):
+        rest_status = {
+            "occurrenceDate": "2026-10-31T00:07:38Z",
+            "vehicleStatus": [
+                {
+                    "category": "Driver Side",
+                    "sections": [{"section": "Window", "values": [{"value": "Closed"}]}],
+                }
+            ],
+        }
+        graphql_status = {
+            "lastUpdateDateTime": "2026-10-31T00:07:38Z",
+            "vehicleState": {"windows": {"driverSide": {"position": {"status": "closed"}}}},
+        }
+        cases = (
+            (make_17cy_vehicle, lambda vehicle: vehicle._parse_vehicle_status(rest_status)),
+            (make_vehicle, lambda vehicle: vehicle._parse_vehicle_status(rest_status)),
+            (make_24mm_vehicle, lambda vehicle: vehicle.apply_graphql_status(graphql_status)),
+        )
+        # Telemetry is newer than status here, and still loses in either order.
+        telemetry = {"lastTimestamp": "2026-10-31T00:17:38Z", "driverWindow": 1, "sunRoof": 1}
+        for factory, apply_status in cases:
+            for status_first in (True, False):
+                with self.subTest(factory=factory.__name__, status_first=status_first):
+                    vehicle = factory()
+                    vehicle._window_telemetry = True
+                    if status_first:
+                        apply_status(vehicle)
+                    vehicle._parse_telemetry(telemetry)
+                    apply_status(vehicle)
+                    vehicle._parse_telemetry(telemetry)
+
+                    self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
+                    # Telemetry still fills an opening the status report doesn't have.
+                    self.assertFalse(vehicle.features[VehicleFeatures.Moonroof].closed)
 
     def test_telemetry_location_populates_both_location_entities(self):
         vehicle = make_vehicle()

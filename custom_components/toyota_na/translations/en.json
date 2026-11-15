@@ -35,7 +35,11 @@
         "title": "Vehicle status updates",
         "description": "Home Assistant always reads Toyota's cloud data. That data stays unchanged until the vehicle contacts Toyota. Choose Cloud updates only to skip scheduled wakes. Refresh Status and remote commands stay available.",
         "data": {
-          "automatic_wake_interval": "Wake vehicle for fresh status"
+          "automatic_wake_interval": "Wake vehicle for fresh status",
+          "window_telemetry": "Use telemetry for windows and moonroof"
+        },
+        "data_description": {
+          "window_telemetry": "Some vehicles report windows and the moonroof only in telemetry. Turn this on if those sensors are unavailable. Telemetry isn't always current, so a window or the moonroof can show the wrong state."
         }
       }
     }

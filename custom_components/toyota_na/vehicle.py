@@ -224,6 +224,15 @@ class ToyotaVehicle(ABC):
         "bonnet": VehicleFeatures.Hood,
     }
 
+    # Telemetry opening states, read only when the owner opts in.
+    _TELEMETRY_OPENINGS = {
+        "driverWindow": VehicleFeatures.FrontDriverWindow,
+        "passengerWindow": VehicleFeatures.FrontPassengerWindow,
+        "rlWindow": VehicleFeatures.RearDriverWindow,
+        "rrWindow": VehicleFeatures.RearPassengerWindow,
+        "sunRoof": VehicleFeatures.Moonroof,
+    }
+
     def __init__(
         self,
         client: ToyotaOneClient,
@@ -241,6 +250,7 @@ class ToyotaVehicle(ABC):
         feature_flags: dict | None = None,
         legacy_capabilities: list | None = None,
         remote_display: int | None = None,
+        window_telemetry: bool = False,
     ):
         """
         Initialize a new vehicle object. Must call `vehicle.update()` to fully populate the object.
@@ -264,6 +274,7 @@ class ToyotaVehicle(ABC):
         self._feature_flags = feature_flags
         self._legacy_capabilities = legacy_capabilities or []
         self._remote_display = remote_display
+        self._window_telemetry = window_telemetry
         self._climate_settings = {}
         self._climate_lock = asyncio.Lock()
         self._climate_schedules = {}

@@ -545,7 +545,7 @@ class TestClimateSchedules:
     ):
         vehicle, account = schedules.vehicle, schedules.account
 
-        async def get_vehicles(client):
+        async def get_vehicles(client, **kwargs):
             # Like the real account read, which updates each vehicle it returns.
             await vehicle.update()
             return [vehicle]

@@ -92,6 +92,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
         feature_flags: dict | None = None,
         legacy_capabilities: list | None = None,
         remote_display: int | None = None,
+        window_telemetry: bool = False,
     ):
         ToyotaVehicle.__init__(
             self,
@@ -110,6 +111,7 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
             feature_flags,
             legacy_capabilities,
             remote_display,
+            window_telemetry,
         )
         self._last_vehicle_status = None
         self._last_graphql_status = None
@@ -1000,6 +1002,14 @@ class SeventeenCYPlusToyotaVehicle(ToyotaVehicle):
                     longitude,
                     observed_at,
                 )
+                continue
+
+            if key in self._TELEMETRY_OPENINGS:
+                if self._window_telemetry and type(value) is int and value in (1, 2):
+                    # Stored without a timestamp, so any status reading takes precedence.
+                    self._store_opening(
+                        self._TELEMETRY_OPENINGS[key], closed=(value == 2), locked=None
+                    )
                 continue
 
             if self._vehicle_telemetry_map.get(key) is not None:

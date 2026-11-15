@@ -108,6 +108,12 @@ remain unchanged until the vehicle contacts Toyota. **Refresh Status** and
 remote commands remain available. Use **Configure** to choose an interval
 if you want automatic vehicle wakes.
 
+Some vehicles report windows and the moonroof only in telemetry. If those
+sensors are unavailable, turn on **Use telemetry for windows and moonroof**
+under **Configure**. Telemetry isn't always current, so a window or the
+moonroof can show the wrong state. Readings from vehicle status still take
+precedence when a vehicle has them.
+
 ## Entities
 
 Entities depend on the vehicle and the Toyota account, and not every vehicle

@@ -15,7 +15,9 @@ from .vehicle_helpers import has_remote_subscription, is_electric_vehicle, norma
 _LOGGER = logging.getLogger(__name__)
 
 
-async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
+async def get_vehicles(
+    client: ToyotaOneClient, window_telemetry: bool = False
+) -> list[ToyotaVehicle]:
     api_vehicles = await client.get_user_vehicle_list()
     supported_generations = {item.value for item in ApiVehicleGeneration}
     state_cache = getattr(client, "_vehicle_state_cache", {})
@@ -65,6 +67,7 @@ async def get_vehicles(client: ToyotaOneClient) -> list[ToyotaVehicle]:
             "feature_flags": api_vehicle.get("features"),
             "legacy_capabilities": api_vehicle.get("capabilities"),
             "remote_display": normalize_remote_display(api_vehicle.get("remoteDisplay")),
+            "window_telemetry": window_telemetry,
         }
 
         if (

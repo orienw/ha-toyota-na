@@ -6,7 +6,7 @@ from homeassistant.core import callback
 
 from .auth import PasswordHistoryError, SsoAccountError
 from .client import ToyotaOneClient
-from .const import DOMAIN, REFRESH_STATUS_INTERVAL
+from .const import CONF_WINDOW_TELEMETRY, DOMAIN, REFRESH_STATUS_INTERVAL
 from .exceptions import AuthError
 from .wake_policy import (
     CONF_WAKE_INTERVAL,
@@ -124,14 +124,14 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_user()
 
 
-class ToyotaNAOptionsFlow(config_entries.OptionsFlow):
-    """Configure automatic vehicle wakes."""
+class ToyotaNAOptionsFlow(config_entries.OptionsFlowWithReload):
+    """Configure vehicle status updates."""
 
     def __init__(self, config_entry):
         self._config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
-        """Manage vehicle wake options."""
+        """Manage vehicle status options."""
         if user_input is not None:
             return self.async_create_entry(
                 title="",
@@ -155,7 +155,11 @@ class ToyotaNAOptionsFlow(config_entries.OptionsFlow):
                 {
                     vol.Required(CONF_WAKE_INTERVAL, default=str(current_interval)): vol.In(
                         interval_options
-                    )
+                    ),
+                    vol.Required(
+                        CONF_WINDOW_TELEMETRY,
+                        default=self._config_entry.options.get(CONF_WINDOW_TELEMETRY) is True,
+                    ): bool,
                 }
             ),
         )

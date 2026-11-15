@@ -13,7 +13,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
-from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.const import CONF_WINDOW_TELEMETRY, DOMAIN
 from custom_components.toyota_na.exceptions import TokenExpired
 from custom_components.toyota_na.wake_policy import CONF_WAKE_INTERVAL, LAST_VEHICLE_WAKES
 
@@ -225,4 +225,24 @@ async def test_options_save_the_wake_interval(hass):
     )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_WAKE_INTERVAL: 0}
+    assert entry.options == {CONF_WAKE_INTERVAL: 0, CONF_WINDOW_TELEMETRY: False}
+
+
+async def test_window_telemetry_option_reaches_discovery_and_reloads(hass, setup_vehicles):
+    account = await setup_vehicles([], options={CONF_WINDOW_TELEMETRY: True})
+    await settle(hass)
+    account.get_vehicles.assert_awaited_with(ANY, window_telemetry=True)
+
+    result = await hass.config_entries.options.async_init(account.entry.entry_id)
+    await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_WAKE_INTERVAL: "0", CONF_WINDOW_TELEMETRY: False}
+    )
+    await settle(hass)
+
+    # Turning it off reloads with a new client, whose empty vehicle state cache
+    # drops telemetry readings already shown.
+    assert account.entry.state is ConfigEntryState.LOADED
+    runtime = hass.data[DOMAIN][account.entry.entry_id]
+    assert runtime["coordinator"] is not account.coordinator
+    assert runtime["toyota_na_client"] is not account.client
+    account.get_vehicles.assert_awaited_with(ANY, window_telemetry=False)

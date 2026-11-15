@@ -20,6 +20,7 @@ from .command_refresh import cancel_on_unload, refresh_after_command
 from .const import (
     COMMAND_MAP,
     COMMAND_REFRESH_DELAY,
+    CONF_WINDOW_TELEMETRY,
     DOMAIN,
     REFRESH_STATUS_INTERVAL,
     UPDATE_INTERVAL,
@@ -275,7 +276,9 @@ async def update_vehicles_status(
 ):
     try:
         _LOGGER.debug("Updating vehicle status")
-        raw_vehicles = await get_vehicles(client)
+        raw_vehicles = await get_vehicles(
+            client, window_telemetry=entry.options.get(CONF_WINDOW_TELEMETRY) is True
+        )
         ws_handler = getattr(client, "_ws_handler", None)
         if ws_handler is not None:
             await ws_handler.update_vehicle_contexts(_websocket_contexts(raw_vehicles))

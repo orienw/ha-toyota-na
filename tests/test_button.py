@@ -14,7 +14,7 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.const import CONF_WINDOW_TELEMETRY, DOMAIN
 from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
@@ -446,7 +446,7 @@ class TestOptionsFlow:
     async def test_default_selects_cloud_updates_only(self, hass):
         _, result = await self.open(hass)
 
-        assert result["data_schema"]({}) == {CONF_WAKE_INTERVAL: "0"}
+        assert result["data_schema"]({}) == {CONF_WAKE_INTERVAL: "0", CONF_WINDOW_TELEMETRY: False}
 
     async def test_manual_only_is_saved(self, hass):
         entry, result = await self.open(hass)
@@ -456,11 +456,24 @@ class TestOptionsFlow:
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
         assert result["title"] == ""
-        assert result["data"] == {CONF_WAKE_INTERVAL: 0}
-        assert entry.options == {CONF_WAKE_INTERVAL: 0}
+        assert result["data"] == {CONF_WAKE_INTERVAL: 0, CONF_WINDOW_TELEMETRY: False}
+        assert entry.options == {CONF_WAKE_INTERVAL: 0, CONF_WINDOW_TELEMETRY: False}
 
     @pytest.mark.parametrize("interval", [0, 2 * 3600, 12 * 3600])
     async def test_saved_interval_is_selected_when_reopened(self, hass, interval):
         _, result = await self.open(hass, options={CONF_WAKE_INTERVAL: interval})
 
-        assert result["data_schema"]({}) == {CONF_WAKE_INTERVAL: str(interval)}
+        assert result["data_schema"]({}) == {
+            CONF_WAKE_INTERVAL: str(interval),
+            CONF_WINDOW_TELEMETRY: False,
+        }
+
+    async def test_window_telemetry_is_saved_and_selected_when_reopened(self, hass):
+        entry, result = await self.open(hass)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {CONF_WAKE_INTERVAL: "0", CONF_WINDOW_TELEMETRY: True}
+        )
+
+        assert entry.options == {CONF_WAKE_INTERVAL: 0, CONF_WINDOW_TELEMETRY: True}
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert result["data_schema"]({})[CONF_WINDOW_TELEMETRY] is True
