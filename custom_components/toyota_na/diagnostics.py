@@ -16,6 +16,12 @@ from homeassistant.core import HomeAssistant
 
 from .client import ToyotaOneClient
 from .const import DOMAIN
+from .vehicle import (
+    GENERATION_TRANSPORTS,
+    ApiVehicleGeneration,
+    fetch_engine_status,
+    fetch_vehicle_status,
+)
 from .vehicle_helpers import endpoint_generation, is_appsync_generation
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,9 +32,14 @@ TO_REDACT = {
     CONF_ACCESS_TOKEN,
     CONF_EMAIL,
     CONF_PASSWORD,
+    "address",
     "ctsLinks",  # contains a vin number
+    "dealerName",
     "device_id",
+    "firstName",
     "guid",
+    "lastName",
+    "phoneNumber",
     "remoteUserGuid",
     "subscriberGuid",
     "accountInfoId",
@@ -70,8 +81,8 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a config entry."""
     entry_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {})
     client: ToyotaOneClient | None = entry_data.get("toyota_na_client")
+    ws_handler = entry_data.get("ws_handler")
 
-    # We don't directly expose this from the vehicle api abstraction, but it's critical to dump this in diagnostics for debugging
     # Keep the report available while Toyota's vehicle list is failing.
     vehicle_list = {"data": None}
     try:
@@ -112,65 +123,80 @@ async def async_get_config_entry_diagnostics(
         user_engine_status = None
         user_electric_status = None
         vin = vehicle["vin"]
-        api_generation = vehicle.get("generation")
-        generation = endpoint_generation(api_generation)
-        region = vehicle.get("region") or "US"
-
+        raw_generation = vehicle.get("generation")
+        api_generation = (
+            raw_generation.strip().upper()
+            if isinstance(raw_generation, str) and raw_generation.strip()
+            else None
+        )
         try:
-            if is_appsync_generation(api_generation):
-                user_vehicle_status = await client.graphql_get_vehicle_status(
-                    vin,
-                    vehicle.get("backdoorType"),
-                    region,
-                )
-            elif generation == "17CY":
-                user_vehicle_status = await client.get_vehicle_status_17cy(vin, region)
-            elif api_generation == "21MM":
-                user_vehicle_status = await client.get_vehicle_status_21mm(vin, region)
-            elif api_generation in ("NG86", "GR86"):
-                user_vehicle_status = await client.get_vehicle_status_route(
-                    vin,
-                    api_generation,
-                    region,
-                    vehicle.get("brand") or "T",
-                )
-            elif generation == "17CYPLUS":
-                user_vehicle_status = await client.get_vehicle_status_17cyplus(vin, region)
-        except Exception as err:
-            _LOGGER.debug(
-                "Vehicle status diagnostics failed for VIN ...%s: %s",
-                vin[-4:],
-                err,
+            transport = (
+                GENERATION_TRANSPORTS[ApiVehicleGeneration(api_generation)]
+                if api_generation is not None
+                else None
             )
+        except ValueError:
+            transport = None
+        generation = (
+            transport.endpoint_generation
+            if transport is not None
+            else endpoint_generation(api_generation)
+        )
+        raw_region = vehicle.get("region")
+        region = raw_region.upper() if isinstance(raw_region, str) and raw_region else "US"
+        raw_brand = vehicle.get("brand")
+        brand = raw_brand.upper() if isinstance(raw_brand, str) and raw_brand else "T"
+        raw_backdoor = vehicle.get("backdoorType")
+        backdoor_type = (
+            raw_backdoor.lower() if isinstance(raw_backdoor, str) and raw_backdoor else None
+        )
+
+        if transport is not None:
+            try:
+                user_vehicle_status = await fetch_vehicle_status(
+                    client,
+                    transport,
+                    vin=vin,
+                    generation=api_generation,
+                    region=region,
+                    brand=brand,
+                    backdoor_type=backdoor_type,
+                )
+            except Exception as err:
+                _LOGGER.debug(
+                    "Vehicle status diagnostics failed for VIN ...%s: %s",
+                    vin[-4:],
+                    err,
+                )
 
         try:
             user_telemetry = await client.get_telemetry(vin, region, generation)
         except Exception as err:
             _LOGGER.debug("Telemetry diagnostics failed for VIN ...%s: %s", vin[-4:], err)
 
-        try:
-            if generation == "17CY":
-                user_engine_status = await client.get_engine_status_17cy(vin, region)
-            elif api_generation == "21MM":
-                user_engine_status = await client.get_engine_status_21mm(vin, region)
-            elif api_generation == "17CYPLUS":
-                user_engine_status = await client.get_engine_status_17cyplus(vin, region)
-            elif api_generation in ("NG86", "GR86"):
-                user_engine_status = await client.get_engine_status_route(
-                    vin,
-                    api_generation,
-                    region,
-                    vehicle.get("brand") or "T",
+        if transport is not None and transport.engine_transport is not None:
+            try:
+                user_engine_status = await fetch_engine_status(
+                    client,
+                    transport,
+                    vin=vin,
+                    generation=api_generation,
+                    region=region,
+                    brand=brand,
                 )
-        except Exception as err:
-            _LOGGER.debug(
-                "Engine status diagnostics failed for VIN ...%s: %s",
-                vin[-4:],
-                err,
-            )
+            except Exception as err:
+                _LOGGER.debug(
+                    "Engine status diagnostics failed for VIN ...%s: %s",
+                    vin[-4:],
+                    err,
+                )
 
         try:
-            if not is_appsync_generation(api_generation):
+            if not (
+                transport.uses_appsync
+                if transport is not None
+                else is_appsync_generation(api_generation)
+            ):
                 user_electric_status = await client.get_electric_status(
                     vin, region=region, generation=api_generation
                 )
@@ -202,7 +228,11 @@ async def async_get_config_entry_diagnostics(
 
     return async_redact_data(
         {
-            "config_entry": async_redact_data(dict(config_entry.data), TO_REDACT),
+            "config_entry": dict(config_entry.data),
+            "options": dict(config_entry.options),
+            "websocket": {
+                "connected": bool(ws_handler and getattr(ws_handler, "is_connected", False))
+            },
             "vehicle_list": vehicle_list,
             "vehicle_status": {"data": vehicle_status},
             "telemetry": {"data": telemetry},

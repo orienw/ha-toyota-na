@@ -15,8 +15,6 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.seventeen_cy import SeventeenCYToyotaVehicle
-from custom_components.toyota_na.seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
 from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
@@ -147,7 +145,7 @@ class FakeVehicle:
 
 
 def make_vehicle(client=None):
-    return SeventeenCYPlusToyotaVehicle(
+    return ToyotaVehicle(
         client=client or object(),
         has_remote_subscription=has_remote_subscription(LEXUS_21MM_COUPE),
         has_electric=is_electric_vehicle(LEXUS_21MM_COUPE),
@@ -164,7 +162,7 @@ def make_vehicle(client=None):
 
 
 def make_17cy_vehicle(client=None):
-    return SeventeenCYToyotaVehicle(
+    return ToyotaVehicle(
         client or object(),
         True,
         True,
@@ -172,11 +170,12 @@ def make_17cy_vehicle(client=None):
         "2018",
         "TESTVIN",
         "CA",
+        generation=ApiVehicleGeneration.CY17,
     )
 
 
 def make_24mm_vehicle(client=None):
-    return SeventeenCYPlusToyotaVehicle(
+    return ToyotaVehicle(
         client=client or object(),
         has_remote_subscription=has_remote_subscription(TWENTY_FOUR_MM_PHEV),
         has_electric=is_electric_vehicle(TWENTY_FOUR_MM_PHEV),

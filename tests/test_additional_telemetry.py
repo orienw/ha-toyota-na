@@ -10,7 +10,6 @@ from homeassistant.helpers import entity_registry as er
 
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.vehicle import VehicleFeatures
-from custom_components.toyota_na.vehicle_values import ToyotaLockableOpening
 
 STATUS = {
     "telemetry": {
@@ -66,7 +65,7 @@ async def test_legacy_glass_hatch_reports_position_without_adding_a_lock(
     update("12:01:00", [{"value": "closed"}])
     update("12:03:00", [])
     assert vehicle.features[VehicleFeatures.GlassHatch].closed is False
-    assert not isinstance(vehicle.features[VehicleFeatures.GlassHatch], ToyotaLockableOpening)
+    assert vehicle.features[VehicleFeatures.GlassHatch].locked is None
 
     await setup_vehicles([vehicle])
 
@@ -306,7 +305,7 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
         }
         readings = {
             "vehicleState": (VehicleFeatures.FrontDriverDoor, "closed", True),
-            "location": (VehicleFeatures.ParkingLocation, "lat", 1),
+            "location": (VehicleFeatures.ParkingLocation, "latitude", 1),
             "telemetry": (VehicleFeatures.Odometer, "value", 123),
             "electric": (VehicleFeatures.ChargeLevel, "value", 80),
             "tripdetails": (VehicleFeatures.TripCount, "value", 3),
@@ -355,7 +354,7 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(123, vehicle.features[VehicleFeatures.Odometer].value)
-        self.assertEqual(1, vehicle.features[VehicleFeatures.ParkingLocation].lat)
+        self.assertEqual(1, vehicle.features[VehicleFeatures.ParkingLocation].latitude)
 
     async def test_charging_rate_retains_precision_and_actual_unit(self):
         vehicle = make_24mm_vehicle()

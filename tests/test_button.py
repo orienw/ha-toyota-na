@@ -21,10 +21,9 @@ from custom_components.toyota_na.vehicle import (
     VehicleFeatures,
 )
 from custom_components.toyota_na.vehicle_values import (
-    ToyotaLocation,
-    ToyotaLockableOpening,
-    ToyotaNumeric,
-    ToyotaOpening,
+    Location,
+    Measurement,
+    Opening,
 )
 from custom_components.toyota_na.wake_policy import (
     CONF_WAKE_INTERVAL,
@@ -149,18 +148,14 @@ class TestButtons:
         for door in doors:
             for locked in (True, False):
                 with subtests.test(door=door, locked=locked):
-                    vehicle.features = {
-                        key: ToyotaLockableOpening(closed=True, locked=True) for key in doors
-                    }
-                    vehicle.features[door] = ToyotaLockableOpening(closed=True, locked=locked)
+                    vehicle.features = {key: Opening(closed=True, locked=True) for key in doors}
+                    vehicle.features[door] = Opening(closed=True, locked=locked)
                     for key in (
                         VehicleFeatures.Trunk,
                         VehicleFeatures.Hood,
                         VehicleFeatures.GlassHatch,
                     ):
-                        vehicle.features[key] = ToyotaLockableOpening(
-                            closed=True, locked=not locked
-                        )
+                        vehicle.features[key] = Opening(closed=True, locked=not locked)
                     await update(hass, account)
                     assert hass.states.get(lock).state == ("locked" if locked else "unlocked")
 
@@ -171,17 +166,15 @@ class TestButtons:
         lock = entity_id(hass, "lock", "TESTVIN.")
         for door in (
             None,
-            ToyotaOpening(True),
-            ToyotaOpening(False),
-            ToyotaLockableOpening(closed=True, locked=None),
+            Opening(closed=True),
+            Opening(closed=False),
+            Opening(closed=True, locked=None),
         ):
             for cargo_locked in (True, False):
                 with subtests.test(door=door, cargo_locked=cargo_locked):
                     vehicle.features = {
                         VehicleFeatures.FrontDriverDoor: door,
-                        VehicleFeatures.Trunk: ToyotaLockableOpening(
-                            closed=True, locked=cargo_locked
-                        ),
+                        VehicleFeatures.Trunk: Opening(closed=True, locked=cargo_locked),
                     }
                     await update(hass, account)
                     assert hass.states.get(lock).state == "unknown"
@@ -208,7 +201,7 @@ class TestBinarySensorCleanup:
         self, hass, setup_vehicles, closed
     ):
         vehicle = FakeVehicle(set())
-        vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaOpening(closed)
+        vehicle.features[VehicleFeatures.FrontDriverDoor] = Opening(closed=closed)
         account = await setup_vehicles([vehicle])
         lock = entity_id(hass, "binary_sensor", "TESTVIN.Front Driver Door Lock")
         door = entity_id(hass, "binary_sensor", "TESTVIN.Front Driver Door")
@@ -217,9 +210,7 @@ class TestBinarySensorCleanup:
         assert hass.states.get(lock).state == "unavailable"
         assert hass.states.get(door).state == ("off" if closed else "on")
 
-        vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaLockableOpening(
-            closed=None, locked=True
-        )
+        vehicle.features[VehicleFeatures.FrontDriverDoor] = Opening(closed=None, locked=True)
         await update(hass, account)
 
         assert hass.states.get(lock).state == "off"
@@ -242,7 +233,7 @@ class TestBinarySensorCleanup:
     ):
         vehicle = FakeVehicle(set())
         vehicle.backdoor_type = backdoor_type
-        vehicle.features[VehicleFeatures.Trunk] = ToyotaLockableOpening(closed=False, locked=False)
+        vehicle.features[VehicleFeatures.Trunk] = Opening(closed=False, locked=False)
         events = add_registry_entries(
             hass,
             {
@@ -269,7 +260,7 @@ class TestBinarySensorCleanup:
     async def test_other_backdoors_keep_trunk_entities(self, hass, setup_vehicles, backdoor_type):
         vehicle = FakeVehicle(set())
         vehicle.backdoor_type = backdoor_type
-        vehicle.features[VehicleFeatures.Trunk] = ToyotaLockableOpening(closed=True, locked=True)
+        vehicle.features[VehicleFeatures.Trunk] = Opening(closed=True, locked=True)
         events = add_registry_entries(hass, {"TESTVIN.Trunk": STALE_TRUNK[0]})
 
         account = await setup_vehicles([vehicle])
@@ -298,7 +289,7 @@ class TestNumericSensors:
         self, hass, setup_vehicles, value, unit, expected
     ):
         vehicle = FakeVehicle(set())
-        vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(value, unit)
+        vehicle.features[VehicleFeatures.SpareTirePressure] = Measurement(value, unit)
         await setup_vehicles([vehicle])
 
         state = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Spare Tire Pressure"))
@@ -309,16 +300,16 @@ class TestNumericSensors:
         self, hass, setup_vehicles, subtests
     ):
         vehicle = FakeVehicle(set())
-        vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(35, "psi")
+        vehicle.features[VehicleFeatures.SpareTirePressure] = Measurement(35, "psi")
         account = await setup_vehicles([vehicle])
         pressure = entity_id(hass, "sensor", "TESTVIN.Spare Tire Pressure")
         for value, unit in ((35, "psi"), (35, "PSI"), (35, ""), (35, None), (None, "kPa")):
             with subtests.test(value=value, unit=unit):
-                vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(value, unit)
+                vehicle.features[VehicleFeatures.SpareTirePressure] = Measurement(value, unit)
                 await update(hass, account)
                 # A converted value would read 35.0.
                 assert hass.states.get(pressure).state == ("unknown" if value is None else "35")
-        vehicle.features[VehicleFeatures.SpareTirePressure] = ToyotaNumeric(35, "atm")
+        vehicle.features[VehicleFeatures.SpareTirePressure] = Measurement(35, "atm")
         await update(hass, account)
         assert hass.states.get(pressure).state == "unknown"
 
@@ -327,7 +318,7 @@ class TestDeviceTracker:
     async def test_unsubscribed_vehicle_exposes_both_location_entities(self, hass, setup_vehicles):
         vehicle = FakeVehicle(set())
         vehicle.subscribed = False
-        location = ToyotaLocation(34.05, -118.25)
+        location = Location(34.05, -118.25)
         vehicle.features = {
             VehicleFeatures.ParkingLocation: location,
             VehicleFeatures.RealTimeLocation: location,

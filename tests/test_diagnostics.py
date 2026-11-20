@@ -304,6 +304,8 @@ async def test_report_without_a_client_keeps_config_redacted(
     assert config["last_vehicle_wakes"] == [{"vin": REDACTED, "timestamp": 1234}]
     assert "TESTVIN24" not in serialized
     assert {key: value for key, value in result.items() if key != "config_entry"} == {
+        "options": {"automatic_wake_interval": 0},
+        "websocket": {"connected": False},
         "vehicle_list": {"data": None},
         "vehicle_status": {"data": []},
         "telemetry": {"data": []},
@@ -325,3 +327,36 @@ async def test_vehicle_entries_without_a_vin_are_skipped(diagnostics):
         {"vin": REDACTED},
     ]
     assert result["telemetry"]["data"] == [{}]
+
+
+async def test_diagnostics_normalizes_generation_and_redacts_pii_fields(diagnostics):
+    account, result = await diagnostics(
+        [
+            {
+                "vin": "TESTVIN",
+                "generation": " 21mm ",
+                "region": "ca",
+                "brand": "l",
+                "firstName": "Alex",
+                "lastName": "Driver",
+                "phoneNumber": "555-0199",
+                "address": "123 Main St",
+                "dealerName": "Example Toyota",
+            }
+        ],
+        get_vehicle_status_21mm={"vehicleStatus": []},
+        get_engine_status_21mm={"status": "stopped"},
+        get_telemetry={},
+        get_electric_status={},
+    )
+    account.client.get_vehicle_status_21mm.assert_awaited_once_with("TESTVIN", "CA")
+    account.client.get_engine_status_21mm.assert_awaited_once_with("TESTVIN", "CA")
+    account.client.get_telemetry.assert_awaited_once_with("TESTVIN", "CA", "17CYPLUS")
+    account.client.get_electric_status.assert_awaited_once_with(
+        "TESTVIN", region="CA", generation="21MM"
+    )
+    assert result["options"] == {"automatic_wake_interval": 0}
+    assert result["websocket"] == {"connected": False}
+    vehicle = result["vehicle_list"]["data"][0]
+    for key in ("firstName", "lastName", "phoneNumber", "address", "dealerName"):
+        assert vehicle[key] == REDACTED

@@ -12,7 +12,7 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.toyota_na import lock as lock_module
 from custom_components.toyota_na.vehicle import VehicleFeatures
-from custom_components.toyota_na.vehicle_values import ToyotaLockableOpening
+from custom_components.toyota_na.vehicle_values import Opening
 
 
 @pytest.fixture
@@ -22,9 +22,7 @@ async def lock_control(hass, setup_vehicles, monkeypatch):
             remote_request_24mm=AsyncMock(), graphql_get_vehicle_status=AsyncMock(return_value=None)
         )
     )
-    vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaLockableOpening(
-        closed=True, locked=False
-    )
+    vehicle.features[VehicleFeatures.FrontDriverDoor] = Opening(closed=True, locked=False)
     account = await setup_vehicles([vehicle])
     monkeypatch.setattr(lock_module, "COMMAND_REFRESH_DELAY", 10)
     return vehicle, account, entity_id(hass, "lock", "TESTVIN24.")
@@ -57,9 +55,7 @@ async def test_command_progress_keeps_its_requested_direction(
     hass, lock_control, freezer, service, locked
 ):
     vehicle, account, lock_id = lock_control
-    vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaLockableOpening(
-        closed=True, locked=locked
-    )
+    vehicle.features[VehicleFeatures.FrontDriverDoor] = Opening(closed=True, locked=locked)
     account.coordinator.async_update_listeners()
     desired = service == "lock"
     final = "unknown" if locked is None else "locked" if locked else "unlocked"

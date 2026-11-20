@@ -15,11 +15,10 @@ from common import (
 
 from custom_components.toyota_na import websocket_handler as websocket_module
 from custom_components.toyota_na.client import ToyotaOneClient
-from custom_components.toyota_na.seventeen_cy import SeventeenCYToyotaVehicle
-from custom_components.toyota_na.seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
 from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
+    ToyotaVehicle,
     VehicleFeatures,
 )
 from custom_components.toyota_na.vehicle_discovery import get_vehicles
@@ -63,7 +62,7 @@ class VehicleMetadataTests(unittest.TestCase):
 
         self.assertFalse(vehicle.supports_command(RemoteRequestCommand.VehicleFinder))
 
-        legacy = SeventeenCYToyotaVehicle(
+        legacy = ToyotaVehicle(
             client=object(),
             has_remote_subscription=True,
             has_electric=False,
@@ -71,6 +70,7 @@ class VehicleMetadataTests(unittest.TestCase):
             model_year="2018",
             vin="TESTVIN",
             region="US",
+            generation=ApiVehicleGeneration.CY17,
             remote_capabilities={"vehicleFinderCapable": True},
         )
         self.assertFalse(legacy.supports_command(RemoteRequestCommand.VehicleFinder))
@@ -121,10 +121,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
                 ]
             )
         )
-        with (
-            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
-            patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
-        ):
+        with patch.object(ToyotaVehicle, "update", AsyncMock()):
             vehicles = await get_vehicles(client)
         self.assertEqual([f"TEST{i}" for i in range(7)], [vehicle.vin for vehicle in vehicles])
         self.assertEqual(
@@ -141,10 +138,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
                 ]
             )
         )
-        with (
-            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
-            patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
-        ):
+        with patch.object(ToyotaVehicle, "update", AsyncMock()):
             for enabled in (False, True, False):
                 vehicles = await get_vehicles(client, window_telemetry=enabled)
                 self.assertEqual([enabled, enabled], [v._window_telemetry for v in vehicles])
@@ -163,7 +157,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
         )
         logger = "custom_components.toyota_na.vehicle_discovery"
         with (
-            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()) as update,
+            patch.object(ToyotaVehicle, "update", AsyncMock()) as update,
             self.assertLogs(logger, "WARNING") as logs,
         ):
             vehicles = await get_vehicles(client)
@@ -176,7 +170,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with (
-            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
+            patch.object(ToyotaVehicle, "update", AsyncMock()),
             self.assertNoLogs(logger, "WARNING"),
         ):
             await get_vehicles(client)
@@ -191,10 +185,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
                 ]
             )
         )
-        with (
-            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
-            patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
-        ):
+        with patch.object(ToyotaVehicle, "update", AsyncMock()):
             vehicles = await get_vehicles(client)
         self.assertEqual(["MISSING", "NULL", "COMPLETE"], [vehicle.vin for vehicle in vehicles])
         self.assertEqual(
@@ -213,10 +204,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
                 ]
             )
         )
-        with (
-            patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()),
-            patch.object(SeventeenCYToyotaVehicle, "update", AsyncMock()),
-        ):
+        with patch.object(ToyotaVehicle, "update", AsyncMock()):
             vehicles = await get_vehicles(client)
             self.assertEqual([7, 10, None], [vehicle.remote_display for vehicle in vehicles])
             client.get_user_vehicle_list.return_value = [
@@ -232,7 +220,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
             get_user_vehicle_list=AsyncMock(),
             _vehicle_state_cache={"TESTVIN": previous},
         )
-        with patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()):
+        with patch.object(ToyotaVehicle, "update", AsyncMock()):
             for generation in ("21MM", "21mm", " 21mM "):
                 with self.subTest(generation=generation):
                     client.get_user_vehicle_list.return_value = [
@@ -480,7 +468,7 @@ class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_17cyplus_refresh_uses_only_rest(self):
         client = self.Client()
-        vehicle = SeventeenCYPlusToyotaVehicle(
+        vehicle = ToyotaVehicle(
             client=client,
             has_remote_subscription=True,
             has_electric=False,
@@ -542,7 +530,7 @@ class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
             async def send_refresh_request_17cy(self, *args):
                 raise RuntimeError("legacy refresh rejected")
 
-        vehicle = SeventeenCYToyotaVehicle(
+        vehicle = ToyotaVehicle(
             client=Client(),
             has_remote_subscription=True,
             has_electric=False,
@@ -550,6 +538,7 @@ class VehicleRefreshTransportTests(unittest.IsolatedAsyncioTestCase):
             model_year="2018",
             vin="LEGACYVIN",
             region="US",
+            generation=ApiVehicleGeneration.CY17,
         )
 
         with self.assertRaisesRegex(RuntimeError, "legacy refresh rejected"):
@@ -688,7 +677,7 @@ class VehicleStateTests(unittest.TestCase):
                     }
                 )
                 location = vehicle.features[VehicleFeatures.ParkingLocation]
-                self.assertEqual(expected, (location.lat, location.value))
+                self.assertEqual(expected, (location.latitude, location.longitude))
 
     def test_rest_location_uses_its_own_acquisition_timestamp(self):
         vehicle = make_vehicle()
@@ -710,7 +699,7 @@ class VehicleStateTests(unittest.TestCase):
             }
         )
         location = vehicle.features[VehicleFeatures.ParkingLocation]
-        self.assertEqual((location.lat, location.value), (34.05, -118.25))
+        self.assertEqual((location.latitude, location.longitude), (34.05, -118.25))
 
     def test_rest_charging_state_distinguishes_waiting_and_completion(self):
         for make in (make_vehicle, make_17cy_vehicle):
@@ -889,7 +878,7 @@ class VehicleStateTests(unittest.TestCase):
                 self.assertFalse(vehicle.features[VehicleFeatures.ChargingStatus].closed)
 
     def test_telemetry_tires_use_their_measurement_timestamp(self):
-        legacy = SeventeenCYToyotaVehicle(
+        legacy = ToyotaVehicle(
             client=object(),
             has_remote_subscription=True,
             has_electric=False,
@@ -897,6 +886,7 @@ class VehicleStateTests(unittest.TestCase):
             model_year="2018",
             vin="LEGACYVIN",
             region="US",
+            generation=ApiVehicleGeneration.CY17,
         )
         for vehicle in (legacy, make_vehicle()):
             with self.subTest(generation=vehicle.generation):
@@ -987,7 +977,7 @@ class VehicleStateTests(unittest.TestCase):
                 self.assertEqual(previous.features[VehicleFeatures.FuelLevel].value, 75)
 
     def test_legacy_status_parser_does_not_depend_on_value_order(self):
-        vehicle = SeventeenCYToyotaVehicle(
+        vehicle = ToyotaVehicle(
             client=object(),
             has_remote_subscription=True,
             has_electric=False,
@@ -995,6 +985,7 @@ class VehicleStateTests(unittest.TestCase):
             model_year="2018",
             vin="LEGACYVIN",
             region="US",
+            generation=ApiVehicleGeneration.CY17,
         )
 
         vehicle._parse_vehicle_status(
@@ -1582,11 +1573,11 @@ class VehicleStateTests(unittest.TestCase):
         ):
             with self.subTest(feature=feature):
                 location = vehicle.features[feature]
-                self.assertEqual(location.lat, 34.05)
-                self.assertEqual(location.value, -118.25)
+                self.assertEqual(location.latitude, 34.05)
+                self.assertEqual(location.longitude, -118.25)
 
     def test_legacy_timestamp_merge_rejects_older_values(self):
-        vehicle = SeventeenCYToyotaVehicle(
+        vehicle = ToyotaVehicle(
             client=object(),
             has_remote_subscription=True,
             has_electric=False,
@@ -1594,6 +1585,7 @@ class VehicleStateTests(unittest.TestCase):
             model_year="2018",
             vin="LEGACYVIN",
             region="US",
+            generation=ApiVehicleGeneration.CY17,
         )
         vehicle._parse_telemetry(
             {
@@ -1635,8 +1627,8 @@ class VehicleStateTests(unittest.TestCase):
         ):
             with self.subTest(feature=feature):
                 location = vehicle.features[feature]
-                self.assertEqual(location.lat, 34.05)
-                self.assertEqual(location.value, -118.25)
+                self.assertEqual(location.latitude, 34.05)
+                self.assertEqual(location.longitude, -118.25)
 
     def test_location_only_push_is_applied(self):
         vehicle = make_vehicle()
@@ -1645,8 +1637,28 @@ class VehicleStateTests(unittest.TestCase):
 
         self.assertTrue(applied)
         location = vehicle.features[VehicleFeatures.ParkingLocation]
-        self.assertEqual(location.lat, 0.0)
-        self.assertEqual(location.value, 0.0)
+        self.assertEqual(location.latitude, 0.0)
+        self.assertEqual(location.longitude, 0.0)
+
+    def test_graphql_remote_start_populates_session_timing_from_start_and_stop(self):
+        vehicle = make_24mm_vehicle()
+        vehicle.apply_graphql_status(
+            {
+                "vehicleState": {
+                    "engine": {
+                        "running": True,
+                        "lastUpdateDateTime": "2026-09-14T12:00:00Z",
+                        "startTime": "2026-09-14T12:00:00Z",
+                        "stopTime": "2026-09-14T12:10:00Z",
+                    }
+                }
+            }
+        )
+        remote = vehicle.features[VehicleFeatures.RemoteStartStatus]
+        self.assertTrue(remote.on)
+        self.assertEqual(remote.timer, 10.0)
+        self.assertEqual(remote.start_time.isoformat(), "2026-09-14T12:00:00+00:00")
+        self.assertEqual(remote.end_time.isoformat(), "2026-09-14T12:10:00+00:00")
 
 
 class WebSocketTests(unittest.IsolatedAsyncioTestCase):
@@ -1962,7 +1974,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
 
                 vehicle = vehicles[0]
                 self.assertFalse(vehicle.features[VehicleFeatures.FrontDriverDoor].locked)
-                self.assertEqual(vehicle.features[VehicleFeatures.ParkingLocation].lat, 34.05)
+                self.assertEqual(vehicle.features[VehicleFeatures.ParkingLocation].latitude, 34.05)
 
     async def test_vehicle_status_uses_toyota_transport_headers(self):
         calls = []
@@ -2012,6 +2024,29 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vehicles[0].brand, "T")
         self.assertIn(("status", ("TESTVIN", "US")), calls)
         self.assertIn(("telemetry", ("TESTVIN", "US", "17CY")), calls)
+
+    async def test_17cy_untimestamped_status_window_takes_precedence_over_telemetry(self):
+        client = types.SimpleNamespace(
+            get_telemetry=AsyncMock(return_value={"driverWindow": 1}),
+            get_vehicle_status_17cy=AsyncMock(
+                return_value={
+                    "vehicleStatus": [
+                        {
+                            "category": "Driver Side",
+                            "sections": [{"section": "Window", "values": [{"value": "Closed"}]}],
+                        }
+                    ]
+                }
+            ),
+            get_engine_status_17cy=AsyncMock(return_value=None),
+        )
+        vehicle = make_17cy_vehicle(client)
+        vehicle._has_electric = False
+        vehicle._window_telemetry = True
+
+        await vehicle.update()
+
+        self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
 
     async def test_rest_wins_without_timestamps_but_push_fills_missing_state(self):
         class WebSocketHandler:

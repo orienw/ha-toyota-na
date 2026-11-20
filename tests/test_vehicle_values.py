@@ -1,62 +1,42 @@
-"""Vehicle value contracts remain stable without the external client package."""
+"""Typed vehicle value models and authentication exception hierarchy."""
 
 from datetime import UTC, datetime
 
 import pytest
 
 from custom_components.toyota_na.exceptions import AuthError, LoginError, NotLoggedIn, TokenExpired
-from custom_components.toyota_na.vehicle_values import (
-    ToyotaLocation,
-    ToyotaLockableOpening,
-    ToyotaNumeric,
-    ToyotaOpening,
-    ToyotaRemoteStart,
-)
+from custom_components.toyota_na.vehicle_values import Location, Measurement, Opening, RemoteStart
 
 
-def test_opening_defaults_unknown_states_and_inheritance():
-    opening = ToyotaOpening()
-    lockable = ToyotaLockableOpening()
-    assert opening.closed is False
-    assert (lockable.closed, lockable.locked) == (False, False)
-    assert isinstance(lockable, ToyotaOpening)
-    assert not isinstance(opening, ToyotaLockableOpening)
-
-    lockable.closed = None
-    lockable.locked = None
-    assert (lockable.closed, lockable.locked) == (None, None)
-    assert repr(lockable) == "ToyotaLockableOpening(closed=None, locked=None)"
-    lockable.closed = True
-    lockable.locked = False
-    assert (lockable.closed, lockable.locked) == (True, False)
-    assert repr(opening) == "ToyotaOpening(closed=False)"
+def test_opening_defaults_to_unknown_states():
+    opening = Opening()
+    assert (opening.closed, opening.locked) == (None, None)
+    opening = Opening(closed=True, locked=False)
+    assert (opening.closed, opening.locked) == (True, False)
+    assert opening == Opening(True, False)
 
 
-def test_numeric_values_preserve_units_unknowns_and_status_codes():
-    numeric = ToyotaNumeric(35.5, "psi")
+def test_measurement_preserves_units_unknowns_and_status_codes():
+    numeric = Measurement(35.5, "psi")
     assert (numeric.value, numeric.unit) == (35.5, "psi")
-    assert repr(numeric) == "ToyotaNumeric(value=35.5, unit=psi)"
-    numeric.value = "charging"
-    numeric.unit = ""
+    numeric = Measurement("charging")
     assert (numeric.value, numeric.unit) == ("charging", "")
-    numeric.value = None
-    assert numeric.value is None
-    assert numeric != ToyotaNumeric(None, "")
+    assert Measurement(None, "") == Measurement(None)
 
 
-def test_location_preserves_the_longitude_value_property():
-    location = ToyotaLocation(lat=34.05, long=-118.25)
-    assert (location.lat, location.value) == (34.05, -118.25)
-    location.lat = 0
-    location.value = 180
-    assert (location.lat, location.value) == (0, 180)
-    assert repr(location) == "ToyotaLocation(lat=0, long=180)"
+def test_location_stores_latitude_and_longitude():
+    location = Location(latitude=34.05, longitude=-118.25)
+    assert (location.latitude, location.longitude) == (34.05, -118.25)
+    assert location == Location(34.05, -118.25)
 
 
 def test_remote_start_timing_is_not_clamped_or_gated_by_running_state(freezer):
     freezer.move_to("2026-10-23T12:00:00Z")
-    remote = ToyotaRemoteStart(on=True, timer=10)
-    remote.start_time = datetime(2026, 10, 23, 11, 55, tzinfo=UTC)
+    remote = RemoteStart(
+        on=True,
+        timer=10,
+        start_time=datetime(2026, 10, 23, 11, 55, tzinfo=UTC),
+    )
     assert remote.start_time == datetime(2026, 10, 23, 11, 55, tzinfo=UTC)
     assert remote.end_time == datetime(2026, 10, 23, 12, 5, tzinfo=UTC)
     assert remote.time_left == 5
@@ -67,15 +47,11 @@ def test_remote_start_timing_is_not_clamped_or_gated_by_running_state(freezer):
     remote.timer = 2
     assert remote.end_time == datetime(2026, 10, 23, 11, 57, tzinfo=UTC)
     assert remote.time_left == -3
-    assert repr(remote) == (
-        "ToyotaRemoteStart(end_time=2026-10-23 11:57:00+00:00, on=False, "
-        "start_time=2026-10-23 11:55:00+00:00, time_left=-3.0)"
-    )
 
 
 def test_remote_start_accepts_missing_session_metadata(freezer):
     freezer.move_to("2026-10-23T12:00:00Z")
-    remote = ToyotaRemoteStart(on=True, timer=None)
+    remote = RemoteStart(on=True, timer=None)
     assert remote.start_time is None
     assert remote.end_time is None
     assert remote.time_left is None

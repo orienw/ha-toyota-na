@@ -7,7 +7,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.toyota_na.vehicle import VehicleFeatures as F
-from custom_components.toyota_na.vehicle_values import ToyotaNumeric
+from custom_components.toyota_na.vehicle_values import Measurement
 
 SENSORS = (
     "Plug Status",
@@ -32,12 +32,12 @@ async def sensors(hass, setup_vehicles):
     vehicle = FakeVehicle(set())
     vehicle.electric = True
     vehicle.features = {
-        F.PlugStatus: ToyotaNumeric(40, ""),
-        F.ConnectorStatus: ToyotaNumeric(5, ""),
-        F.LastTimeStamp: ToyotaNumeric(1789473600, ""),
-        F.LastTirePressureTimeStamp: ToyotaNumeric(1789470000, ""),
-        F.Speed: ToyotaNumeric(100, "km/h"),
-        F.FuelLevel: ToyotaNumeric(79, "%"),
+        F.PlugStatus: Measurement(40, ""),
+        F.ConnectorStatus: Measurement(5, ""),
+        F.LastTimeStamp: Measurement(1789473600, ""),
+        F.LastTirePressureTimeStamp: Measurement(1789470000, ""),
+        F.Speed: Measurement(100, "km/h"),
+        F.FuelLevel: Measurement(79, "%"),
     }
     account = await setup_vehicles([vehicle])
 
@@ -48,7 +48,7 @@ async def sensors(hass, setup_vehicles):
         assert registry.async_get(ids[name]).disabled_by is None
 
     async def update(feature, value, unit=""):
-        vehicle.features[feature] = ToyotaNumeric(value, unit)
+        vehicle.features[feature] = Measurement(value, unit)
         account.coordinator.async_set_updated_data(account.coordinator.data)
         await hass.async_block_till_done()
 

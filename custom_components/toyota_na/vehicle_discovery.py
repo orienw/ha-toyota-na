@@ -2,11 +2,9 @@ import logging
 
 from .client import ToyotaOneClient
 from .exceptions import AuthError
-from .seventeen_cy import SeventeenCYToyotaVehicle
-from .seventeen_cy_plus import (
-    SeventeenCYPlusToyotaVehicle,
-)
 from .vehicle import (
+    GENERATION_TRANSPORTS,
+    KNOWN_UNSUPPORTED_GENERATIONS,
     ApiVehicleGeneration,
     ToyotaVehicle,
 )
@@ -19,7 +17,7 @@ async def get_vehicles(
     client: ToyotaOneClient, window_telemetry: bool = False
 ) -> list[ToyotaVehicle]:
     api_vehicles = await client.get_user_vehicle_list()
-    supported_generations = {item.value for item in ApiVehicleGeneration}
+    supported_generations = {item.value for item in GENERATION_TRANSPORTS}
     state_cache = getattr(client, "_vehicle_state_cache", {})
     # VINs already reported as unsupported, so each warns once per setup, not every poll.
     reported = client._unsupported_vins = getattr(client, "_unsupported_vins", set())
@@ -33,6 +31,11 @@ async def get_vehicles(
         if not isinstance(generation_name, str):
             continue
         generation_name = generation_name.strip().upper()
+        if generation_name in KNOWN_UNSUPPORTED_GENERATIONS:
+            _LOGGER.debug(
+                "Skipping %s vehicle with legacy generation %s", vin[-4:], generation_name
+            )
+            continue
         if generation_name not in supported_generations:
             if generation_name and vin not in reported:
                 reported.add(vin)
@@ -49,41 +52,27 @@ async def get_vehicles(
         region = api_vehicle.get("region")
         backdoor_type = api_vehicle.get("backdoorType")
         previous = state_cache.get(vin)
-        common = {
-            "client": client,
-            "has_remote_subscription": has_remote_subscription(api_vehicle),
-            "has_electric": is_electric_vehicle(api_vehicle),
-            "model_name": api_vehicle.get("modelName")
+        vehicle = ToyotaVehicle(
+            client=client,
+            has_remote_subscription=has_remote_subscription(api_vehicle),
+            has_electric=is_electric_vehicle(api_vehicle),
+            model_name=api_vehicle.get("modelName")
             or (previous.model_name if previous else "Vehicle"),
-            "model_year": api_vehicle.get("modelYear") or (previous.model_year if previous else ""),
-            "vin": vin,
-            "region": region.upper() if isinstance(region, str) and region else "US",
-            "brand": brand.upper() if isinstance(brand, str) and brand else "T",
-            "backdoor_type": (
+            model_year=api_vehicle.get("modelYear") or (previous.model_year if previous else ""),
+            vin=vin,
+            region=region.upper() if isinstance(region, str) and region else "US",
+            generation=generation,
+            brand=brand.upper() if isinstance(brand, str) and brand else "T",
+            backdoor_type=(
                 backdoor_type.lower() if isinstance(backdoor_type, str) and backdoor_type else None
             ),
-            "remote_capabilities": api_vehicle.get("remoteServiceCapabilities"),
-            "extended_capabilities": api_vehicle.get("extendedCapabilities"),
-            "feature_flags": api_vehicle.get("features"),
-            "legacy_capabilities": api_vehicle.get("capabilities"),
-            "remote_display": normalize_remote_display(api_vehicle.get("remoteDisplay")),
-            "window_telemetry": window_telemetry,
-        }
-
-        if (
-            generation == ApiVehicleGeneration.CY17PLUS
-            or generation == ApiVehicleGeneration.MM21
-            or generation == ApiVehicleGeneration.MM24
-            or generation == ApiVehicleGeneration.BEV26
-            or generation == ApiVehicleGeneration.NG86
-            or generation == ApiVehicleGeneration.GR86
-        ):
-            vehicle = SeventeenCYPlusToyotaVehicle(generation=generation, **common)
-
-        elif generation == ApiVehicleGeneration.CY17:
-            vehicle = SeventeenCYToyotaVehicle(**common)
-        else:
-            continue
+            remote_capabilities=api_vehicle.get("remoteServiceCapabilities"),
+            extended_capabilities=api_vehicle.get("extendedCapabilities"),
+            feature_flags=api_vehicle.get("features"),
+            legacy_capabilities=api_vehicle.get("capabilities"),
+            remote_display=normalize_remote_display(api_vehicle.get("remoteDisplay")),
+            window_telemetry=window_telemetry,
+        )
 
         if previous is not None:
             vehicle.inherit_state(previous)

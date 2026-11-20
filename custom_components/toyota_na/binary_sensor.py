@@ -16,7 +16,7 @@ from .const import BINARY_SENSORS, DOMAIN, HEALTH_BINARY_SENSORS
 from .entity_discovery import setup_entity_discovery
 from .health_helpers import health_reading
 from .vehicle import ToyotaVehicle, VehicleFeatures
-from .vehicle_values import ToyotaLockableOpening, ToyotaOpening, ToyotaRemoteStart
+from .vehicle_values import Opening, RemoteStart
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -117,12 +117,12 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
         sensor = self.feature(self._vehicle_feature)
 
         if self.device_class == BinarySensorDeviceClass.LOCK:
-            if isinstance(sensor, ToyotaLockableOpening):
+            if isinstance(sensor, Opening):
                 return None if sensor.locked is None else not sensor.locked
             return None
-        if isinstance(sensor, ToyotaOpening):
+        if isinstance(sensor, Opening):
             return None if sensor.closed is None else not sensor.closed
-        if isinstance(sensor, ToyotaRemoteStart):
+        if isinstance(sensor, RemoteStart):
             if self.device_class == BinarySensorDeviceClass.RUNNING:
                 return sensor.on
 
@@ -130,7 +130,7 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
     def extra_state_attributes(self):
         if self._vehicle_feature == VehicleFeatures.RemoteStartStatus:
             remote_start = cast(
-                ToyotaRemoteStart,
+                RemoteStart,
                 self.feature(self._vehicle_feature),
             )
             if (
@@ -151,8 +151,8 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
         if sensor is None:
             return False
         if self.device_class == BinarySensorDeviceClass.LOCK:
-            return isinstance(sensor, ToyotaLockableOpening) and sensor.locked is not None
-        if self.device_class == BinarySensorDeviceClass.DOOR and isinstance(sensor, ToyotaOpening):
+            return isinstance(sensor, Opening) and sensor.locked is not None
+        if self.device_class == BinarySensorDeviceClass.DOOR and isinstance(sensor, Opening):
             return sensor.closed is not None
         return True
 

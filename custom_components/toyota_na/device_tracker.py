@@ -12,7 +12,7 @@ from .base_entity import ToyotaNABaseEntity
 from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
 from .vehicle import ToyotaVehicle, VehicleFeatures
-from .vehicle_values import ToyotaLocation
+from .vehicle_values import Location
 
 features_sensors = [
     {"feature": VehicleFeatures.ParkingLocation, "name": "Last Parked Location"},
@@ -35,7 +35,7 @@ async def async_setup_entry(
             for entity_config in features_sensors:
                 vehicle_feature = cast(VehicleFeatures, entity_config["feature"])
                 feature = vehicle.features.get(vehicle_feature)
-                if isinstance(feature, ToyotaLocation):
+                if isinstance(feature, Location):
                     yield ToyotaDeviceTracker(
                         vehicle_feature,
                         coordinator,
@@ -68,15 +68,15 @@ class ToyotaDeviceTracker(ToyotaNABaseEntity, TrackerEntity):
 
     @property
     def latitude(self):
-        feat = cast(ToyotaLocation, self.feature(self._feature))
+        feat = cast(Location, self.feature(self._feature))
         if feat is not None:
-            return feat.lat
+            return feat.latitude
 
     @property
     def longitude(self):
-        feat = cast(ToyotaLocation, self.feature(self._feature))
+        feat = cast(Location, self.feature(self._feature))
         if feat is not None:
-            return feat.value
+            return feat.longitude
 
     @property
     def source_type(self):

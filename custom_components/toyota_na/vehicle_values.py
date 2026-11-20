@@ -1,128 +1,47 @@
-"""Mutable values reported by Toyota's vehicle endpoints."""
+"""Typed values reported by Toyota's vehicle endpoints."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 
-class ToyotaOpening:
-    """A reported opening, including an unknown position."""
+@dataclass
+class Opening:
+    """An opening (door, window, trunk, hood, moonroof, warning, or charging flag)."""
 
-    def __init__(self, closed=False):
-        self._closed = closed
-
-    @property
-    def closed(self):
-        return self._closed
-
-    @closed.setter
-    def closed(self, value):
-        self._closed = value
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(closed={self._closed})"
+    closed: bool | None = None
+    locked: bool | None = None
 
 
-class ToyotaLockableOpening(ToyotaOpening):
-    """An opening whose position and lock state are reported separately."""
+@dataclass
+class Measurement:
+    """A reported reading and its wire unit, without coercing either field."""
 
-    def __init__(self, closed: bool = False, locked: bool = False):
-        super().__init__(closed)
-        self._locked = locked
-
-    @property
-    def locked(self):
-        return self._locked
-
-    @locked.setter
-    def locked(self, value):
-        self._locked = value
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(closed={self._closed}, locked={self._locked})"
+    value: Any
+    unit: str = ""
 
 
-class ToyotaNumeric:
-    """A reported value and its wire unit, without coercing either field."""
+@dataclass
+class Location:
+    """A geographic coordinate pair reported by the vehicle."""
 
-    def __init__(self, value: float, unit: str):
-        self._value = value
-        self._unit = unit
-
-    @property
-    def value(self) -> float:
-        return self._value
-
-    @value.setter
-    def value(self, value: float):
-        self._value = value
-
-    @property
-    def unit(self) -> str:
-        return self._unit
-
-    @unit.setter
-    def unit(self, unit: str):
-        self._unit = unit
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(value={self._value}, unit={self._unit})"
+    latitude: float
+    longitude: float
 
 
-class ToyotaLocation:
-    """A position whose longitude is exposed through the value property."""
-
-    def __init__(self, lat: float, long: float):
-        self._lat = lat
-        self._long = long
-
-    @property
-    def lat(self) -> float:
-        return self._lat
-
-    @lat.setter
-    def lat(self, value: float) -> None:
-        self._lat = value
-
-    @property
-    def value(self) -> float:
-        return self._long
-
-    @value.setter
-    def value(self, value: float) -> None:
-        self._long = value
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(lat={self._lat}, long={self._long})"
-
-
-class ToyotaRemoteStart:
+@dataclass
+class RemoteStart:
     """Reported engine state and optional remote-start session timing."""
 
-    def __init__(self, on: bool, timer: float | None):
-        self._start_time: datetime | None = None
-        self._on = on
-        self._timer = timer
+    on: bool
+    timer: float | None = None
+    start_time: datetime | None = None
 
     @property
     def end_time(self) -> datetime | None:
-        if self._start_time is not None and self._timer is not None:
-            return self._start_time + timedelta(minutes=self._timer)
+        if self.start_time is not None and self.timer is not None:
+            return self.start_time + timedelta(minutes=self.timer)
         return None
-
-    @property
-    def on(self) -> bool:
-        return self._on
-
-    @on.setter
-    def on(self, value: bool) -> None:
-        self._on = value
-
-    @property
-    def start_time(self) -> datetime | None:
-        return self._start_time
-
-    @start_time.setter
-    def start_time(self, value: datetime | None):
-        self._start_time = value
 
     @property
     def time_left(self) -> float | None:
@@ -131,16 +50,5 @@ class ToyotaRemoteStart:
             return (end_time - datetime.now(UTC)).total_seconds() / 60
         return None
 
-    @property
-    def timer(self) -> float | None:
-        return self._timer
 
-    @timer.setter
-    def timer(self, value: float):
-        self._timer = value
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(end_time={self.end_time}, on={self._on}, "
-            f"start_time={self.start_time}, time_left={self.time_left})"
-        )
+VehicleValue = Opening | Measurement | Location | RemoteStart

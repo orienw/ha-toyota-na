@@ -17,7 +17,7 @@ from .const import DOMAIN, HEALTH_SENSORS, REMOTE_ACCESS_STATES, SENSORS
 from .entity_discovery import setup_entity_discovery
 from .health_helpers import health_reading
 from .vehicle import ToyotaVehicle, VehicleFeatures
-from .vehicle_values import ToyotaNumeric
+from .vehicle_values import Measurement
 
 # Toyota reports tire pressure units in varying case, such as "kpa".
 _PRESSURE_UNITS = {"psi": UnitOfPressure.PSI, "kpa": UnitOfPressure.KPA, "bar": UnitOfPressure.BAR}
@@ -54,7 +54,7 @@ async def async_setup_entry(
                     yield ToyotaHealthSensor(config, coordinator, config["name"], vehicle.vin)
             for config in SENSORS:
                 feature = vehicle.features.get(config["feature"])
-                if not isinstance(feature, ToyotaNumeric):
+                if not isinstance(feature, Measurement):
                     continue
                 if vehicle.electric is False and config["electric"]:
                     continue
@@ -179,7 +179,7 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
     @property
     def native_value(self):
         feature = self.feature(self._vehicle_feature)
-        if not isinstance(feature, ToyotaNumeric) or feature.value is None:
+        if not isinstance(feature, Measurement) or feature.value is None:
             return None
         if self._vehicle_feature == VehicleFeatures.FuelLevel and isinstance(
             feature.value, (int, float)
@@ -202,7 +202,7 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         if self.device_class in (SensorDeviceClass.ENUM, SensorDeviceClass.TIMESTAMP):
             return None
         feature = self.feature(self._vehicle_feature)
-        unit = feature.unit if isinstance(feature, ToyotaNumeric) else None
+        unit = feature.unit if isinstance(feature, Measurement) else None
         if self._vehicle_feature == VehicleFeatures.Speed:
             return unit or self._unit_of_measurement
         if self._unit_of_measurement in (None, "MI_OR_KM"):
@@ -211,13 +211,13 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def available(self):
-        return isinstance(self.feature(self._vehicle_feature), ToyotaNumeric)
+        return isinstance(self.feature(self._vehicle_feature), Measurement)
 
     @property
     def extra_state_attributes(self):
         if self._states:
             feature = self.feature(self._vehicle_feature)
-            return {"raw_value": feature.value if isinstance(feature, ToyotaNumeric) else None}
+            return {"raw_value": feature.value if isinstance(feature, Measurement) else None}
         if self._vehicle_feature == VehicleFeatures.ChargeScheduleCount and self.vehicle:
             return {"schedules": self.vehicle.charge_settings.get("schedules", [])}
         return None

@@ -18,7 +18,7 @@ from custom_components.toyota_na import client as client_module
 from custom_components.toyota_na import event
 from custom_components.toyota_na.const import NOTIFICATION_EVENT_TYPES
 from custom_components.toyota_na.exceptions import AuthError
-from custom_components.toyota_na.seventeen_cy_plus import SeventeenCYPlusToyotaVehicle
+from custom_components.toyota_na.vehicle import ToyotaVehicle
 from custom_components.toyota_na.vehicle_discovery import get_vehicles
 
 INTEGRATION = Path(__file__).parents[1] / "custom_components/toyota_na"
@@ -58,7 +58,7 @@ class NotificationHistoryTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def poll(self):
-        with patch.object(SeventeenCYPlusToyotaVehicle, "update", AsyncMock()):
+        with patch.object(ToyotaVehicle, "update", AsyncMock()):
             return await get_vehicles(self.client)
 
     async def test_each_vehicle_gets_its_notifications_from_one_read(self):

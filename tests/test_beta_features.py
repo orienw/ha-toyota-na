@@ -26,7 +26,7 @@ from custom_components.toyota_na.vehicle import (
     VehicleFeatures,
 )
 from custom_components.toyota_na.vehicle_discovery import get_vehicles
-from custom_components.toyota_na.vehicle_values import ToyotaLockableOpening, ToyotaNumeric
+from custom_components.toyota_na.vehicle_values import Measurement, Opening
 
 CLIMATE_SETTINGS = {
     "temperature": 22.0,
@@ -89,14 +89,7 @@ def test_feature_states_and_legacy_fallback(subtests):
     assert not vehicle.supports_command(RemoteRequestCommand.EngineStart)
 
 
-@pytest.mark.parametrize(
-    "generation",
-    [
-        generation
-        for generation in ApiVehicleGeneration
-        if generation != ApiVehicleGeneration.PRE17CY
-    ],
-)
+@pytest.mark.parametrize("generation", list(ApiVehicleGeneration))
 def test_climate_start_uses_capabilities_and_generation(generation):
     vehicle = make_17cy_vehicle() if generation == ApiVehicleGeneration.CY17 else make_vehicle()
     vehicle._generation = generation
@@ -181,7 +174,7 @@ async def test_app_feature_flags_do_not_hide_observed_sensor_values(hass, setup_
     vehicle = make_vehicle()
     # Home Assistant only adds the battery sensor for an electric vehicle.
     vehicle._has_electric = True
-    vehicle.features[VehicleFeatures.ChargeLevel] = ToyotaNumeric(80, "%")
+    vehicle.features[VehicleFeatures.ChargeLevel] = Measurement(80, "%")
     account = await setup_vehicles([vehicle])
     sensor = entity_id(hass, "sensor", "TESTVIN.EV Battery Level")
     assert hass.states.get(sensor).state == "80"
@@ -194,7 +187,7 @@ async def test_app_feature_flags_do_not_hide_observed_sensor_values(hass, setup_
 
 async def test_app_maintenance_does_not_hide_observed_lock_state(hass, setup_vehicles):
     vehicle = make_vehicle()
-    vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaLockableOpening(
+    vehicle.features[VehicleFeatures.FrontDriverDoor] = Opening(
         closed=True,
         locked=True,
     )
@@ -285,7 +278,7 @@ async def test_legacy_reads_and_entities_do_not_require_remote_subscription(hass
     vehicle._feature_flags = {"evBattery": 0, "evVehicleStatus": 2}
     await vehicle.update()
     client.get_engine_status_17cy.assert_awaited_once()
-    vehicle.features[VehicleFeatures.FrontDriverDoor] = ToyotaLockableOpening(
+    vehicle.features[VehicleFeatures.FrontDriverDoor] = Opening(
         closed=True,
         locked=True,
     )
@@ -297,7 +290,7 @@ async def test_legacy_reads_and_entities_do_not_require_remote_subscription(hass
 
 def test_subscription_changes_preserve_last_known_vehicle_observations():
     previous = make_24mm_vehicle()
-    previous.features[VehicleFeatures.ChargeLevel] = ToyotaNumeric(62, "%")
+    previous.features[VehicleFeatures.ChargeLevel] = Measurement(62, "%")
     vehicle = make_24mm_vehicle()
     vehicle._has_remote_subscription = False
     assert vehicle.inherit_state(previous)
@@ -318,7 +311,7 @@ async def test_services_enforce_live_feature_and_charging_state(hass, setup_vehi
     client = types.SimpleNamespace(remote_request_24mm=AsyncMock())
     vehicle = make_24mm_vehicle(client)
     vehicle._feature_flags = {"remoteCommands": 1, "evVehicleStatus": 1, "vehicleState": 2}
-    vehicle.features[VehicleFeatures.ChargingState] = ToyotaNumeric("charging", "")
+    vehicle.features[VehicleFeatures.ChargingState] = Measurement("charging", "")
     account = await setup_vehicles([vehicle])
     device_id = next(
         iter(er.async_entries_for_config_entry(er.async_get(hass), account.entry.entry_id))
@@ -483,7 +476,7 @@ async def test_charging_state_selects_only_applicable_commands(generation, subte
         "external_power_active",
         "unexpected",
     ):
-        vehicle.features[VehicleFeatures.ChargingState] = ToyotaNumeric(state, "")
+        vehicle.features[VehicleFeatures.ChargingState] = Measurement(state, "")
         for command in (
             RemoteRequestCommand.ChargeStart,
             RemoteRequestCommand.ChargeResume,

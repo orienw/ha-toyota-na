@@ -29,7 +29,11 @@ from .const import (
 from .exceptions import AuthError
 from .remote_access import sync_remote_access_issues
 from .service_helpers import translate_service_errors
-from .vehicle import ApiVehicleGeneration, RemoteRequestCommand, ToyotaVehicle
+from .vehicle import (
+    GENERATION_TRANSPORTS,
+    RemoteRequestCommand,
+    ToyotaVehicle,
+)
 from .vehicle_discovery import get_vehicles
 from .wake_policy import automatic_wake_due, record_vehicle_wake
 from .websocket_handler import ToyotaWebSocketHandler
@@ -257,18 +261,15 @@ def update_tokens(tokens: dict[str, str], hass: HomeAssistant, entry: ConfigEntr
 
 
 def _websocket_contexts(vehicles):
-    websocket_generations = {
-        ApiVehicleGeneration.MM21,
-        ApiVehicleGeneration.MM24,
-        ApiVehicleGeneration.BEV26,
-    }
     return {
         vehicle.vin: {
             "region": vehicle.region,
             "backdoor_type": vehicle.backdoor_type,
         }
         for vehicle in vehicles
-        if vehicle.can_receive_status and vehicle.generation in websocket_generations
+        if vehicle.can_receive_status
+        and (transport := GENERATION_TRANSPORTS.get(vehicle.generation)) is not None
+        and transport.appsync_push
     }
 
 
