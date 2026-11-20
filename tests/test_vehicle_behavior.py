@@ -156,11 +156,12 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         logger = "custom_components.toyota_na.vehicle_discovery"
+        unsupported_vins = set()
         with (
             patch.object(ToyotaVehicle, "update", AsyncMock()) as update,
             self.assertLogs(logger, "WARNING") as logs,
         ):
-            vehicles = await get_vehicles(client)
+            vehicles = await get_vehicles(client, unsupported_vins=unsupported_vins)
         self.assertEqual(["SUPPORTED"], [vehicle.vin for vehicle in vehicles])
         update.assert_awaited_once()
         # Only codes Toyota actually reported, and PRE17CY is known, not new.
@@ -173,7 +174,7 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
             patch.object(ToyotaVehicle, "update", AsyncMock()),
             self.assertNoLogs(logger, "WARNING"),
         ):
-            await get_vehicles(client)
+            await get_vehicles(client, unsupported_vins=unsupported_vins)
 
     async def test_missing_vehicle_names_do_not_block_other_vehicles(self):
         client = types.SimpleNamespace(
@@ -216,17 +217,16 @@ class VehicleCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_vehicle_names_preserve_previous_identity(self):
         previous = make_vehicle()
         previous._parse_telemetry({"fuelLevel": 61, "lastTimestamp": "2026-09-21T07:00:00Z"})
-        client = types.SimpleNamespace(
-            get_user_vehicle_list=AsyncMock(),
-            _vehicle_state_cache={"TESTVIN": previous},
-        )
+        client = types.SimpleNamespace(get_user_vehicle_list=AsyncMock())
+        vehicles_by_vin = {"TESTVIN": previous}
         with patch.object(ToyotaVehicle, "update", AsyncMock()):
             for generation in ("21MM", "21mm", " 21mM "):
                 with self.subTest(generation=generation):
                     client.get_user_vehicle_list.return_value = [
                         {"vin": "TESTVIN", "generation": generation}
                     ]
-                    (vehicle,) = await get_vehicles(client)
+                    (vehicle,) = await get_vehicles(client, vehicles_by_vin=vehicles_by_vin)
+                    self.assertIs(previous, vehicle)
                     self.assertEqual("LC 500 2-DOOR COUPE", vehicle.model_name)
                     self.assertEqual("2024", vehicle.model_year)
                     self.assertEqual(61, vehicle.features[VehicleFeatures.FuelLevel].value)
@@ -960,16 +960,22 @@ class VehicleStateTests(unittest.TestCase):
     def test_changed_vehicle_context_does_not_inherit_observations(self):
         previous = make_vehicle()
         previous._parse_telemetry({"lastTimestamp": "2026-08-14T12:02:00Z", "fuelLevel": 75})
-        for attribute, value in (
-            ("_vin", "OTHERVIN"),
-            ("_region", "CA"),
-            ("_generation", ApiVehicleGeneration.MM24),
-            ("_has_electric", True),
+        for overrides in (
+            {"vin": "OTHERVIN"},
+            {"region": "CA"},
+            {"generation": "24MM"},
+            {"evVehicle": True},
         ):
-            with self.subTest(attribute=attribute):
-                vehicle = make_vehicle()
-                setattr(vehicle, attribute, value)
-                vehicle.inherit_state(previous)
+            with self.subTest(overrides=overrides):
+                client = types.SimpleNamespace(
+                    get_user_vehicle_list=AsyncMock(
+                        return_value=[{**LEXUS_21MM_COUPE, "vin": "TESTVIN", **overrides}]
+                    )
+                )
+                vehicles_by_vin = {"TESTVIN": previous}
+                with patch.object(ToyotaVehicle, "update", AsyncMock()):
+                    (vehicle,) = asyncio.run(get_vehicles(client, vehicles_by_vin=vehicles_by_vin))
+                self.assertIsNot(previous, vehicle)
                 self.assertEqual(vehicle.features, {})
 
                 vehicle._parse_telemetry({"lastTimestamp": "2026-08-14T12:00:00Z", "fuelLevel": 50})
@@ -1832,7 +1838,8 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
             get_telemetry=AsyncMock(return_value={}),
             graphql_get_vehicle_status=AsyncMock(side_effect=[None, status]),
         )
-        (current,) = await get_vehicles(client)
+        vehicles_by_vin = {}
+        (current,) = await get_vehicles(client, vehicles_by_vin=vehicles_by_vin)
         self.assertNotIn(VehicleFeatures.ChargeLevel, current.features)
 
         handler = ToyotaWebSocketHandler(
@@ -1840,7 +1847,6 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
         )
         handler._vehicle_contexts = {"TESTVIN24": {}}
         handler._subscriptions = {"TESTVIN24": "subscription"}
-        client._ws_handler = handler
         await handler._handle_message(
             {
                 "type": "data",
@@ -1858,7 +1864,10 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
             "guid",
         )
 
-        (recovered,) = await get_vehicles(client)
+        (recovered,) = await get_vehicles(
+            client, vehicles_by_vin=vehicles_by_vin, ws_handler=handler
+        )
+        self.assertIs(current, recovered)
 
         self.assertEqual(client.graphql_get_vehicle_status.await_count, 2)
         for feature in (
@@ -1931,15 +1940,17 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                     graphql_get_vehicle_status = get_status
 
                 client = Client()
-                current = (await get_vehicles(client))[0]
+                vehicles_by_vin = {}
+                current = (await get_vehicles(client, vehicles_by_vin=vehicles_by_vin))[0]
                 handler = ToyotaWebSocketHandler(
                     client, lambda vin, pushed: current.apply_graphql_status(pushed)
                 )
                 handler._vehicle_contexts = {"TESTVIN": {}}
                 handler._subscriptions = {"TESTVIN": "subscription"}
-                client._ws_handler = handler
                 client.block = True
-                task = asyncio.create_task(get_vehicles(client))
+                task = asyncio.create_task(
+                    get_vehicles(client, vehicles_by_vin=vehicles_by_vin, ws_handler=handler)
+                )
                 try:
                     await asyncio.wait_for(polling.wait(), timeout=1)
                     for pushed in (
@@ -2062,8 +2073,6 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 }
 
         class Client:
-            _ws_handler = WebSocketHandler()
-
             async def get_telemetry(self, *args):
                 return {}
 
@@ -2082,7 +2091,7 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
 
         vehicle = make_vehicle(Client())
 
-        await vehicle.update()
+        await vehicle.update(ws_handler=WebSocketHandler())
 
         self.assertFalse(vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
         self.assertFalse(vehicle.features[VehicleFeatures.FrontPassengerWindow].closed)
@@ -2191,12 +2200,17 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 return None
 
         client = Client()
-        first = (await get_vehicles(client))[0]
-        second = (await get_vehicles(client))[0]
+        vehicles_by_vin = {}
+        first = (await get_vehicles(client, vehicles_by_vin=vehicles_by_vin))[0]
+        second = (await get_vehicles(client, vehicles_by_vin=vehicles_by_vin))[0]
 
-        self.assertIsNot(first, second)
+        self.assertIs(first, second)
         self.assertTrue(second.features[VehicleFeatures.FrontDriverDoor].closed)
         self.assertTrue(second.features[VehicleFeatures.FrontDriverDoor].locked)
+
+        client.get_user_vehicle_list = AsyncMock(return_value=[])
+        self.assertEqual([], await get_vehicles(client, vehicles_by_vin=vehicles_by_vin))
+        self.assertEqual({}, vehicles_by_vin)
 
     async def test_state_cache_preserves_source_timestamp_ordering(self):
         payload = dict(TWENTY_FOUR_MM_PHEV, vin="TESTVIN24")
@@ -2228,9 +2242,11 @@ class ClientMetadataTests(unittest.IsolatedAsyncioTestCase):
                 return next(statuses)
 
         client = Client()
-        await get_vehicles(client)
-        vehicle = (await get_vehicles(client))[0]
+        vehicles_by_vin = {}
+        first = (await get_vehicles(client, vehicles_by_vin=vehicles_by_vin))[0]
+        vehicle = (await get_vehicles(client, vehicles_by_vin=vehicles_by_vin))[0]
 
+        self.assertIs(first, vehicle)
         self.assertEqual(
             2000,
             vehicle.features[VehicleFeatures.Odometer].value,

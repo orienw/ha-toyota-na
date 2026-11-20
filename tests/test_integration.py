@@ -32,8 +32,8 @@ async def loaded(hass, caplog):
         patch("custom_components.toyota_na.COMMAND_REFRESH_DELAY", 0),
     ):
         await set_up(hass, entry, caplog)
-        runtime = hass.data[DOMAIN][entry.entry_id]
-        yield entry, runtime["toyota_na_client"], runtime["ws_handler"]
+        runtime = entry.runtime_data
+        yield entry, runtime.client, runtime.ws_handler
         if entry.state is ConfigEntryState.LOADED:
             assert await hass.config_entries.async_unload(entry.entry_id)
 
@@ -52,7 +52,7 @@ async def test_setup_reads_the_vehicle_into_entities_and_unloads(hass, loaded):
     assert await hass.config_entries.async_unload(entry.entry_id)
 
     assert entry.state is ConfigEntryState.NOT_LOADED
-    assert entry.entry_id not in hass.data[DOMAIN]
+    assert getattr(entry, "runtime_data", None) is None
     websocket.stop.assert_awaited_once()
     assert hass.states.get(LOCK).state == "unavailable"
 
@@ -102,13 +102,20 @@ async def test_frequent_pushes_keep_account_polling_without_waking(hass, freezer
 @pytest.mark.parametrize("failure", [RuntimeError("Account read failed"), TokenExpired()])
 async def test_push_preserves_failed_poll_and_its_retry_behavior(hass, freezer, loaded, failure):
     entry, client, websocket = loaded
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = entry.runtime_data.coordinator
     client.get_user_vehicle_list.side_effect = failure
     await coordinator.async_refresh()
     await hass.async_block_till_done()
     assert not coordinator.last_update_success
     error = coordinator.last_exception
     reads = client.get_user_vehicle_list.await_count
+    if isinstance(failure, TokenExpired):
+        websocket.stop.assert_awaited_once()
+        assert hass.states.get(LOCK).state == "unavailable"
+        assert hass.states.get("sensor.2026_rav4_plug_in_hybrid_odometer").state == "unavailable"
+    else:
+        websocket.stop.assert_not_awaited()
+        assert hass.states.get(LOCK).state == "unlocked"
 
     status = deepcopy(STATUS_24MM)
     status["vehicleState"]["lastUpdateDateTime"] = "2026-08-14T12:05:00Z"
@@ -116,7 +123,9 @@ async def test_push_preserves_failed_poll_and_its_retry_behavior(hass, freezer, 
     websocket.on_status(VIN, status)
     await hass.async_block_till_done()
 
-    assert hass.states.get(LOCK).state == "locked"
+    assert hass.states.get(LOCK).state == (
+        "unavailable" if isinstance(failure, TokenExpired) else "locked"
+    )
     assert not coordinator.last_update_success
     assert coordinator.last_exception is error
     assert client.get_user_vehicle_list.await_count == reads
@@ -134,6 +143,28 @@ async def test_push_preserves_failed_poll_and_its_retry_behavior(hass, freezer, 
     else:
         assert coordinator.last_update_success
         assert client.get_user_vehicle_list.await_count == reads + 1
+
+
+async def test_websocket_auth_error_marks_entities_unavailable_and_starts_reauth(
+    hass, freezer, loaded
+):
+    entry, client, websocket = loaded
+    coordinator = entry.runtime_data.coordinator
+    reads = client.get_user_vehicle_list.await_count
+
+    websocket.on_auth_error(TokenExpired())
+    await hass.async_block_till_done()
+
+    assert not coordinator.last_update_success
+    assert hass.states.get(LOCK).state == "unavailable"
+    assert hass.states.get("sensor.2026_rav4_plug_in_hybrid_odometer").state == "unavailable"
+    assert any(
+        flow["context"]["source"] == "reauth" for flow in hass.config_entries.flow.async_progress()
+    )
+    freezer.tick(timedelta(seconds=601))
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert client.get_user_vehicle_list.await_count == reads
 
 
 async def test_failed_polls_keep_tracebacks_at_debug(hass, setup_vehicles, caplog):
@@ -231,7 +262,13 @@ async def test_options_save_the_wake_interval(hass):
 async def test_window_telemetry_option_reaches_discovery_and_reloads(hass, setup_vehicles):
     account = await setup_vehicles([], options={CONF_WINDOW_TELEMETRY: True})
     await settle(hass)
-    account.get_vehicles.assert_awaited_with(ANY, window_telemetry=True)
+    account.get_vehicles.assert_awaited_with(
+        ANY,
+        window_telemetry=True,
+        vehicles_by_vin=ANY,
+        unsupported_vins=ANY,
+        ws_handler=ANY,
+    )
 
     result = await hass.config_entries.options.async_init(account.entry.entry_id)
     await hass.config_entries.options.async_configure(
@@ -239,10 +276,16 @@ async def test_window_telemetry_option_reaches_discovery_and_reloads(hass, setup
     )
     await settle(hass)
 
-    # Turning it off reloads with a new client, whose empty vehicle state cache
-    # drops telemetry readings already shown.
+    # Turning it off reloads with a new coordinator and client, whose fresh vehicle
+    # state drops telemetry readings already shown.
     assert account.entry.state is ConfigEntryState.LOADED
-    runtime = hass.data[DOMAIN][account.entry.entry_id]
-    assert runtime["coordinator"] is not account.coordinator
-    assert runtime["toyota_na_client"] is not account.client
-    account.get_vehicles.assert_awaited_with(ANY, window_telemetry=False)
+    runtime = account.entry.runtime_data
+    assert runtime.coordinator is not account.coordinator
+    assert runtime.client is not account.client
+    account.get_vehicles.assert_awaited_with(
+        ANY,
+        window_telemetry=False,
+        vehicles_by_vin=ANY,
+        unsupported_vins=ANY,
+        ws_handler=ANY,
+    )

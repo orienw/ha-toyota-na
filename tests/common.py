@@ -212,8 +212,9 @@ class FakeClient:
 
 
 class FakeWebSocket:
-    def __init__(self, client, on_status):
+    def __init__(self, client, on_status, auth_error_callback=None):
         self.on_status = on_status
+        self.on_auth_error = auth_error_callback
         self.start = AsyncMock()
         self.stop = AsyncMock()
         self.update_vehicle_contexts = AsyncMock()

@@ -12,7 +12,6 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.toyota_na import client as client_module
-from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
@@ -153,7 +152,7 @@ async def test_failed_unload_keeps_live_subscription_running(hass, setup_vehicle
     account.entry.mock_state(hass, ConfigEntryState.LOADED)
     assert await hass.config_entries.async_unload(account.entry.entry_id)
     account.websocket.stop.assert_awaited_once()
-    assert account.entry.entry_id not in hass.data[DOMAIN]
+    assert getattr(account.entry, "runtime_data", None) is None
 
 
 @pytest.mark.parametrize(

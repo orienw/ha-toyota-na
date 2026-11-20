@@ -71,16 +71,19 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_reads_are_hourly_across_polls(self):
         client = health_client()
-        previous = make_vehicle(client)
-        with patch.object(vehicle_module.time, "monotonic", return_value=1000.0):
-            await previous.update_health()
         vehicle = make_vehicle(client)
-        self.assertTrue(vehicle.inherit_state(previous))
+        with patch.object(vehicle_module.time, "monotonic", return_value=1000.0):
+            await vehicle.update_health()
+        vehicle.update_metadata(
+            has_remote_subscription=vehicle.subscribed,
+            remote_capabilities=vehicle.remote_capabilities,
+            extended_capabilities=vehicle.extended_capabilities,
+            backdoor_type=vehicle.backdoor_type,
+        )
         for now, reads in ((4599.0, 1), (4600.0, 2)):
             with patch.object(vehicle_module.time, "monotonic", return_value=now):
                 await vehicle.update_health()
             self.assertEqual(client.get_vehicle_health_report.await_count, reads)
-        self.assertIs(vehicle.health, previous.health)
 
     async def test_failed_or_unusable_reads_keep_the_last_response(self):
         client = health_client()

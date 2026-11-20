@@ -25,7 +25,7 @@ CLIMATE_SWITCHES = (
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = config_entry.runtime_data.coordinator
 
     def remove_stale_schedules():
         if not coordinator.last_update_success:
@@ -110,7 +110,8 @@ class ToyotaClimateSettingsSwitch(ToyotaNABaseEntity, SwitchEntity):
     def available(self):
         vehicle = self.vehicle
         return (
-            vehicle is not None
+            super().available
+            and vehicle is not None
             and vehicle.supports_climate_settings
             and isinstance((vehicle.climate_settings or {}).get("settingsOn"), bool)
         )
@@ -132,7 +133,7 @@ class ToyotaClimateSettingsSwitch(ToyotaNABaseEntity, SwitchEntity):
             raise ServiceValidationError("Climate settings are unavailable for this vehicle.")
         with translate_service_errors():
             await self.vehicle.update_climate_settings(**self._changes(enabled))
-        self.coordinator.async_set_updated_data(self.coordinator.data)
+        self.coordinator.async_update_listeners()
 
     def _changes(self, enabled):
         return {"settingsOn": enabled}
@@ -156,7 +157,8 @@ class ToyotaClimatePreferenceSwitch(ToyotaClimateSettingsSwitch):
     @property
     def available(self):
         return (
-            self.vehicle is not None
+            super(ToyotaClimateSettingsSwitch, self).available
+            and self.vehicle is not None
             and self.vehicle.supports_climate_settings
             and isinstance(self.setting.get("enabled"), bool)
         )
@@ -193,7 +195,8 @@ class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
     @property
     def available(self):
         return (
-            self.vehicle is not None
+            super().available
+            and self.vehicle is not None
             and self.vehicle.supports_climate_schedules
             and self.is_on is not None
         )
@@ -222,7 +225,7 @@ class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
             await self.vehicle.update_climate_schedule(
                 self._identifier, zone=ZoneInfo(self.hass.config.time_zone), enabled=enabled
             )
-        self.coordinator.async_set_updated_data(self.coordinator.data)
+        self.coordinator.async_update_listeners()
 
 
 class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
@@ -251,7 +254,8 @@ class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
     @property
     def available(self):
         return (
-            self.vehicle is not None
+            super().available
+            and self.vehicle is not None
             and self.vehicle.supports_charge_schedules
             and isinstance(self.schedule.get("enabled"), bool)
         )
@@ -279,4 +283,4 @@ class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
         with translate_service_errors():
             await self.vehicle.update_charge_schedule(self._identifier, enabled=enabled)
         record_vehicle_wake(self.hass, self._config_entry, self.vin)
-        self.coordinator.async_set_updated_data(self.coordinator.data)
+        self.coordinator.async_update_listeners()

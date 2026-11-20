@@ -33,9 +33,7 @@ async def async_setup_entry(
     async_add_devices: AddEntitiesCallback,
 ):
     """Set up the binary_sensor platform."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]["coordinator"]
+    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
     registry = er.async_get(hass)
 
     def discover_binary_sensors():
@@ -147,6 +145,8 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
 
     @property
     def available(self):
+        if not super().available:
+            return False
         sensor = self.feature(self._vehicle_feature)
         if sensor is None:
             return False
@@ -170,7 +170,7 @@ class ToyotaHealthBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
 
     @property
     def available(self):
-        return self.is_on is not None
+        return super().available and self.is_on is not None
 
     @property
     def is_on(self):

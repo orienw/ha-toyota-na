@@ -29,9 +29,7 @@ async def async_setup_entry(
     async_add_devices: AddEntitiesCallback,
 ):
     """Set up vehicle sensors."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]["coordinator"]
+    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
 
     # EV Travelable Distance was removed. It repeated EV Range, in kilometers on older vehicles.
     registry = er.async_get(hass)
@@ -79,8 +77,10 @@ class ToyotaClimateSchedulesSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def available(self):
-        return self.vehicle is not None and isinstance(
-            self.vehicle.climate_schedules.get("airConditioningReservation"), list
+        return (
+            super().available
+            and self.vehicle is not None
+            and isinstance(self.vehicle.climate_schedules.get("airConditioningReservation"), list)
         )
 
     @property
@@ -116,7 +116,11 @@ class ToyotaRemoteAccessSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def available(self):
-        return self.vehicle is not None and self.vehicle.remote_display is not None
+        return (
+            super().available
+            and self.vehicle is not None
+            and self.vehicle.remote_display is not None
+        )
 
     @property
     def native_value(self):
@@ -141,7 +145,7 @@ class ToyotaHealthSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def available(self):
-        return self._items is not None
+        return super().available and self._items is not None
 
     @property
     def native_value(self):
@@ -211,7 +215,7 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def available(self):
-        return isinstance(self.feature(self._vehicle_feature), Measurement)
+        return super().available and isinstance(self.feature(self._vehicle_feature), Measurement)
 
     @property
     def extra_state_attributes(self):

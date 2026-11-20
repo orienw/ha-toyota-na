@@ -289,11 +289,14 @@ async def test_legacy_reads_and_entities_do_not_require_remote_subscription(hass
 
 
 def test_subscription_changes_preserve_last_known_vehicle_observations():
-    previous = make_24mm_vehicle()
-    previous.features[VehicleFeatures.ChargeLevel] = Measurement(62, "%")
     vehicle = make_24mm_vehicle()
-    vehicle._has_remote_subscription = False
-    assert vehicle.inherit_state(previous)
+    vehicle.features[VehicleFeatures.ChargeLevel] = Measurement(62, "%")
+    vehicle.update_metadata(
+        has_remote_subscription=False,
+        remote_capabilities=vehicle.remote_capabilities,
+        extended_capabilities=vehicle.extended_capabilities,
+        backdoor_type=vehicle.backdoor_type,
+    )
     assert vehicle.features[VehicleFeatures.ChargeLevel].value == 62
     assert not vehicle.supports_command(RemoteRequestCommand.EngineStart)
 
@@ -587,17 +590,13 @@ async def test_native_controls_follow_vehicle_units_bounds_and_availability(
     assert client.update_climate_settings.await_count == writes
 
 
-async def test_save_remains_visible_when_poll_replaces_vehicle(hass, setup_vehicles, climate):
-    client, vehicle = climate
+async def test_save_remains_visible_across_polls(hass, setup_vehicles, climate):
+    _, vehicle = climate
     await vehicle.update_climate()
-    replacement = make_vehicle(client)
-    replacement._extended_capabilities = dict(vehicle._extended_capabilities)
-    replacement.inherit_state(vehicle)
     account = await setup_vehicles([vehicle])
-    account.get_vehicles.return_value = [replacement]
     await account.coordinator.async_refresh()
     await hass.async_block_till_done()
-    assert account.coordinator.data == [replacement]
+    assert account.coordinator.data == [vehicle]
 
     await vehicle.update_climate_settings(temperature=24)
     await push(hass, account)

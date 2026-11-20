@@ -14,14 +14,18 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def get_vehicles(
-    client: ToyotaOneClient, window_telemetry: bool = False
+    client: ToyotaOneClient,
+    window_telemetry: bool = False,
+    *,
+    vehicles_by_vin: dict[str, ToyotaVehicle] | None = None,
+    unsupported_vins: set[str] | None = None,
+    ws_handler=None,
 ) -> list[ToyotaVehicle]:
     api_vehicles = await client.get_user_vehicle_list()
     supported_generations = {item.value for item in GENERATION_TRANSPORTS}
-    state_cache = getattr(client, "_vehicle_state_cache", {})
     # VINs already reported as unsupported, so each warns once per setup, not every poll.
-    reported = client._unsupported_vins = getattr(client, "_unsupported_vins", set())
-    vehicles = []
+    reported = unsupported_vins if unsupported_vins is not None else set()
+    vehicles: list[ToyotaVehicle] = []
 
     for api_vehicle in api_vehicles or []:
         vin = api_vehicle.get("vin")
@@ -47,42 +51,71 @@ async def get_vehicles(
                     generation_name,
                 )
             continue
-        generation = ApiVehicleGeneration(generation_name)
-        brand = api_vehicle.get("brand")
-        region = api_vehicle.get("region")
-        backdoor_type = api_vehicle.get("backdoorType")
-        previous = state_cache.get(vin)
-        vehicle = ToyotaVehicle(
-            client=client,
-            has_remote_subscription=has_remote_subscription(api_vehicle),
-            has_electric=is_electric_vehicle(api_vehicle),
-            model_name=api_vehicle.get("modelName")
-            or (previous.model_name if previous else "Vehicle"),
-            model_year=api_vehicle.get("modelYear") or (previous.model_year if previous else ""),
-            vin=vin,
-            region=region.upper() if isinstance(region, str) and region else "US",
-            generation=generation,
-            brand=brand.upper() if isinstance(brand, str) and brand else "T",
-            backdoor_type=(
-                backdoor_type.lower() if isinstance(backdoor_type, str) and backdoor_type else None
-            ),
-            remote_capabilities=api_vehicle.get("remoteServiceCapabilities"),
-            extended_capabilities=api_vehicle.get("extendedCapabilities"),
-            feature_flags=api_vehicle.get("features"),
-            legacy_capabilities=api_vehicle.get("capabilities"),
-            remote_display=normalize_remote_display(api_vehicle.get("remoteDisplay")),
-            window_telemetry=window_telemetry,
-        )
 
-        if previous is not None:
-            vehicle.inherit_state(previous)
-        await vehicle.update()
+        generation = ApiVehicleGeneration(generation_name)
+        raw_brand = api_vehicle.get("brand")
+        raw_region = api_vehicle.get("region")
+        raw_backdoor = api_vehicle.get("backdoorType")
+        region = raw_region.upper() if isinstance(raw_region, str) and raw_region else "US"
+        brand = raw_brand.upper() if isinstance(raw_brand, str) and raw_brand else "T"
+        backdoor_type = (
+            raw_backdoor.lower() if isinstance(raw_backdoor, str) and raw_backdoor else None
+        )
+        subscribed = has_remote_subscription(api_vehicle)
+        electric = is_electric_vehicle(api_vehicle)
+        model_name = api_vehicle.get("modelName")
+        model_year = api_vehicle.get("modelYear")
+        remote_display = normalize_remote_display(api_vehicle.get("remoteDisplay"))
+
+        existing = vehicles_by_vin.get(vin) if vehicles_by_vin is not None else None
+        if (
+            existing is not None
+            and existing.generation == generation
+            and existing.region == region
+            and existing.electric == electric
+        ):
+            existing.update_metadata(
+                has_remote_subscription=subscribed,
+                model_name=model_name or existing.model_name,
+                model_year=model_year or existing.model_year,
+                brand=brand,
+                backdoor_type=backdoor_type,
+                remote_capabilities=api_vehicle.get("remoteServiceCapabilities"),
+                extended_capabilities=api_vehicle.get("extendedCapabilities"),
+                feature_flags=api_vehicle.get("features"),
+                legacy_capabilities=api_vehicle.get("capabilities"),
+                remote_display=remote_display,
+                window_telemetry=window_telemetry,
+            )
+            vehicle = existing
+        else:
+            vehicle = ToyotaVehicle(
+                client=client,
+                has_remote_subscription=subscribed,
+                has_electric=electric,
+                model_name=model_name or "Vehicle",
+                model_year=model_year or "",
+                vin=vin,
+                region=region,
+                generation=generation,
+                brand=brand,
+                backdoor_type=backdoor_type,
+                remote_capabilities=api_vehicle.get("remoteServiceCapabilities"),
+                extended_capabilities=api_vehicle.get("extendedCapabilities"),
+                feature_flags=api_vehicle.get("features"),
+                legacy_capabilities=api_vehicle.get("capabilities"),
+                remote_display=remote_display,
+                window_telemetry=window_telemetry,
+            )
+
+        await vehicle.update(ws_handler=ws_handler)
         vehicles.append(vehicle)
-        state_cache[vehicle.vin] = vehicle
 
     if vehicles:
         await _read_notification_history(client, vehicles)
-    client._vehicle_state_cache = state_cache
+    if vehicles_by_vin is not None:
+        vehicles_by_vin.clear()
+        vehicles_by_vin.update({vehicle.vin: vehicle for vehicle in vehicles})
     return vehicles
 
 

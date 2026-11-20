@@ -52,13 +52,13 @@ async def setup_vehicles(hass, caplog):
             entry = account_entry(options={CONF_WAKE_INTERVAL: 0, **(options or {})}, data=data)
             entry.add_to_hass(hass)
             await set_up(hass, entry, caplog)
-            runtime = hass.data[DOMAIN][entry.entry_id]
+            runtime = entry.runtime_data
             return Account(
                 entry,
-                runtime["coordinator"],
-                runtime["toyota_na_client"],
+                runtime.coordinator,
+                runtime.client,
                 get_vehicles,
-                runtime["ws_handler"],
+                runtime.ws_handler,
             )
 
         yield setup

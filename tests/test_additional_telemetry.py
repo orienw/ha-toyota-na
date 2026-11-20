@@ -212,11 +212,8 @@ async def test_graphql_updates_timestamp_sensors_without_regressing_other_sectio
         },
     )
     await hass.async_block_till_done()
-    # The next poll builds a new vehicle that inherits the pushed state.
-    replacement = make_24mm_vehicle()
-    replacement.inherit_state(vehicle)
-    replacement._parse_telemetry({"lastTimestamp": "2026-09-15T12:07:00Z"})
-    account.get_vehicles.return_value = [replacement]
+    # The next poll updates the same long-lived vehicle without erasing newer pushed state.
+    vehicle._parse_telemetry({"lastTimestamp": "2026-09-15T12:07:00Z"})
     await account.coordinator.async_refresh()
     await hass.async_block_till_done()
     assert hass.states.get(updated).state == datetime(2026, 9, 15, 12, 10, tzinfo=UTC).isoformat()
@@ -331,18 +328,15 @@ class AdditionalTelemetryTests(unittest.IsolatedAsyncioTestCase):
                         vehicle.features[VehicleFeatures.LastTimeStamp].value,
                     )
                     self.assertEqual(original, update)
-                    vehicle._parse_graphql_vehicle_status(vehicle._last_graphql_status)
 
     async def test_unusable_graphql_updates_preserve_cached_state(self):
         vehicle = make_24mm_vehicle()
         vehicle.apply_graphql_status({"telemetry": {"odo": {"value": 123}}})
-        cached = vehicle._last_graphql_status
         features = vehicle.features.copy()
         for malformed in (None, [], {}, False, True, 7, "invalid", ["invalid"]):
             for update in (malformed, {"telemetry": malformed}):
                 with self.subTest(update=update):
                     self.assertFalse(vehicle.apply_graphql_status(update))
-                    self.assertIs(cached, vehicle._last_graphql_status)
                     self.assertEqual(features, vehicle.features)
 
         self.assertTrue(

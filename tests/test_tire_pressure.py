@@ -77,10 +77,14 @@ class TirePressureTests(unittest.IsolatedAsyncioTestCase):
     def test_missing_malformed_or_older_readings_preserve_known_warnings(self):
         for factory in (make_17cy_vehicle, make_vehicle):
             with self.subTest(factory=factory.__name__):
-                previous = factory()
-                previous._parse_tire_pressure(TIRES)
                 vehicle = factory()
-                vehicle.inherit_state(previous)
+                vehicle._parse_tire_pressure(TIRES)
+                vehicle.update_metadata(
+                    has_remote_subscription=vehicle.subscribed,
+                    remote_capabilities=vehicle.remote_capabilities,
+                    extended_capabilities=vehicle.extended_capabilities,
+                    backdoor_type=vehicle.backdoor_type,
+                )
                 for payload in (
                     None,
                     [],

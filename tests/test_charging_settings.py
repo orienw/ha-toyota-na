@@ -364,9 +364,13 @@ async def test_older_or_partial_settings_cannot_erase_newer_choices():
         {"electric": {"charging": {"chargeSettings": {"targetLimit": None}}}}
     )
     assert len(charge_options(vehicle.charge_settings, "targetLimit")) == 3
-    replacement = make_24mm_vehicle()
-    replacement.inherit_state(vehicle)
-    assert replacement.charge_settings is vehicle.charge_settings
+    vehicle.update_metadata(
+        has_remote_subscription=vehicle.subscribed,
+        remote_capabilities=vehicle.remote_capabilities,
+        extended_capabilities=vehicle.extended_capabilities,
+        backdoor_type=vehicle.backdoor_type,
+    )
+    assert len(charge_options(vehicle.charge_settings, "targetLimit")) == 3
 
 
 async def test_power_supply_stop_is_available_only_while_active():

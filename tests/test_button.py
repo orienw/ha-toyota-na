@@ -351,7 +351,7 @@ class TestCoordinatorUpdate:
         ):
             await set_up(hass, entry, caplog)
             try:
-                client = hass.data[DOMAIN][entry.entry_id]["toyota_na_client"]
+                client = entry.runtime_data.client
                 client.get_user_vehicle_list.assert_awaited_once()
                 client.graphql_refresh_status.assert_not_awaited()
 

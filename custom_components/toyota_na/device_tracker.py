@@ -9,7 +9,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .base_entity import ToyotaNABaseEntity
-from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
 from .vehicle import ToyotaVehicle, VehicleFeatures
 from .vehicle_values import Location
@@ -26,9 +25,7 @@ async def async_setup_entry(
     async_add_devices: AddEntitiesCallback,
 ):
     """Set up the device_tracker platform."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]["coordinator"]
+    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
 
     def discover_locations():
         for vehicle in coordinator.data or []:
@@ -84,4 +81,4 @@ class ToyotaDeviceTracker(ToyotaNABaseEntity, TrackerEntity):
 
     @property
     def available(self):
-        return self.feature(self._feature) is not None
+        return super().available and self.feature(self._feature) is not None

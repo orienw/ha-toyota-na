@@ -11,11 +11,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .base_entity import ToyotaNABaseEntity
-from .command_refresh import cancel_on_unload, refresh_after_command
+from .command_refresh import refresh_after_command
 from .const import (
     COMMAND_MAP,
     COMMAND_REFRESH_DELAY,
-    DOMAIN,
     DOOR_LOCK,
     DOOR_UNLOCK,
 )
@@ -32,10 +31,8 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_devices: AddEntitiesCallback,
 ):
-    """Set up the binary_sensor platform."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]["coordinator"]
+    """Set up the lock platform."""
+    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
 
     def discover_locks():
         for vehicle in coordinator.data or []:
@@ -118,8 +115,7 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
                     self.async_write_ha_state()
                 raise
             record_vehicle_wake(self.hass, self._config_entry, self.vin)
-            task = self.hass.async_create_task(self._background_refresh(command_id, command))
-            cancel_on_unload(self._config_entry, task)
+            self.coordinator.schedule_background_task(self._background_refresh(command_id, command))
 
     async def _background_refresh(self, command_id, command):
         """Refresh coordinator state after a remote command."""
@@ -138,7 +134,8 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
     def available(self):
         vehicle = self.vehicle
         return (
-            vehicle is not None
+            super().available
+            and vehicle is not None
             and vehicle.subscribed
             and vehicle.supports_command(COMMAND_MAP[DOOR_LOCK])
             and vehicle.supports_command(COMMAND_MAP[DOOR_UNLOCK])

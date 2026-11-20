@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 import aiohttp
 import pytest
 from aiohttp import ClientResponseError
-from common import FakeVehicle, entity_id, get_entity, make_24mm_vehicle, settle
+from common import FakeVehicle, account_entry, entity_id, get_entity, make_24mm_vehicle, settle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -77,6 +77,23 @@ async def test_invalid_service_targets_raise_validation_errors(hass, commands, t
 
     assert str(raised.value) == message
     assert vehicle.sent == []
+
+
+async def test_service_without_any_loaded_entry_raises_validation_error(hass):
+    from homeassistant.setup import async_setup_component
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    entry = account_entry()
+    entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "TESTVIN")},
+    )
+
+    with pytest.raises(ServiceValidationError) as raised:
+        await hass.services.async_call(DOMAIN, "door_lock", {"vehicle": device.id}, blocking=True)
+
+    assert str(raised.value) == "Vehicle is unavailable. Check that the integration is loaded."
 
 
 async def test_expected_command_failures_use_home_assistant_errors(hass, commands, subtests):

@@ -6,7 +6,7 @@ import logging
 import re
 
 from homeassistant.components.diagnostics import async_redact_data
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import (
     CONF_ACCESS_TOKEN,
     CONF_EMAIL,
@@ -15,7 +15,6 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 
 from .client import ToyotaOneClient
-from .const import DOMAIN
 from .vehicle import (
     GENERATION_TRANSPORTS,
     ApiVehicleGeneration,
@@ -79,9 +78,13 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, config_entry: ConfigEntry
 ) -> dict:
     """Return diagnostics for a config entry."""
-    entry_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {})
-    client: ToyotaOneClient | None = entry_data.get("toyota_na_client")
-    ws_handler = entry_data.get("ws_handler")
+    runtime_data = (
+        getattr(config_entry, "runtime_data", None)
+        if config_entry.state is ConfigEntryState.LOADED
+        else None
+    )
+    client: ToyotaOneClient | None = getattr(runtime_data, "client", None)
+    ws_handler = getattr(runtime_data, "ws_handler", None)
 
     # Keep the report available while Toyota's vehicle list is failing.
     vehicle_list = {"data": None}
@@ -104,7 +107,7 @@ async def async_get_config_entry_diagnostics(
         vehicle_list["data"] = None
     user_vehicle_list = vehicle_list["data"] or []
     # Climate schedules and vehicle health as the last poll read them, to see what Toyota reports.
-    coordinator = entry_data.get("coordinator")
+    coordinator = getattr(runtime_data, "coordinator", None)
     vehicles = {vehicle.vin: vehicle for vehicle in getattr(coordinator, "data", None) or []}
 
     vehicle_status = []

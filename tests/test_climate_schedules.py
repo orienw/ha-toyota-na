@@ -916,9 +916,7 @@ class TestClimateSchedules:
         cloud.save_climate_schedule.assert_awaited_once()
         assert (await schedules.shown())[0]["status"] == "active"
 
-    async def test_poll_skips_schedules_while_a_write_confirms_after_vehicle_replacement(
-        self, hass, schedules
-    ):
+    async def test_poll_skips_schedules_while_a_write_confirms(self, hass, schedules):
         vehicle, cloud, coordinator = (
             schedules.vehicle,
             schedules.cloud,
@@ -933,18 +931,20 @@ class TestClimateSchedules:
             return await save(*args, **kwargs)
 
         cloud.save_climate_schedule.side_effect = delayed_save
-        # The next account read builds a new vehicle that takes over the old one's state.
-        replacement = make_schedule_vehicle(cloud)
-        replacement.inherit_state(vehicle)
         write = hass.async_create_task(schedules.turn_off(1))
         await started.wait()
         reads = cloud.get_climate_schedules.await_count
-        await asyncio.wait_for(replacement.update_climate_schedules(), 1)
+        vehicle.update_metadata(
+            has_remote_subscription=vehicle.subscribed,
+            remote_capabilities=vehicle.remote_capabilities,
+            extended_capabilities=vehicle.extended_capabilities,
+            backdoor_type=vehicle.backdoor_type,
+        )
+        await asyncio.wait_for(vehicle.update_climate_schedules(), 1)
         assert cloud.get_climate_schedules.await_count == reads
         release.set()
         await write
-        assert vehicle.climate_schedules is replacement.climate_schedules
-        coordinator.async_set_updated_data([replacement])
+        coordinator.async_update_listeners()
         await hass.async_block_till_done()
         assert hass.states.get(schedules.switch(1)).state == "off"
 

@@ -7,8 +7,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .base_entity import ToyotaNABaseEntity
-from .command_refresh import cancel_on_unload, refresh_after_command
-from .const import COMMAND_BUTTONS, COMMAND_REFRESH_DELAY, DOMAIN
+from .command_refresh import refresh_after_command
+from .const import COMMAND_BUTTONS, COMMAND_REFRESH_DELAY
 from .entity_discovery import setup_entity_discovery
 from .service_helpers import translate_service_errors
 from .vehicle import RemoteRequestCommand, ToyotaVehicle
@@ -21,9 +21,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up vehicle command buttons."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]["coordinator"]
+    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
 
     def discover_buttons():
         for vehicle in coordinator.data or []:
@@ -59,8 +57,7 @@ class ToyotaButtonBase(ToyotaNABaseEntity, ButtonEntity):
         self._config_entry = config_entry
 
     def _schedule_refresh(self, command=None) -> None:
-        task = self.hass.async_create_task(self._async_refresh_after_delay(command))
-        cancel_on_unload(self._config_entry, task)
+        self.coordinator.schedule_background_task(self._async_refresh_after_delay(command))
 
     async def _async_refresh_after_delay(self, command=None) -> None:
         await refresh_after_command(
@@ -88,7 +85,10 @@ class ToyotaCommandButton(ToyotaButtonBase):
     def available(self) -> bool:
         vehicle = self.vehicle
         return (
-            vehicle is not None and vehicle.subscribed and vehicle.supports_command(self._command)
+            super().available
+            and vehicle is not None
+            and vehicle.subscribed
+            and vehicle.supports_command(self._command)
         )
 
     async def async_press(self) -> None:
@@ -110,7 +110,11 @@ class ToyotaRefreshButton(ToyotaButtonBase):
     @property
     def available(self) -> bool:
         vehicle = self.vehicle
-        return vehicle is not None and vehicle.supports_command(RemoteRequestCommand.Refresh)
+        return (
+            super().available
+            and vehicle is not None
+            and vehicle.supports_command(RemoteRequestCommand.Refresh)
+        )
 
     async def async_press(self) -> None:
         """Request a vehicle refresh and schedule a status poll."""

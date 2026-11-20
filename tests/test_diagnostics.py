@@ -11,8 +11,6 @@ from pytest_homeassistant_custom_component.components.diagnostics import (
     get_diagnostics_for_config_entry,
 )
 
-from custom_components.toyota_na.const import DOMAIN
-
 
 @pytest.fixture
 def diagnostics(hass, hass_client, setup_vehicles):
@@ -279,17 +277,16 @@ async def test_report_survives_a_failed_or_unusable_vehicle_list(
     assert result["vehicle_status"]["data"] == []
 
 
-@pytest.mark.parametrize("runtime", ["missing_domain", "missing_entry", "empty_entry"])
+@pytest.mark.parametrize("runtime", ["unloaded", "missing_runtime"])
 async def test_report_without_a_client_keeps_config_redacted(
     hass, hass_client, setup_vehicles, runtime
 ):
     wakes = [{"vin": "TESTVIN24", "timestamp": 1234}]
     account = await setup_vehicles([], data={"last_vehicle_wakes": wakes})
-    assert await hass.config_entries.async_unload(account.entry.entry_id)
-    if runtime == "missing_domain":
-        hass.data.pop(DOMAIN)
-    elif runtime == "empty_entry":
-        hass.data[DOMAIN][account.entry.entry_id] = {}
+    if runtime == "unloaded":
+        assert await hass.config_entries.async_unload(account.entry.entry_id)
+    else:
+        account.entry.runtime_data = None
 
     result = await get_diagnostics_for_config_entry(hass, hass_client, account.entry)
 

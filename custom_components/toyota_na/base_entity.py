@@ -1,3 +1,4 @@
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -58,6 +59,13 @@ class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
             "model": model,
             "manufacturer": manufacturer,
         }
+
+    @property
+    def available(self) -> bool:
+        """Stay available with last-known data during transient outages, not during reauth."""
+        return not isinstance(
+            getattr(self.coordinator, "last_exception", None), ConfigEntryAuthFailed
+        )
 
     @property
     def vehicle(self) -> ToyotaVehicle | None:

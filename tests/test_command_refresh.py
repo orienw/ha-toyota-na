@@ -13,6 +13,7 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.toyota_na import command_refresh
 from custom_components.toyota_na.const import DOMAIN
+from custom_components.toyota_na.exceptions import TokenExpired
 from custom_components.toyota_na.vehicle import (
     ApiVehicleGeneration,
     RemoteRequestCommand,
@@ -150,3 +151,23 @@ async def test_stalled_engine_read_is_cancelled_at_the_followup_deadline(hass, s
         await hass.async_block_till_done()
     assert cancelled.is_set()
     vehicle.poll_engine_status.assert_awaited_once()
+
+
+async def test_engine_followup_auth_error_starts_reauth_without_account_poll(hass, setup_vehicles):
+    client = types.SimpleNamespace(
+        remote_request_21mm=AsyncMock(),
+        get_engine_status_21mm=AsyncMock(side_effect=TokenExpired()),
+    )
+    vehicle = make_vehicle(client)
+    account = await setup_vehicles([vehicle])
+    polls = account.get_vehicles.await_count
+    with patch.object(command_refresh, "ENGINE_STATUS_INTERVAL", 0):
+        await press(hass, "Remote Start")
+        await hass.async_block_till_done()
+    client.get_engine_status_21mm.assert_awaited_once()
+    assert account.get_vehicles.await_count == polls
+    account.websocket.stop.assert_awaited_once()
+    assert hass.states.get(entity_id(hass, "button", "TESTVIN.Remote Start")).state == "unavailable"
+    assert any(
+        flow["context"]["source"] == "reauth" for flow in hass.config_entries.flow.async_progress()
+    )

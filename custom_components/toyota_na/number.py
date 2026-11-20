@@ -8,13 +8,12 @@ from homeassistant.exceptions import ServiceValidationError
 
 from .base_entity import ToyotaNABaseEntity
 from .climate_helpers import climate_bounds
-from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
 from .service_helpers import translate_service_errors
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = config_entry.runtime_data.coordinator
 
     def discover_numbers():
         for vehicle in coordinator.data or []:
@@ -39,6 +38,8 @@ class ToyotaClimateNumber(ToyotaNABaseEntity, NumberEntity):
 
     @property
     def available(self):
+        if not super().available:
+            return False
         value = self.native_value
         return (
             self.vehicle is not None
@@ -70,7 +71,7 @@ class ToyotaClimateNumber(ToyotaNABaseEntity, NumberEntity):
             raise ServiceValidationError("This climate setting is unavailable for this vehicle.")
         with translate_service_errors():
             await self.vehicle.update_climate_settings(**{self._key: value})
-        self.coordinator.async_set_updated_data(self.coordinator.data)
+        self.coordinator.async_update_listeners()
 
 
 class ToyotaClimateTemperature(ToyotaClimateNumber):

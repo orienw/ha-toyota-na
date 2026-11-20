@@ -7,14 +7,13 @@ from homeassistant.exceptions import ServiceValidationError
 from .base_entity import ToyotaNABaseEntity
 from .charging_helpers import CHARGE_SETTINGS, charge_options, current_charge_option
 from .climate_helpers import AIRFLOWS, SEATS, climate_parameters, seat_modes
-from .const import DOMAIN
 from .entity_discovery import setup_entity_discovery
 from .service_helpers import translate_service_errors
 from .wake_policy import record_vehicle_wake
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = config_entry.runtime_data.coordinator
 
     def discover_selects():
         for vehicle in coordinator.data or []:
@@ -58,7 +57,8 @@ class ToyotaClimateSelect(ToyotaNABaseEntity, SelectEntity):
     @property
     def available(self):
         return (
-            self.vehicle is not None
+            super().available
+            and self.vehicle is not None
             and self.vehicle.supports_climate_settings
             and (bool(self.options) if self._setting == "airflow" else len(self.options) > 1)
         )
@@ -90,7 +90,7 @@ class ToyotaClimateSelect(ToyotaNABaseEntity, SelectEntity):
                 await self.vehicle.update_climate_settings(airflow=key)
             else:
                 await self.vehicle.update_climate_settings(seat=(self._setting, option))
-        self.coordinator.async_set_updated_data(self.coordinator.data)
+        self.coordinator.async_update_listeners()
 
 
 class ToyotaChargeSelect(ToyotaNABaseEntity, SelectEntity):
@@ -117,7 +117,8 @@ class ToyotaChargeSelect(ToyotaNABaseEntity, SelectEntity):
     @property
     def available(self):
         return (
-            self.vehicle is not None
+            super().available
+            and self.vehicle is not None
             and self.vehicle.supports_charge_setting(self._field)
             and bool(self.options)
         )
@@ -138,4 +139,4 @@ class ToyotaChargeSelect(ToyotaNABaseEntity, SelectEntity):
         with translate_service_errors():
             await self.vehicle.set_charge_setting(self._field, option)
         record_vehicle_wake(self.hass, self._config_entry, self.vin)
-        self.coordinator.async_set_updated_data(self.coordinator.data)
+        self.coordinator.async_update_listeners()

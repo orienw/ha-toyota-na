@@ -9,7 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .base_entity import ToyotaNABaseEntity
-from .const import DOMAIN, NOTIFICATION_EVENT_TYPES
+from .const import NOTIFICATION_EVENT_TYPES
 from .entity_discovery import setup_entity_discovery
 from .vehicle import ToyotaVehicle
 from .vehicle_helpers import app_string, parse_api_timestamp
@@ -23,14 +23,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up notification events."""
-    entry_data = hass.data[DOMAIN][config_entry.entry_id]
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = entry_data["coordinator"]
+    runtime_data = config_entry.runtime_data
+    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = runtime_data.coordinator
 
     def discover_events():
         for vehicle in coordinator.data or []:
             if isinstance(vehicle.notifications, list):
                 yield ToyotaNotificationEvent(
-                    entry_data["started"], coordinator, "Notifications", vehicle.vin
+                    runtime_data.started, coordinator, "Notifications", vehicle.vin
                 )
 
     setup_entity_discovery(config_entry, coordinator, async_add_entities, discover_events)
@@ -74,7 +74,7 @@ class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
 
     @property
     def available(self):
-        return self._notifications is not None
+        return super().available and self._notifications is not None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()

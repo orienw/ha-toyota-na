@@ -11,14 +11,14 @@ ENGINE_STATUS_INTERVAL = 20
 ENGINE_STATUS_TIMEOUT = 90
 
 
-def cancel_on_unload(entry, task) -> None:
-    """Cancel a follow-up task when the entry unloads."""
-
-    def cancel() -> None:
-        # Home Assistant runs a truthy return value as a job, and Task.cancel returns True.
-        task.cancel()
-
-    entry.async_on_unload(cancel)
+async def _handle_auth_error(coordinator, err: AuthError) -> None:
+    """Mark the coordinator as needing reauthentication without an extra full poll."""
+    handler = getattr(coordinator, "async_handle_auth_error", None)
+    if handler is not None:
+        await handler(err)
+        return
+    if coordinator.config_entry is not None:
+        coordinator.config_entry.async_start_reauth_if_available(coordinator.hass)
 
 
 async def refresh_after_command(coordinator, vin=None, command=None, *, delay=10):
@@ -31,9 +31,8 @@ async def refresh_after_command(coordinator, vin=None, command=None, *, delay=10
                     return
                 try:
                     received = await vehicle.poll_vehicle_status()
-                except AuthError:
-                    if coordinator.config_entry is not None:
-                        coordinator.config_entry.async_start_reauth_if_available(coordinator.hass)
+                except AuthError as err:
+                    await _handle_auth_error(coordinator, err)
                     return
                 except Exception as err:
                     _LOGGER.debug("Post-command vehicle status failed: %s", err)
@@ -64,13 +63,13 @@ async def refresh_after_command(coordinator, vin=None, command=None, *, delay=10
                         running = await asyncio.wait_for(
                             vehicle.poll_engine_status(), min(20, remaining)
                         )
-                    except AuthError:
-                        await coordinator.async_request_refresh()
+                    except AuthError as err:
+                        await _handle_auth_error(coordinator, err)
                         return
                     except Exception as err:
                         _LOGGER.debug("Post-command engine status failed: %s", err)
                         continue
-                    coordinator.async_set_updated_data(coordinator.data)
+                    coordinator.async_update_listeners()
                     if running is (command == RemoteRequestCommand.EngineStart):
                         return
                 return

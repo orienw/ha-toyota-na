@@ -477,9 +477,39 @@ class ToyotaVehicle:
         self._schedule_lock = asyncio.Lock()
         self._health = {}
         self._notifications = None
-        self._last_vehicle_status = None
-        self._last_graphql_status = None
         self._feature_timestamps: dict[tuple, datetime] = {}
+
+    def update_metadata(
+        self,
+        *,
+        has_remote_subscription: bool,
+        model_name: str | None = None,
+        model_year: str | None = None,
+        brand: str | None = None,
+        backdoor_type: str | None = None,
+        remote_capabilities: dict | None = None,
+        extended_capabilities: dict | None = None,
+        feature_flags: dict | None = None,
+        legacy_capabilities: list | None = None,
+        remote_display: int | None = None,
+        window_telemetry: bool | None = None,
+    ) -> None:
+        """Refresh vehicle metadata in-place while preserving accumulated state and locks."""
+        self._has_remote_subscription = has_remote_subscription
+        if model_name:
+            self._model_name = model_name
+        if model_year:
+            self._model_year = model_year
+        if brand is not None:
+            self._brand = brand
+        self._backdoor_type = backdoor_type
+        self._remote_capabilities = remote_capabilities or {}
+        self._extended_capabilities = extended_capabilities or {}
+        self._feature_flags = feature_flags
+        self._legacy_capabilities = legacy_capabilities or []
+        self._remote_display = remote_display
+        if window_telemetry is not None:
+            self._window_telemetry = window_telemetry
 
     @property
     def _transport(self) -> GenerationTransport:
@@ -763,7 +793,7 @@ class ToyotaVehicle:
                 message = result["message"]
             await self._wait_for_schedules(self._read_climate_schedules, confirmed, message)
 
-    async def update(self) -> None:
+    async def update(self, *, ws_handler=None) -> None:
         """Read all applicable endpoints for this vehicle sequentially."""
         try:
             telemetry = await self._client.get_telemetry(
@@ -779,24 +809,18 @@ class ToyotaVehicle:
             _LOGGER.debug("Error fetching telemetry: %s", e)
 
         if self.can_receive_status:
-            if self._transport.appsync_push:
+            if self._transport.appsync_push and ws_handler is not None:
                 try:
                     # Cached push data fills gaps. The polled source below wins when
                     # neither response has timestamps.
-                    ws_handler = getattr(self._client, "_ws_handler", None)
-                    if ws_handler:
-                        self.apply_graphql_status(ws_handler.get_cached_status(self._vin))
+                    self.apply_graphql_status(ws_handler.get_cached_status(self._vin))
                 except AuthError:
                     raise
                 except Exception as e:
                     _LOGGER.debug("Error parsing cached vehicle status: %s", e)
 
             try:
-                if not await self.poll_vehicle_status():
-                    if self.uses_appsync and self._last_graphql_status:
-                        self._parse_graphql_vehicle_status(self._last_graphql_status)
-                    elif not self.uses_appsync and self._last_vehicle_status:
-                        self._parse_vehicle_status(self._last_vehicle_status)
+                await self.poll_vehicle_status()
             except AuthError:
                 raise
             except Exception as e:
@@ -865,7 +889,6 @@ class ToyotaVehicle:
             if self.uses_appsync:
                 self.apply_graphql_status(status)
             else:
-                self._last_vehicle_status = status
                 self._parse_vehicle_status(status)
         return bool(status)
 
@@ -1182,7 +1205,6 @@ class ToyotaVehicle:
         if not any(sections.values()):
             return False
         status = {**status, **sections}
-        self._last_graphql_status = status
         self._parse_graphql_vehicle_status(status)
         return True
 
@@ -1995,31 +2017,6 @@ class ToyotaVehicle:
         ):
             return supported is True
         return supported is not False
-
-    def inherit_state(self, previous: ToyotaVehicle) -> bool:
-        """Share observations with matching vehicle instances used by active polls."""
-        if (
-            previous.vin != self.vin
-            or previous.generation != self.generation
-            or previous.region != self.region
-            or previous.electric != self.electric
-        ):
-            return False
-        self._features = previous.features
-        self._climate_settings = previous.climate_settings
-        self._climate_lock = previous._climate_lock
-        self._climate_schedules = previous.climate_schedules
-        self._climate_schedule_lock = previous._climate_schedule_lock
-        self._climate_schedule_writes = previous._climate_schedule_writes
-        self._charge_settings = previous.charge_settings
-        self._engine_details = previous._engine_details
-        self._schedule_lock = previous._schedule_lock
-        self._health = previous._health
-        self._notifications = previous._notifications
-        self._last_vehicle_status = previous._last_vehicle_status
-        self._last_graphql_status = previous._last_graphql_status
-        self._feature_timestamps = previous._feature_timestamps
-        return True
 
     @property
     def vin(self) -> str:

@@ -260,3 +260,23 @@ async def test_unload_cancels_an_inflight_service_followup(hass, setup_vehicles)
     assert cancelled.is_set()
     read.assert_awaited_once()
     assert account.get_vehicles.await_count == polls
+
+
+async def test_completed_followup_tasks_are_evicted_without_growing_unload_callbacks(
+    hass, setup_vehicles
+):
+    read = AsyncMock(return_value=rest_status(True))
+    vehicle = make_vehicle(
+        types.SimpleNamespace(remote_request_21mm=AsyncMock(), get_vehicle_status_21mm=read)
+    )
+    account = await setup_vehicles([vehicle])
+    unload_callbacks = len(account.entry._on_unload)
+    lock_id = entity_id(hass, "lock", "TESTVIN.")
+    device_id = er.async_get(hass).async_get(lock_id).device_id
+
+    for _ in range(3):
+        await hass.services.async_call(DOMAIN, "door_lock", {"vehicle": device_id}, blocking=True)
+        await hass.async_block_till_done()
+
+    assert account.coordinator.background_tasks == set()
+    assert len(account.entry._on_unload) == unload_callbacks

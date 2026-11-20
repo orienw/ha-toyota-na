@@ -56,10 +56,11 @@ class NotificationHistoryTests(unittest.IsolatedAsyncioTestCase):
             ),
             get_notification_history=AsyncMock(return_value=HISTORY),
         )
+        self.vehicles_by_vin = {}
 
     async def poll(self):
         with patch.object(ToyotaVehicle, "update", AsyncMock()):
-            return await get_vehicles(self.client)
+            return await get_vehicles(self.client, vehicles_by_vin=self.vehicles_by_vin)
 
     async def test_each_vehicle_gets_its_notifications_from_one_read(self):
         first, second = await self.poll()
