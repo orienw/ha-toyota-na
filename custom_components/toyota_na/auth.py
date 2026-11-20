@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import aiohttp
 import jwt
 
-from .client import HTTP_TIMEOUT
+from .client import HTTP_TIMEOUT, request_session
 from .exceptions import LoginError, NotLoggedIn, TokenExpired
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,12 +27,38 @@ class PasswordHistoryError(LoginError):
     """Raised when Toyota rejects a previously used password."""
 
 
+class OtpSessionError(LoginError):
+    """Raised when a one-time password session expired or cannot be retried."""
+
+
 def _choice_callback_choices(callback):
     """Return the login methods offered by a ForgeRock ChoiceCallback."""
     for output in callback.get("output", []):
         if output.get("name") == "choices" and isinstance(output.get("value"), list):
             return output["value"]
     return None
+
+
+def _callback_prompt(callback):
+    """Return the normalized prompt string for a ForgeRock callback."""
+    return next(
+        (
+            str(output.get("value", "")).strip().casefold()
+            for output in callback.get("output", [])
+            if output.get("name") == "prompt"
+        ),
+        "",
+    )
+
+
+def _has_otp_callback(data):
+    """Return whether a ForgeRock response still invites a one-time password."""
+    return isinstance(data, dict) and any(
+        isinstance(cb, dict)
+        and cb.get("type") == "PasswordCallback"
+        and _callback_prompt(cb) == "one time password"
+        for cb in data.get("callbacks", [])
+    )
 
 
 class ToyotaOneAuth:
@@ -48,9 +74,10 @@ class ToyotaOneAuth:
         "https://login.toyotadriverslogin.com/json/realms/root/realms/tmna-native/authenticate"
     )
 
-    def __init__(self, callback=None, initial_tokens=None, refresh_secs=300):
+    def __init__(self, callback=None, initial_tokens=None, refresh_secs=300, session=None):
         self._callback = callback
         self._refresh_secs = refresh_secs
+        self._session = session
         self._access_token = None
         self._refresh_token = None
         self._id_token = None
@@ -219,8 +246,12 @@ class ToyotaOneAuth:
             otp_submitted = False
             password_submitted = False
             previous_callbacks = None
+            terminal_error = OtpSessionError if otp is not None else LoginError
             if otp is not None:  # Retrieve callbacks if we have the otp code
-                data = self.otp_callbacks
+                pending = getattr(self, "otp_callbacks", None)
+                if not isinstance(pending, dict):
+                    raise OtpSessionError("One-time password session expired.")
+                data = deepcopy(pending)
 
             for _ in range(15):
                 if "callbacks" in data:
@@ -228,14 +259,7 @@ class ToyotaOneAuth:
                         cb_type = cb["type"]
                         _LOGGER.debug("Toyota authentication callback: %s", cb_type)
                         if cb_type in ("NameCallback", "PasswordCallback"):
-                            prompt = next(
-                                (
-                                    str(output.get("value", "")).strip().casefold()
-                                    for output in cb.get("output", [])
-                                    if output.get("name") == "prompt"
-                                ),
-                                "",
-                            )
+                            prompt = _callback_prompt(cb)
 
                         if cb_type == "NameCallback":
                             if prompt in ("ui_locales", "ui locale"):
@@ -255,7 +279,7 @@ class ToyotaOneAuth:
                                 otp_submitted = True
                             else:
                                 if password_submitted:
-                                    raise LoginError("Toyota did not accept the password.")
+                                    raise terminal_error("Toyota did not accept the password.")
                                 cb["input"][0]["value"] = password
                                 password_submitted = True
 
@@ -285,7 +309,7 @@ class ToyotaOneAuth:
                             pass  # devicePrint etc — pass through unchanged
                         else:
                             _LOGGER.error("Unsupported Toyota authentication callback: %s", cb_type)
-                            raise LoginError("Unsupported authentication challenge.")
+                            raise terminal_error("Unsupported authentication challenge.")
 
                 if otp_brake:
                     self.otp_callbacks = (
@@ -296,15 +320,17 @@ class ToyotaOneAuth:
 
                 if "callbacks" in data:
                     if data["callbacks"] == previous_callbacks:
-                        raise LoginError("Toyota repeated an authentication challenge.")
+                        raise terminal_error("Toyota repeated an authentication challenge.")
                     previous_callbacks = deepcopy(data["callbacks"])
 
                 async with session.post(
                     f"{ToyotaOneAuth.AUTHENTICATE_URL}", json=data, headers=headers
                 ) as resp:
                     if resp.status != 200:
+                        if otp is not None:
+                            self.otp_callbacks = None
                         _LOGGER.info("Toyota authentication failed with HTTP %s", resp.status)
-                        raise LoginError()
+                        raise terminal_error()
                     data = await resp.json()
                     for cb in data.get("callbacks", []):
                         if cb["type"] != "TextOutputCallback":
@@ -326,15 +352,19 @@ class ToyotaOneAuth:
                         )
                         if message.casefold() == "password_history_failure":
                             raise PasswordHistoryError()
+                        if otp is not None and not _has_otp_callback(data):
+                            raise OtpSessionError()
                         raise LoginError()
                     if "tokenId" in data:
                         break
                     if not any(cb.get("input") for cb in data.get("callbacks", [])):
-                        raise LoginError("Toyota returned no actionable authentication challenge.")
+                        raise terminal_error(
+                            "Toyota returned no actionable authentication challenge."
+                        )
 
             if "tokenId" not in data:
                 _LOGGER.error("Toyota login did not complete its authentication challenge")
-                raise LoginError()
+                raise terminal_error()
             headers["Cookie"] = f"iPlanetDirectoryPro={data['tokenId']}"
             self._code_verifier = secrets.token_urlsafe(64)
             challenge = (
@@ -358,20 +388,24 @@ class ToyotaOneAuth:
             ) as resp:
                 if resp.status not in (301, 302, 303, 307, 308):
                     _LOGGER.error("Toyota authentication request failed with HTTP %s", resp.status)
-                    raise LoginError()
+                    raise terminal_error()
                 try:
                     redirect = urlparse(resp.headers.get("Location", ""))
                 except ValueError as err:
-                    raise LoginError("Toyota returned an invalid authentication redirect.") from err
+                    raise terminal_error(
+                        "Toyota returned an invalid authentication redirect."
+                    ) from err
                 if (
                     redirect._replace(query="", fragment="").geturl() != auth_params["redirect_uri"]
                     or redirect.fragment
                 ):
-                    raise LoginError("Toyota returned an unexpected authentication redirect.")
+                    raise terminal_error("Toyota returned an unexpected authentication redirect.")
                 query = parse_qs(redirect.query, keep_blank_values=True)
                 codes = query.get("code", [])
                 if "error" in query or len(codes) != 1 or not codes[0].strip():
-                    raise LoginError("Toyota authentication redirect did not contain a valid code.")
+                    raise terminal_error(
+                        "Toyota authentication redirect did not contain a valid code."
+                    )
                 return codes[0]
 
     async def request_tokens(self, code):
@@ -385,8 +419,11 @@ class ToyotaOneAuth:
             "code_verifier": verifier,
             "code": code,
         }
-        async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
-            async with session.post(ToyotaOneAuth.ACCESS_TOKEN_URL, data=data) as resp:
+        async with request_session(getattr(self, "_session", None)) as (session, shared):
+            post_kwargs = {"timeout": HTTP_TIMEOUT} if shared else {}
+            async with session.post(
+                ToyotaOneAuth.ACCESS_TOKEN_URL, data=data, **post_kwargs
+            ) as resp:
                 if resp.status != 200:
                     raise LoginError()
                 self._extract_tokens(await resp.json())
@@ -398,8 +435,11 @@ class ToyotaOneAuth:
             "grant_type": "refresh_token",
             "refresh_token": self._refresh_token,
         }
-        async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
-            async with session.post(ToyotaOneAuth.ACCESS_TOKEN_URL, data=data) as resp:
+        async with request_session(getattr(self, "_session", None)) as (session, shared):
+            post_kwargs = {"timeout": HTTP_TIMEOUT} if shared else {}
+            async with session.post(
+                ToyotaOneAuth.ACCESS_TOKEN_URL, data=data, **post_kwargs
+            ) as resp:
                 if resp.status in (400, 401):
                     try:
                         error = await resp.json(content_type=None)

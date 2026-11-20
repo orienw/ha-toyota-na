@@ -401,6 +401,24 @@ class TestAuthFlow:
         assert result["data_schema"]({"username": "owner", "password": "password"}) == (CREDENTIALS)
         auth.request_tokens.assert_not_awaited()
 
+    async def test_expired_otp_session_returns_to_credentials(self, hass, auth, caplog):
+        auth.authorize.side_effect = [{"callbacks": []}, auth_module.OtpSessionError(), "code"]
+        result = await self.sign_in(hass)
+        assert result["step_id"] == "otp"
+        caplog.clear()
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"code": "123456"}
+        )
+
+        assert errors_logged(caplog, config_flow.__name__)
+        assert result["step_id"] == "user"
+        assert result["errors"] == {"base": "otp_not_logged_in"}
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], CREDENTIALS)
+        await hass.async_block_till_done()
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        auth.request_tokens.assert_awaited_once_with("code")
+
     async def test_expired_credentials_request_home_assistant_reauthentication(
         self, hass, setup_vehicles
     ):
@@ -818,6 +836,29 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
             ["owner", "secret", "123456"],
             [data["callbacks"][0]["input"][0]["value"] for data in self.sent[1:]],
         )
+
+    async def test_otp_callbacks_are_not_mutated_in_place_and_http_failure_expires_session(self):
+        challenge = {
+            "authId": "orig",
+            "callbacks": [self.callback("PasswordCallback", "One Time Password")],
+        }
+        self.auth.otp_callbacks = copy.deepcopy(challenge)
+        self.session.post.side_effect = aiohttp.ClientConnectionError("network drop")
+
+        with self.assertRaises(aiohttp.ClientConnectionError):
+            await auth_module.ToyotaOneAuth.authorize(self.auth, "owner", "secret", "123456")
+
+        self.assertEqual(challenge, self.auth.otp_callbacks)
+
+        self.session.post.side_effect = None
+        expired = AsyncMock(status=401)
+        expired.__aenter__.return_value = expired
+        self.session.post.return_value = expired
+
+        with self.assertRaises(auth_module.OtpSessionError):
+            await auth_module.ToyotaOneAuth.authorize(self.auth, "owner", "secret", "123456")
+
+        self.assertIsNone(self.auth.otp_callbacks)
 
 
 class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):

@@ -3,8 +3,9 @@ import logging
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .auth import PasswordHistoryError, SsoAccountError
+from .auth import OtpSessionError, PasswordHistoryError, SsoAccountError
 from .client import ToyotaOneClient
 from .const import CONF_WINDOW_TELEMETRY, DOMAIN, REFRESH_STATUS_INTERVAL
 from .exceptions import AuthError
@@ -32,7 +33,7 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _async_user_step(self, user_input, errors):
         if user_input is not None:
             try:
-                self.client = ToyotaOneClient()
+                self.client = ToyotaOneClient(session=async_get_clientsession(self.hass))
                 self.user_info = user_input
                 authorization = await self.client.auth.authorize(
                     user_input["username"], user_input["password"]
@@ -76,6 +77,9 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except SsoAccountError:
                 _LOGGER.error("Toyota account requires identity provider sign-in")
                 return await self._async_user_step(None, {"base": "sso_account"})
+            except OtpSessionError:
+                _LOGGER.error("Toyota one-time password session expired or cannot be retried")
+                return await self._async_user_step(None, {"base": "otp_not_logged_in"})
             except AuthError:
                 errors["base"] = "otp_not_logged_in"
                 _LOGGER.error("Not logged in with one time password")

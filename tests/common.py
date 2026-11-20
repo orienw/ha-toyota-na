@@ -195,8 +195,9 @@ def make_24mm_vehicle(client=None):
 class FakeClient:
     """Toyota's cloud with one 24MM vehicle. Every other read returns nothing."""
 
-    def __init__(self, auth):
+    def __init__(self, auth, session=None):
         self.auth = auth
+        self._session = session
         self.calls = {}
         self.get_user_vehicle_list = AsyncMock(
             return_value=[{**TWENTY_FOUR_MM_PHEV, "vin": "TESTVIN24"}]

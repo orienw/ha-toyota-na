@@ -4,7 +4,7 @@ import json
 import logging
 import time
 import uuid
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from urllib.parse import urlencode, urljoin
 
 import aiohttp
@@ -327,6 +327,61 @@ def appsync_authorization(token, guid, vin="", region="US", device_id=None):
     return authorization
 
 
+def appsync_ws_url(authorization):
+    """Build the AppSync WebSocket URL with percent-encoded base64 parameters."""
+    query = urlencode(
+        {
+            "header": base64.b64encode(json.dumps(authorization).encode()).decode(),
+            "payload": base64.b64encode(b"{}").decode(),
+        }
+    )
+    return f"{GRAPHQL_WS_ENDPOINT}?{query}"
+
+
+def appsync_subscription_message(subscription_id, query, variables, authorization):
+    """Build an AppSync graphql-ws start frame."""
+    return {
+        "id": subscription_id,
+        "type": "start",
+        "payload": {
+            "data": json.dumps({"query": query, "variables": variables}),
+            "extensions": {"authorization": authorization},
+        },
+    }
+
+
+@asynccontextmanager
+async def request_session(session=None):
+    """Yield a shared aiohttp session or create a short-lived fallback session."""
+    if session is not None and not getattr(session, "closed", False):
+        yield session, True
+        return
+    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as owned:
+        yield owned, False
+
+
+def _rest_auth_error(status, payload):
+    """Return whether a REST error response indicates a rejected access token."""
+    if status == 401:
+        return True
+    if status != 403 or not isinstance(payload, dict):
+        return False
+    candidates = [payload]
+    status_block = payload.get("status")
+    messages = status_block.get("messages") if isinstance(status_block, dict) else None
+    if isinstance(messages, list):
+        candidates.extend(item for item in messages if isinstance(item, dict))
+    for item in candidates:
+        for key in ("responseCode", "errorType", "code"):
+            if item.get(key) in ("APIGW-403", "APPSYNC-AUTH-403"):
+                return True
+        for key in ("message", "description", "detailedDescription"):
+            text = str(item.get(key, "")).strip().lower()
+            if text == "unauthorized" or "jwt expired" in text:
+                return True
+    return False
+
+
 async def _vehicle_health(self, endpoint, vin, generation, region, brand):
     """Return only the payload; Toyota can answer errors with a 2xx body and no payload."""
     body = await self.api_request(
@@ -568,15 +623,9 @@ async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unkno
         region,
         self.auth.get_device_id(),
     )
-    query = urlencode(
-        {
-            "header": base64.b64encode(json.dumps(authorization).encode()).decode(),
-            "payload": base64.b64encode(b"{}").decode(),
-        }
-    )
-    websocket_url = f"{GRAPHQL_WS_ENDPOINT}?{query}"
+    websocket_url = appsync_ws_url(authorization)
 
-    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
+    async with request_session(getattr(self, "_session", None)) as (session, _shared):
         async with AsyncExitStack() as stack:
             try:
                 ws = await stack.enter_async_context(
@@ -594,19 +643,12 @@ async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unkno
 
             subscription_id = str(uuid.uuid4())
             await ws.send_json(
-                {
-                    "id": subscription_id,
-                    "type": "start",
-                    "payload": {
-                        "data": json.dumps(
-                            {
-                                "query": GRAPHQL_REMOTE_COMMAND_STATUS,
-                                "variables": {"vin": vin},
-                            }
-                        ),
-                        "extensions": {"authorization": authorization},
-                    },
-                }
+                appsync_subscription_message(
+                    subscription_id,
+                    GRAPHQL_REMOTE_COMMAND_STATUS,
+                    {"vin": vin},
+                    authorization,
+                )
             )
             await _wait_for_remote_socket_event(ws, "start_ack", subscription_id)
             execution = await submit()
@@ -628,10 +670,11 @@ async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unkno
 class ToyotaOneClient:
     """Toyota cloud requests for account and vehicle data."""
 
-    def __init__(self, auth=None):
+    def __init__(self, auth=None, session=None):
         from .auth import ToyotaOneAuth
 
-        self.auth = auth or ToyotaOneAuth()
+        self._session = session
+        self.auth = auth or ToyotaOneAuth(session=session)
 
     async def api_get(self, endpoint, header_params=None):
         return await self.api_request("GET", endpoint, header_params)
@@ -641,7 +684,9 @@ class ToyotaOneClient:
 
     async def get_user_vehicle_list(self):
         """Vehicle list; Toyota reports ONE-VL-10002 failures with a 2xx status."""
-        body = await self.api_request("GET", "v2/vehicle/guid", envelope=True)
+        body = await self.api_request(
+            "GET", "v2/vehicle/guid", envelope=True, auth_failure_raises_expired=True
+        )
         if not isinstance(body, dict):
             return body
         status = body.get("status")
@@ -1075,13 +1120,17 @@ class ToyotaOneClient:
         retries = 0
         original_data = None
         recovery_sections = set()
-        async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
+        async with request_session(getattr(self, "_session", None)) as (session, shared):
+            post_kwargs = {"timeout": HTTP_TIMEOUT} if shared else {}
             while True:
                 token = await self.auth.get_access_token()
                 headers["Authorization"] = "Bearer " + token
                 try:
                     async with session.post(
-                        GRAPHQL_ENDPOINT, headers=headers, data=json.dumps(payload)
+                        GRAPHQL_ENDPOINT,
+                        headers=headers,
+                        data=json.dumps(payload),
+                        **post_kwargs,
                     ) as resp:
                         body = await resp.text()
                         status = resp.status
@@ -1369,51 +1418,89 @@ class ToyotaOneClient:
             result = {"message": result.get("message"), **result["payload"]}
         return result if isinstance(result, dict) else {}
 
-    async def api_request(self, method, endpoint, header_params=None, *, envelope=False, **kwargs):
-        headers = await self._auth_headers()
-        if header_params:
-            headers.update(header_params)
-
+    async def api_request(
+        self,
+        method,
+        endpoint,
+        header_params=None,
+        *,
+        envelope=False,
+        auth_failure_raises_expired=False,
+        **kwargs,
+    ):
         if endpoint.startswith("/"):
             endpoint = endpoint[1:]
 
         url = urljoin(API_GATEWAY, endpoint)
+        auth_retried = False
 
-        async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as session:
-            async with session.request(method, url, headers=headers, **kwargs) as resp:
-                if resp.status >= 400:
-                    body = await resp.text()
-                    _LOGGER.debug(
-                        "Toyota API error: %s %s -> %d %s | Response: %s",
-                        method,
-                        url,
-                        resp.status,
-                        resp.reason,
-                        body[:500],
-                    )
-                    try:
-                        resp.raise_for_status()
-                    except aiohttp.ClientResponseError as err:
+        async with request_session(getattr(self, "_session", None)) as (session, shared):
+            request_kwargs = {"timeout": HTTP_TIMEOUT, **kwargs} if shared else kwargs
+            while True:
+                headers = await self._auth_headers()
+                if header_params:
+                    headers.update(header_params)
+                auth_header = headers.get("AUTHORIZATION") or headers.get("Authorization") or ""
+                sent_token = (
+                    auth_header.removeprefix("Bearer ")
+                    if auth_header.startswith("Bearer ")
+                    else None
+                )
+
+                async with session.request(method, url, headers=headers, **request_kwargs) as resp:
+                    if resp.status >= 400:
+                        body = await resp.text()
+                        _LOGGER.debug(
+                            "Toyota API error: %s %s -> %d %s | Response: %s",
+                            method,
+                            url,
+                            resp.status,
+                            resp.reason,
+                            body[:500],
+                        )
                         try:
-                            message = json.loads(body)["status"]["messages"][0]
-                        except json.JSONDecodeError, KeyError, IndexError, TypeError:
-                            message = {}
-                        if isinstance(message, dict):
-                            detail = message.get("detailedDescription") or message.get(
-                                "description"
-                            )
-                            code = message.get("responseCode")
-                            if isinstance(detail, str) and detail:
-                                err.message = detail
-                            if isinstance(code, str) and code:
-                                err.message = f"{err.message} [{code}]"
-                                err.response_code = code
+                            parsed_body = json.loads(body)
+                        except json.JSONDecodeError:
+                            parsed_body = None
+                        check_tokens = getattr(self.auth, "check_tokens", None)
+                        if _rest_auth_error(resp.status, parsed_body) and callable(check_tokens):
+                            if auth_retried:
+                                if auth_failure_raises_expired:
+                                    raise TokenExpired(
+                                        "Toyota rejected the refreshed access token."
+                                    )
+                            elif sent_token is not None:
+                                await check_tokens(rejected_token=sent_token)
+                                if method.upper() != "GET":
+                                    raise RuntimeError(
+                                        "Toyota could not authenticate the request. "
+                                        "Credentials were refreshed; retry the action."
+                                    )
+                                auth_retried = True
+                                continue
+                        try:
+                            resp.raise_for_status()
+                        except aiohttp.ClientResponseError as err:
+                            try:
+                                message = parsed_body["status"]["messages"][0]
+                            except KeyError, IndexError, TypeError:
+                                message = {}
+                            if isinstance(message, dict):
+                                detail = message.get("detailedDescription") or message.get(
+                                    "description"
+                                )
+                                code = message.get("responseCode")
+                                if isinstance(detail, str) and detail:
+                                    err.message = detail
+                                if isinstance(code, str) and code:
+                                    err.message = f"{err.message} [{code}]"
+                                    err.response_code = code
+                            raise
+                    try:
+                        resp_json = await resp.json()
+                        if isinstance(resp_json, dict) and "payload" in resp_json and not envelope:
+                            return resp_json["payload"]
+                        return resp_json
+                    except Exception:
+                        _LOGGER.error("Error parsing response")
                         raise
-                try:
-                    resp_json = await resp.json()
-                    if "payload" in resp_json and not envelope:
-                        return resp_json["payload"]
-                    return resp_json
-                except:
-                    _LOGGER.error("Error parsing response")
-                    raise

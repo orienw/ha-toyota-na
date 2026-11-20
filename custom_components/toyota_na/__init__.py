@@ -12,6 +12,7 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import service
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .auth import ToyotaOneAuth
@@ -175,12 +176,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         hass.config_entries.async_update_entry(entry, data=entry_data)
     hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
 
+    session = async_get_clientsession(hass)
     client = ToyotaOneClient(
         ToyotaOneAuth(
             refresh_secs=-180,
             initial_tokens=entry.data["tokens"],
             callback=lambda tokens: update_tokens(tokens, hass, entry),
-        )
+            session=session,
+        ),
+        session=session,
     )
     try:
         client.auth.set_tokens(entry.data["tokens"])

@@ -13,6 +13,7 @@ from multidict import CIMultiDict, CIMultiDictProxy
 from yarl import URL
 
 from custom_components.toyota_na import websocket_handler as websocket_module
+from custom_components.toyota_na.exceptions import TokenExpired
 from custom_components.toyota_na.websocket_handler import ToyotaWebSocketHandler
 
 SCHEMA_ERROR = {"message": "Validation error of type FieldUndefined: actualChargingRate"}
@@ -507,3 +508,69 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
             "engine { running lastUpdateDateTime status",
         ):
             self.assertIn(field, query)
+
+    async def test_websocket_url_percent_encodes_base64_characters(self):
+        # Token crafted to include +, /, and = in the base64-encoded JSON header.
+        self.auth.get_access_token = AsyncMock(return_value="??>>>???>>>")
+        self.socket.receive.return_value = types.SimpleNamespace(
+            type=websocket_module.aiohttp.WSMsgType.CLOSED
+        )
+        session = MagicMock(closed=False)
+        session.ws_connect = AsyncMock(return_value=self.socket)
+        session.close = AsyncMock()
+        with patch.object(websocket_module.aiohttp, "ClientSession", return_value=session):
+            await self.handler._connect_and_listen()
+
+        url = session.ws_connect.call_args.args[0]
+        raw_query = urlparse(url).query
+        self.assertNotIn("+", raw_query)
+        self.assertNotIn("/", raw_query)
+        self.assertIn("%3D", raw_query)
+        decoded = json.loads(base64.b64decode(parse_qs(raw_query)["header"][0]))
+        self.assertEqual("Bearer ??>>>???>>>", decoded["Authorization"])
+
+    async def test_websocket_stops_without_retrying_on_auth_error(self):
+        errors = []
+        self.auth.get_access_token = AsyncMock(side_effect=TokenExpired("expired"))
+        handler = ToyotaWebSocketHandler(self.client, auth_error_callback=errors.append)
+        self.addAsyncCleanup(handler.stop)
+
+        await handler.start({"FIRSTVIN": {"region": "US"}})
+        await asyncio.wait_for(handler._task, timeout=1)
+
+        self.assertFalse(handler._running)
+        self.assertEqual(1, len(errors))
+        self.assertIsInstance(errors[0], TokenExpired)
+        self.assertTrue(self.sleeps.empty())
+
+    async def test_subscription_retry_stops_handler_on_auth_error(self):
+        errors = []
+        self.handler._auth_error_callback = errors.append
+        self.auth.get_access_token = AsyncMock(side_effect=TokenExpired("expired"))
+        with self.assertLogs(websocket_module.__name__, level="WARNING"):
+            await self.handler._handle_message({"type": "error", "id": "first"}, "token", "guid")
+        retry = self.handler._retry_tasks["FIRSTVIN"]
+        resume = await self.next_sleep(5)
+        resume.set()
+        await retry
+
+        self.assertFalse(self.handler._running)
+        self.assertEqual(1, len(errors))
+        self.assertIsInstance(errors[0], TokenExpired)
+        self.socket.close.assert_awaited_once()
+        self.assertEqual({}, self.handler._retry_tasks)
+
+    async def test_shared_client_session_is_reused_without_closing(self):
+        shared = MagicMock(closed=False)
+        shared.ws_connect = AsyncMock(return_value=self.socket)
+        shared.close = AsyncMock()
+        self.socket.receive.return_value = types.SimpleNamespace(
+            type=websocket_module.aiohttp.WSMsgType.CLOSED
+        )
+        self.client._session = shared
+
+        await self.handler._connect_and_listen()
+
+        shared.ws_connect.assert_awaited_once()
+        shared.close.assert_not_awaited()
+        self.socket.close.assert_awaited_once()

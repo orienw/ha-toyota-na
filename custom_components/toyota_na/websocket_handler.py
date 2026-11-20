@@ -1,7 +1,6 @@
 """AppSync subscriptions for 21MM, 24MM, and 26BEV vehicle status updates."""
 
 import asyncio
-import base64
 import json
 import logging
 import uuid
@@ -13,11 +12,13 @@ import aiohttp
 from .client import (
     GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS,
     GRAPHQL_VEHICLE_STATUS_FIELDS,
-    GRAPHQL_WS_ENDPOINT,
     HTTP_TIMEOUT,
     appsync_authorization,
+    appsync_subscription_message,
+    appsync_ws_url,
     graphql_schema_errors,
 )
+from .exceptions import AuthError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,11 +40,14 @@ class ToyotaWebSocketHandler:
         self,
         client,
         status_callback: Callable[[str, dict], None] | None = None,
+        auth_error_callback: Callable[[AuthError], None] | None = None,
     ):
         """Initialize with a ToyotaOneClient instance."""
         self._client = client
         self._status_callback = status_callback
+        self._auth_error_callback = auth_error_callback
         self._session = None
+        self._owns_session = False
         self._ws = None
         self._subscriptions = {}  # vin -> subscription_id
         self._basic_status_vins = set()
@@ -121,11 +125,20 @@ class ToyotaWebSocketHandler:
         await self._cancel_retries()
         if self._ws and not self._ws.closed:
             await self._ws.close()
-        if self._session and not self._session.closed:
+        if self._owns_session and self._session and not self._session.closed:
             await self._session.close()
         self._ws = None
         self._session = None
+        self._owns_session = False
         self._subscriptions.clear()
+
+    def _notify_auth_error(self, err: AuthError) -> None:
+        self._running = False
+        if self._auth_error_callback is not None:
+            try:
+                self._auth_error_callback(err)
+            except Exception as callback_err:
+                _LOGGER.debug("WebSocket auth error callback failed: %s", callback_err)
 
     async def _run_loop(self):
         """Main loop: connect, listen, reconnect on failure."""
@@ -133,6 +146,10 @@ class ToyotaWebSocketHandler:
             try:
                 await self._connect_and_listen()
             except asyncio.CancelledError:
+                return
+            except AuthError as err:
+                _LOGGER.debug("WebSocket stopped after authentication failure: %s", err)
+                self._notify_auth_error(err)
                 return
             except Exception as e:
                 status = f" (HTTP {e.status})" if isinstance(e, aiohttp.ClientResponseError) else ""
@@ -161,11 +178,15 @@ class ToyotaWebSocketHandler:
             first_context.get("region", "US"),
             device_id,
         )
-        header_b64 = base64.b64encode(json.dumps(auth_header).encode()).decode()
-        payload_b64 = base64.b64encode(b"{}").decode()
-        ws_url = f"{GRAPHQL_WS_ENDPOINT}?header={header_b64}&payload={payload_b64}"
+        ws_url = appsync_ws_url(auth_header)
 
-        self._session = aiohttp.ClientSession(timeout=HTTP_TIMEOUT)
+        shared_session = getattr(self._client, "_session", None)
+        if shared_session is not None and not getattr(shared_session, "closed", False):
+            self._session = shared_session
+            self._owns_session = False
+        else:
+            self._session = aiohttp.ClientSession(timeout=HTTP_TIMEOUT)
+            self._owns_session = True
         try:
             self._ws = await self._session.ws_connect(
                 ws_url, protocols=["graphql-ws"], heartbeat=30
@@ -193,10 +214,11 @@ class ToyotaWebSocketHandler:
             self._subscriptions.clear()
             if self._ws and not self._ws.closed:
                 await self._ws.close()
-            if self._session and not self._session.closed:
+            if self._owns_session and self._session and not self._session.closed:
                 await self._session.close()
             self._ws = None
             self._session = None
+            self._owns_session = False
             self._keepalive_deadline = None
 
     async def _handle_message(self, msg, token, guid):
@@ -248,6 +270,8 @@ class ToyotaWebSocketHandler:
                             "(device limit exceeded?) for VIN ...%s",
                             vin[-4:],
                         )
+                except AuthError:
+                    raise
                 except Exception as e:
                     _LOGGER.debug("WebSocket: confirm subscription failed: %s", e)
 
@@ -322,23 +346,16 @@ class ToyotaWebSocketHandler:
             self._client.auth.get_device_id(),
         )
 
-        subscription = {
-            "id": sub_id,
-            "type": "start",
-            "payload": {
-                "data": json.dumps(
-                    {
-                        "query": (
-                            SUBSCRIBE_BASIC_VEHICLE_STATUS
-                            if vin in self._basic_status_vins
-                            else SUBSCRIBE_VEHICLE_STATUS
-                        ),
-                        "variables": {"vin": vin},
-                    }
-                ),
-                "extensions": {"authorization": authorization},
-            },
-        }
+        subscription = appsync_subscription_message(
+            sub_id,
+            (
+                SUBSCRIBE_BASIC_VEHICLE_STATUS
+                if vin in self._basic_status_vins
+                else SUBSCRIBE_VEHICLE_STATUS
+            ),
+            {"vin": vin},
+            authorization,
+        )
         self._schedule_retry(vin, delay=30)
         await self._ws.send_json(subscription)
 
@@ -376,6 +393,12 @@ class ToyotaWebSocketHandler:
             await self._subscribe_vin(vin, token, guid)
         except asyncio.CancelledError:
             raise
+        except AuthError as err:
+            _LOGGER.debug("WebSocket: subscription retry stopped after auth failure: %s", err)
+            self._ready = False
+            self._notify_auth_error(err)
+            if self._ws and not self._ws.closed:
+                await self._ws.close()
         except Exception as err:
             _LOGGER.debug("WebSocket: subscription retry failed: %s", err)
             self._schedule_retry(vin)
