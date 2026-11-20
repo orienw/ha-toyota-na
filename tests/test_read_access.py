@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from common import entity_id, make_17cy_vehicle, make_24mm_vehicle, make_vehicle
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import UnitOfLength
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util.unit_conversion import DistanceConverter
 
 from custom_components.toyota_na import client as client_module
 from custom_components.toyota_na.vehicle import (
@@ -195,7 +197,9 @@ async def test_recovery_creates_battery_and_charging_entities_after_vehicle_upda
     charging = entity_id(hass, "binary_sensor", "TESTVIN24.Charging Status")
     assert hass.states.get(battery).state == "0"
     assert hass.states.get(charging).state == "on"
-    assert hass.states.get(entity_id(hass, "sensor", "TESTVIN24.Odometer")).state == "1234"
+    assert float(
+        hass.states.get(entity_id(hass, "sensor", "TESTVIN24.Odometer")).state
+    ) == pytest.approx(DistanceConverter.convert(1234, UnitOfLength.MILES, UnitOfLength.KILOMETERS))
     assert session.post.call_count == calls
 
 

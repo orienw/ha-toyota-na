@@ -398,6 +398,12 @@ class TestAuthFlow:
         assert errors_logged(caplog, config_flow.__name__)
         assert result["step_id"] == "user"
         assert result["errors"] == {"base": "sso_account"}
+        password_selector = next(
+            validator
+            for key, validator in result["data_schema"].schema.items()
+            if key.schema == "password"
+        )
+        assert password_selector.config["type"] == "password"
         assert result["data_schema"]({"username": "owner", "password": "password"}) == (CREDENTIALS)
         auth.request_tokens.assert_not_awaited()
 

@@ -1,7 +1,6 @@
 {
     "domain": "toyota_na",
     "name": "Toyota (North America)",
-    "after_dependencies": ["cloud","http"],
     "codeowners": ["@orienw"],
     "config_flow": true,
     "documentation": "https://github.com/orienw/ha-toyota-na",
@@ -10,9 +9,3 @@
     "requirements": [],
     "version": "2.12.0b1"
 }
-
-
-
-
-
-

@@ -224,8 +224,8 @@ responds.
 
 * **Vehicle Alerts**, **Safety Recalls**, and **Service Campaigns** report item
   counts and list details in their attributes.
-* **Engine Oil** and **Key Fob Battery** show Toyota's English status text, as
-  in Toyota's app.
+* **Engine Oil** and **Key Fob Battery** are binary sensors that report whether
+  Toyota flags low engine oil or a low key fob battery.
 * **Software Update** shows whether Toyota offers a vehicle software update
   (with name, version, and status in attributes) on vehicles where Toyota's app
   checks for updates.

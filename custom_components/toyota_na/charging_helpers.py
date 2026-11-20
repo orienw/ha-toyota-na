@@ -88,7 +88,7 @@ def schedule_time(value):
     if value is None:
         return None
     try:
-        parsed = time.fromisoformat(value)
+        parsed = value if isinstance(value, time) else time.fromisoformat(value)
         if parsed.second or parsed.microsecond or parsed.tzinfo:
             raise ValueError
     except (TypeError, ValueError) as err:

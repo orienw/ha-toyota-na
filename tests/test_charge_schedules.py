@@ -4,11 +4,12 @@ import json
 import types
 from contextlib import contextmanager
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, time
 from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import pytest
+import voluptuous as vol
 from common import entity_id, make_17cy_vehicle, make_24mm_vehicle, set_up
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -229,13 +230,13 @@ async def test_switch_preserves_times_days_and_other_schedules(hass, setup_vehic
     assert state.state == "off"
     assert before == cloud.schedules[1]
     body = cloud.client.save_charge_schedule.call_args.args[2]
-    assert {
+    assert body == {
         "settingId": 1,
         "enabled": False,
         "startTime": "23:00",
         "endTime": "07:00",
         "daysOfTheWeek": ["Monday", "Wednesday"],
-    } == body
+    }
     assert state.attributes["startTime"] == "23:00"
 
 
@@ -792,6 +793,45 @@ async def test_services_resolve_device_and_map_schedule_fields(hass, services):
     await hass.async_block_till_done()
     # Schedule changes don't poll Toyota afterwards.
     assert account.get_vehicles.await_count == polls
+
+
+async def test_charge_schedule_accepts_yaml_time_objects_and_rejects_unknown_fields(hass, services):
+    vehicle, _, device_id = services
+    body = build_charge_schedule(
+        [],
+        startTime=time(23, 0),
+        endTime=time(7, 0),
+        daysOfTheWeek=["Monday"],
+    )
+    assert body["startTime"] == "23:00"
+    assert body["endTime"] == "07:00"
+    with pytest.raises(ValueError, match="HH:MM"):
+        build_charge_schedule(
+            [], startTime=time(23, 0, 30), endTime=time(7, 0), daysOfTheWeek=["Monday"]
+        )
+
+    await hass.services.async_call(
+        DOMAIN,
+        "set_charge_schedule",
+        {
+            "vehicle": device_id,
+            "start_time": time(23, 0),
+            "end_time": time(7, 0),
+            "days": ["Monday"],
+        },
+        blocking=True,
+    )
+    vehicle.update_charge_schedule.assert_awaited_once_with(
+        None, delete=False, startTime=time(23, 0), endTime=time(7, 0), daysOfTheWeek=["Monday"]
+    )
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            "set_charge_schedule",
+            {"vehicle": device_id, "start_tim": "23:00"},
+            blocking=True,
+        )
 
 
 async def test_schedule_services_preserve_failure_messages_with_ha_exception_types(

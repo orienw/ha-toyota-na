@@ -123,7 +123,7 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
             await refresh_after_command(
                 self.coordinator, self.vin, COMMAND_MAP[command], delay=COMMAND_REFRESH_DELAY
             )
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             _LOGGER.debug("Post-command refresh failed: %s", err)
         finally:
             if command_id == self._command_id:

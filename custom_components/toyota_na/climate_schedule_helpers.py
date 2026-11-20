@@ -145,9 +145,12 @@ def build_climate_schedule(settings, existing, changes, zone, *, now=None):
             local_time = saved_start
         else:
             try:
-                local_time = datetime.combine(
-                    date.fromisoformat(selected_date), time.fromisoformat(selected_time), zone
+                parsed_date = (
+                    selected_date
+                    if type(selected_date) is date
+                    else date.fromisoformat(selected_date)
                 )
+                local_time = datetime.combine(parsed_date, time.fromisoformat(selected_time), zone)
             except (TypeError, ValueError) as err:
                 if "date" in changes:
                     raise ValueError("Climate schedule date must use YYYY-MM-DD.") from err

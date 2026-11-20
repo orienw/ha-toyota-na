@@ -708,7 +708,7 @@ class ToyotaOneClient:
             err = RuntimeError(f"{detail} [ONE-VL-10002]")
             err.response_code = "ONE-VL-10002"
             raise err
-        return body["payload"] if "payload" in body else body
+        return body.get("payload", body)
 
     async def get_telemetry(self, vin, region="US", generation="17CYPLUS"):
         try:

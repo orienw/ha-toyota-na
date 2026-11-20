@@ -120,9 +120,8 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
             return None
         if isinstance(sensor, Opening):
             return None if sensor.closed is None else not sensor.closed
-        if isinstance(sensor, RemoteStart):
-            if self.device_class == BinarySensorDeviceClass.RUNNING:
-                return sensor.on
+        if isinstance(sensor, RemoteStart) and self.device_class == BinarySensorDeviceClass.RUNNING:
+            return sensor.on
 
     @property
     def extra_state_attributes(self):

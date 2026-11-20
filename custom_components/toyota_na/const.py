@@ -473,6 +473,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DISTANCE,
         "icon": "mdi:gauge",
         "feature": VehicleFeatures.DistanceToEmpty,
         "name": "Distance To Empty",
@@ -489,6 +490,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.TOTAL_INCREASING,
+        "device_class": SensorDeviceClass.DISTANCE,
         "icon": "mdi:counter",
         "feature": VehicleFeatures.Odometer,
         "name": "Odometer",
@@ -497,6 +499,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DISTANCE,
         "icon": "mdi:counter",
         "feature": VehicleFeatures.TripDetailsA,
         "name": "Trip Details A",
@@ -505,6 +508,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DISTANCE,
         "icon": "mdi:counter",
         "feature": VehicleFeatures.TripDetailsB,
         "name": "Trip Details B",
@@ -513,6 +517,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.PRESSURE,
         "icon": "mdi:car-tire-alert",
         "feature": VehicleFeatures.FrontDriverTire,
         "name": "Front Driver Tire",
@@ -521,6 +526,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.PRESSURE,
         "icon": "mdi:car-tire-alert",
         "feature": VehicleFeatures.FrontPassengerTire,
         "name": "Front Passenger Tire",
@@ -529,6 +535,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.PRESSURE,
         "icon": "mdi:car-tire-alert",
         "feature": VehicleFeatures.RearDriverTire,
         "name": "Rear Driver Tire",
@@ -537,6 +544,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.PRESSURE,
         "icon": "mdi:car-tire-alert",
         "feature": VehicleFeatures.RearPassengerTire,
         "name": "Rear Passenger Tire",
@@ -545,6 +553,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.PRESSURE,
         "icon": "mdi:car-tire-alert",
         "feature": VehicleFeatures.SpareTirePressure,
         "name": "Spare Tire Pressure",
@@ -553,6 +562,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DISTANCE,
         "icon": "mdi:wrench-clock",
         "feature": VehicleFeatures.NextService,
         "name": "Next Service",
@@ -561,6 +571,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DISTANCE,
         "icon": "mdi:gauge",
         "feature": VehicleFeatures.ChargeDistance,
         "name": "EV Range",
@@ -569,6 +580,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DISTANCE,
         "icon": "mdi:gauge",
         "feature": VehicleFeatures.ChargeDistanceAC,
         "name": "EV Range AC",
@@ -577,6 +589,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.BATTERY,
         "icon": "mdi:gauge",
         "feature": VehicleFeatures.ChargeLevel,
         "name": "EV Battery Level",
@@ -623,6 +636,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DURATION,
         "icon": "mdi:clock-outline",
         "feature": VehicleFeatures.RemainingChargeTime,
         "name": "Remaining Charge Time",
@@ -650,6 +664,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DURATION,
         "icon": "mdi:clock-outline",
         "feature": VehicleFeatures.RemainingChargeTimeTo80,
         "name": "Remaining Charge Time to 80%",
@@ -666,6 +681,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DURATION,
         "icon": "mdi:power-plug",
         "feature": VehicleFeatures.BatteryPowerSupplyTime,
         "name": "Battery Power Supply Time",
@@ -674,6 +690,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DURATION,
         "icon": "mdi:power-plug",
         "feature": VehicleFeatures.GasolinePowerSupplyTime,
         "name": "Gasoline Power Supply Time",
@@ -682,6 +699,7 @@ SENSORS = [
     },
     {
         "state_class": SensorStateClass.MEASUREMENT,
+        "device_class": SensorDeviceClass.DISTANCE,
         "icon": "mdi:gas-station",
         "feature": VehicleFeatures.GasolineRange,
         "name": "Gasoline Range",

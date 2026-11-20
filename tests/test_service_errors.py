@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 import pytest
+import voluptuous as vol
 from aiohttp import ClientResponseError
 from common import FakeVehicle, account_entry, entity_id, get_entity, make_24mm_vehicle, settle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -94,6 +95,18 @@ async def test_service_without_any_loaded_entry_raises_validation_error(hass):
         await hass.services.async_call(DOMAIN, "door_lock", {"vehicle": device.id}, blocking=True)
 
     assert str(raised.value) == "Vehicle is unavailable. Check that the integration is loaded."
+
+
+async def test_service_rejects_unknown_extra_fields(hass, commands):
+    vehicle, _, lock, _ = commands
+    device_id = er.async_get(hass).async_get(lock).device_id
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN, "door_lock", {"vehicle": device_id, "unexpected": True}, blocking=True
+        )
+
+    assert vehicle.sent == []
 
 
 async def test_expected_command_failures_use_home_assistant_errors(hass, commands, subtests):

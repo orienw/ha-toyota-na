@@ -8,9 +8,11 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import pytest
 from common import EMAIL, STATUS_24MM, FakeClient, FakeWebSocket, account_entry, set_up, settle
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import UnitOfLength
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import DistanceConverter
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.toyota_na.const import CONF_WINDOW_TELEMETRY, DOMAIN
@@ -43,7 +45,11 @@ async def test_setup_reads_the_vehicle_into_entities_and_unloads(hass, loaded):
 
     assert entry.state is ConfigEntryState.LOADED
     assert hass.states.get(LOCK).state == "unlocked"
-    assert hass.states.get("sensor.2026_rav4_plug_in_hybrid_odometer").state == "1234"
+    odometer = hass.states.get("sensor.2026_rav4_plug_in_hybrid_odometer")
+    assert float(odometer.state) == pytest.approx(
+        DistanceConverter.convert(1234, UnitOfLength.MILES, UnitOfLength.KILOMETERS)
+    )
+    assert odometer.attributes["unit_of_measurement"] == UnitOfLength.KILOMETERS
     assert hass.states.get("binary_sensor.2026_rav4_plug_in_hybrid_front_passenger_door").state == (
         "on"
     )
@@ -88,8 +94,10 @@ async def test_frequent_pushes_keep_account_polling_without_waking(hass, freezer
         async_fire_time_changed(hass, dt_util.utcnow())
         await hass.async_block_till_done()
 
-        assert hass.states.get("sensor.2026_rav4_plug_in_hybrid_odometer").state == str(
-            1234 + reading
+        assert float(
+            hass.states.get("sensor.2026_rav4_plug_in_hybrid_odometer").state
+        ) == pytest.approx(
+            DistanceConverter.convert(1234 + reading, UnitOfLength.MILES, UnitOfLength.KILOMETERS)
         )
         polls = 1 + reading // 2
         assert client.get_user_vehicle_list.await_count == polls

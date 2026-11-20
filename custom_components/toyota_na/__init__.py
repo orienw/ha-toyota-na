@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import aiohttp
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import (
@@ -19,6 +19,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import service
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .auth import ToyotaOneAuth
 from .client import ToyotaOneClient
@@ -55,6 +56,55 @@ PLATFORMS = [
     "sensor",
     "switch",
 ]
+
+_VEHICLE_SERVICE_SCHEMA = vol.Schema(
+    {vol.Optional("vehicle"): str},
+    extra=vol.PREVENT_EXTRA,
+)
+_SET_CHARGE_SCHEDULE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("vehicle"): str,
+        vol.Optional("schedule_id"): vol.Any(None, int, float, str),
+        vol.Optional("enabled"): bool,
+        vol.Optional("start_time"): vol.Any(str, time),
+        vol.Optional("end_time"): vol.Any(str, time),
+        vol.Optional("days"): [str],
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+_DELETE_CHARGE_SCHEDULE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("vehicle"): str,
+        vol.Optional("schedule_id"): vol.Any(None, int, float, str),
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+_SET_CLIMATE_SCHEDULE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("vehicle"): str,
+        vol.Optional("schedule_id"): vol.Any(None, int, float, str),
+        vol.Optional("enabled"): bool,
+        vol.Optional("start_time"): vol.Any(str, time),
+        vol.Optional("date"): vol.Any(str, date),
+        vol.Optional("days"): [str],
+        vol.Optional("temperature"): vol.Any(int, float),
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+_DELETE_CLIMATE_SCHEDULE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("vehicle"): str,
+        vol.Optional("schedule_id"): vol.Any(None, int, float, str),
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+_SERVICE_SCHEMAS = {
+    **dict.fromkeys(COMMAND_MAP, _VEHICLE_SERVICE_SCHEMA),
+    "set_charge_schedule": _SET_CHARGE_SCHEDULE_SCHEMA,
+    "delete_charge_schedule": _DELETE_CHARGE_SCHEDULE_SCHEMA,
+    "set_climate_schedule": _SET_CLIMATE_SCHEDULE_SCHEMA,
+    "delete_climate_schedule": _DELETE_CLIMATE_SCHEDULE_SCHEMA,
+}
 
 
 @dataclass
@@ -248,7 +298,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             with translate_service_errors():
                 await vehicle.update_climate_schedule(
                     service_call.data.get("schedule_id"),
-                    zone=ZoneInfo(hass.config.time_zone),
+                    zone=dt_util.get_default_time_zone(),
                     delete=remote_action == "delete_climate_schedule",
                     **changes,
                 )
@@ -297,18 +347,12 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
         coordinator.schedule_background_task(
             _refresh_coordinator_after_command(coordinator, vin, command)
         )
-        _LOGGER.info("Handling service call %s for VIN ...%s", remote_action, vin[-4:])
+        _LOGGER.debug("Handling service call %s for VIN ...%s", remote_action, vin[-4:])
 
         return
 
-    for action in (
-        *COMMAND_MAP,
-        "set_charge_schedule",
-        "delete_charge_schedule",
-        "set_climate_schedule",
-        "delete_climate_schedule",
-    ):
-        hass.services.async_register(DOMAIN, action, async_service_handle)
+    for action, schema in _SERVICE_SCHEMAS.items():
+        hass.services.async_register(DOMAIN, action, async_service_handle, schema=schema)
 
     return True
 
@@ -391,7 +435,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ToyotaConfigEntry) -> bo
 
 
 def update_tokens(tokens: dict[str, str], hass: HomeAssistant, entry: ConfigEntry):
-    _LOGGER.info("Tokens refreshed, updating ConfigEntry")
+    _LOGGER.debug("Tokens refreshed, updating ConfigEntry")
     data = dict(entry.data)
     data["tokens"] = tokens
     hass.config_entries.async_update_entry(entry, data=data)

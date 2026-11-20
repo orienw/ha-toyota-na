@@ -218,3 +218,54 @@ async def test_added_once_a_vehicle_reports_the_state(hass, remote_access):
     assert hass.states.get(entity_id(hass, "sensor", "OTHERVIN.Remote Access")).state == (
         "authorization_required"
     )
+
+
+async def test_battery_distance_and_duration_device_classes_and_unit_normalization(
+    hass, setup_vehicles
+):
+    vehicle = FakeVehicle(set())
+    vehicle.electric = True
+    vehicle.features = {
+        F.ChargeLevel: Measurement(82, "%"),
+        F.Odometer: Measurement(1000, "KM"),
+        F.DistanceToEmpty: Measurement(250, "miles"),
+        F.RemainingChargeTime: Measurement(45, "mins"),
+        F.BatteryPowerSupplyTime: Measurement(4, "hrs"),
+        F.TripDetailsA: Measurement(12, ""),
+        F.RemainingChargeTimeTo80: Measurement(30, ""),
+    }
+    await setup_vehicles([vehicle])
+
+    battery = hass.states.get(entity_id(hass, "sensor", "TESTVIN.EV Battery Level"))
+    assert battery.state == "82"
+    assert battery.attributes["device_class"] == SensorDeviceClass.BATTERY
+    assert battery.attributes["unit_of_measurement"] == "%"
+
+    odometer = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Odometer"))
+    assert odometer.state == "1000"
+    assert odometer.attributes["device_class"] == SensorDeviceClass.DISTANCE
+    assert odometer.attributes["unit_of_measurement"] == "km"
+
+    dte = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Distance To Empty"))
+    assert dte.attributes["device_class"] == SensorDeviceClass.DISTANCE
+    assert dte.attributes["unit_of_measurement"] == "km"
+    assert float(dte.state) == pytest.approx(402.336, abs=0.05)
+
+    charge_time = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Remaining Charge Time"))
+    assert charge_time.state == "45"
+    assert charge_time.attributes["device_class"] == SensorDeviceClass.DURATION
+    assert charge_time.attributes["unit_of_measurement"] == "min"
+
+    supply_time = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Battery Power Supply Time"))
+    assert supply_time.state == "4"
+    assert supply_time.attributes["device_class"] == SensorDeviceClass.DURATION
+    assert supply_time.attributes["unit_of_measurement"] == "h"
+
+    # Missing units clear device_class cleanly so Home Assistant never warns.
+    trip_a = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Trip Details A"))
+    assert trip_a.state == "12"
+    assert "device_class" not in trip_a.attributes
+
+    charge_80 = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Remaining Charge Time to 80%"))
+    assert charge_80.state == "30"
+    assert "device_class" not in charge_80.attributes

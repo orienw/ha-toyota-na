@@ -4,6 +4,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
 from .auth import OtpSessionError, PasswordHistoryError, SsoAccountError
 from .client import ToyotaOneClient
@@ -25,7 +26,7 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         """Create the vehicle wake options flow."""
-        return ToyotaNAOptionsFlow(config_entry)
+        return ToyotaNAOptionsFlow()
 
     async def async_step_user(self, user_input=None):
         return await self._async_user_step(user_input, {})
@@ -56,7 +57,14 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unknown error with username and password")
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema({vol.Required("username"): str, vol.Required("password"): str}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("username"): str,
+                    vol.Required("password"): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                    ),
+                }
+            ),
             errors=errors,
         )
 
@@ -131,9 +139,6 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class ToyotaNAOptionsFlow(config_entries.OptionsFlowWithReload):
     """Configure vehicle status updates."""
 
-    def __init__(self, config_entry):
-        self._config_entry = config_entry
-
     async def async_step_init(self, user_input=None):
         """Manage vehicle status options."""
         if user_input is not None:
@@ -146,7 +151,7 @@ class ToyotaNAOptionsFlow(config_entries.OptionsFlowWithReload):
             )
 
         current_interval = automatic_wake_interval(
-            self._config_entry.options, REFRESH_STATUS_INTERVAL
+            self.config_entry.options, REFRESH_STATUS_INTERVAL
         )
         interval_options = {
             str(interval): label for interval, label in WAKE_INTERVAL_OPTIONS.items()
@@ -162,7 +167,7 @@ class ToyotaNAOptionsFlow(config_entries.OptionsFlowWithReload):
                     ),
                     vol.Required(
                         CONF_WINDOW_TELEMETRY,
-                        default=self._config_entry.options.get(CONF_WINDOW_TELEMETRY) is True,
+                        default=self.config_entry.options.get(CONF_WINDOW_TELEMETRY) is True,
                     ): bool,
                 }
             ),

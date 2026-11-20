@@ -6,9 +6,12 @@ from unittest.mock import patch
 
 import pytest
 from common import FakeClient, FakeVehicle, FakeWebSocket, account_entry, entity_id, set_up, settle
+from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.const import UnitOfPressure
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 from pytest_homeassistant_custom_component.common import (
     async_capture_events,
     async_fire_time_changed,
@@ -220,7 +223,7 @@ class TestBinarySensorCleanup:
         vehicle = FakeVehicle(set())
         vehicle.backdoor_type = "tailgate"
         events = add_registry_entries(
-            hass, dict(zip(("TESTVIN.Trunk", "TESTVIN.Trunk Door Lock"), STALE_TRUNK))
+            hass, dict(zip(("TESTVIN.Trunk", "TESTVIN.Trunk Door Lock"), STALE_TRUNK, strict=True))
         )
 
         await setup_vehicles([vehicle])
@@ -278,27 +281,41 @@ class TestNumericSensors:
     @pytest.mark.parametrize(
         ("value", "unit", "expected"),
         [
-            (240, "kPa", "34.8"),
-            (240, "kpa", "34.8"),
-            (2.4, "bar", "34.8"),
-            (2.4, "BAR", "34.8"),
-            (0, "kPa", "0.0"),
+            (240, "kPa", 34.8),
+            (240, "kpa", 34.8),
+            (2.4, "bar", 34.8),
+            (2.4, "BAR", 34.8),
+            (0, "kPa", 0.0),
         ],
     )
     async def test_pressure_sensor_converts_reported_units_to_psi(
         self, hass, setup_vehicles, value, unit, expected
     ):
+        hass.config.units = US_CUSTOMARY_SYSTEM
         vehicle = FakeVehicle(set())
         vehicle.features[VehicleFeatures.SpareTirePressure] = Measurement(value, unit)
         await setup_vehicles([vehicle])
 
         state = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Spare Tire Pressure"))
-        assert state.state == expected
-        assert state.attributes["unit_of_measurement"] == "psi"
+        assert float(state.state) == pytest.approx(expected, abs=0.05)
+        assert state.attributes["unit_of_measurement"] == UnitOfPressure.PSI
+        assert state.attributes["device_class"] == SensorDeviceClass.PRESSURE
+
+    async def test_pressure_sensor_uses_kpa_in_metric_home_assistant(self, hass, setup_vehicles):
+        hass.config.units = METRIC_SYSTEM
+        vehicle = FakeVehicle(set())
+        vehicle.features[VehicleFeatures.SpareTirePressure] = Measurement(240, "kPa")
+        await setup_vehicles([vehicle])
+
+        state = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Spare Tire Pressure"))
+        assert float(state.state) == pytest.approx(240.0, abs=0.01)
+        assert state.attributes["unit_of_measurement"] == UnitOfPressure.KPA
+        assert state.attributes["device_class"] == SensorDeviceClass.PRESSURE
 
     async def test_native_and_missing_pressure_values_do_not_need_conversion(
         self, hass, setup_vehicles, subtests
     ):
+        hass.config.units = US_CUSTOMARY_SYSTEM
         vehicle = FakeVehicle(set())
         vehicle.features[VehicleFeatures.SpareTirePressure] = Measurement(35, "psi")
         account = await setup_vehicles([vehicle])
@@ -307,7 +324,6 @@ class TestNumericSensors:
             with subtests.test(value=value, unit=unit):
                 vehicle.features[VehicleFeatures.SpareTirePressure] = Measurement(value, unit)
                 await update(hass, account)
-                # A converted value would read 35.0.
                 assert hass.states.get(pressure).state == ("unknown" if value is None else "35")
         vehicle.features[VehicleFeatures.SpareTirePressure] = Measurement(35, "atm")
         await update(hass, account)

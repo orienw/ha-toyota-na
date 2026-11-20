@@ -11,4 +11,8 @@ line-length = 100
 line-ending = "lf"
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I", "UP"]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]
+ignore = ["RUF012", "SIM105", "SIM117", "ASYNC109"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B023", "RUF043", "ASYNC110"]

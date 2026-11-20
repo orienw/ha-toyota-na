@@ -1,14 +1,19 @@
 from datetime import UTC, datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    DEVICE_CLASS_UNITS,
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, UnitOfPressure
+from homeassistant.const import EntityCategory, UnitOfLength, UnitOfPressure, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import PressureConverter
 
 from .base_entity import ToyotaNABaseEntity
@@ -19,8 +24,35 @@ from .health_helpers import health_reading
 from .vehicle import ToyotaVehicle, VehicleFeatures
 from .vehicle_values import Measurement
 
-# Toyota reports tire pressure units in varying case, such as "kpa".
+# Toyota reports measurement units in varying case and spellings.
 _PRESSURE_UNITS = {"psi": UnitOfPressure.PSI, "kpa": UnitOfPressure.KPA, "bar": UnitOfPressure.BAR}
+_DISTANCE_UNITS = {
+    "mi": UnitOfLength.MILES,
+    "mile": UnitOfLength.MILES,
+    "miles": UnitOfLength.MILES,
+    "km": UnitOfLength.KILOMETERS,
+    "kms": UnitOfLength.KILOMETERS,
+    "kilometer": UnitOfLength.KILOMETERS,
+    "kilometers": UnitOfLength.KILOMETERS,
+}
+_DURATION_UNITS = {
+    "min": UnitOfTime.MINUTES,
+    "mins": UnitOfTime.MINUTES,
+    "minute": UnitOfTime.MINUTES,
+    "minutes": UnitOfTime.MINUTES,
+    "h": UnitOfTime.HOURS,
+    "hr": UnitOfTime.HOURS,
+    "hrs": UnitOfTime.HOURS,
+    "hour": UnitOfTime.HOURS,
+    "hours": UnitOfTime.HOURS,
+    "s": UnitOfTime.SECONDS,
+    "sec": UnitOfTime.SECONDS,
+    "secs": UnitOfTime.SECONDS,
+    "seconds": UnitOfTime.SECONDS,
+    "d": UnitOfTime.DAYS,
+    "day": UnitOfTime.DAYS,
+    "days": UnitOfTime.DAYS,
+}
 
 
 async def async_setup_entry(
@@ -94,7 +126,7 @@ class ToyotaClimateSchedulesSensor(ToyotaNABaseEntity, SensorEntity):
         if not self.available:
             return None
         settings = self.vehicle.climate_schedules
-        zone = ZoneInfo(self.hass.config.time_zone)
+        zone = dt_util.get_default_time_zone()
         return {
             "schedules": [
                 local_climate_schedule(item, zone)
@@ -173,12 +205,24 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         super().__init__(*args)
         self._attr_icon = icon
         self._attr_state_class = state_class
-        self._attr_device_class = device_class
+        self._configured_device_class = device_class
+        if device_class == SensorDeviceClass.PRESSURE:
+            self._attr_suggested_display_precision = 1
         self._attr_translation_key = translation_key
         self._attr_options = list(dict.fromkeys(states.values())) if states else None
         self._states = states
         self._unit_of_measurement = unit_of_measurement
         self._vehicle_feature = vehicle_feature
+
+    @property
+    def device_class(self) -> SensorDeviceClass | None:
+        device_class = self._configured_device_class
+        if device_class is None:
+            return None
+        allowed_units = DEVICE_CLASS_UNITS.get(device_class)
+        if allowed_units is not None and self.native_unit_of_measurement not in allowed_units:
+            return None
+        return device_class
 
     @property
     def native_value(self):
@@ -191,26 +235,33 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
             return min(100, max(0, feature.value))
         if self._states:
             return self._states.get(str(feature.value).lower())
-        if self.device_class == SensorDeviceClass.TIMESTAMP:
+        if self._configured_device_class == SensorDeviceClass.TIMESTAMP:
             return datetime.fromtimestamp(feature.value, UTC)
         if self._unit_of_measurement == UnitOfPressure.PSI and feature.unit:
             unit = _PRESSURE_UNITS.get(str(feature.unit).lower())
             if unit is None:
                 return None
             if unit != UnitOfPressure.PSI:
-                return round(PressureConverter.convert(feature.value, unit, UnitOfPressure.PSI), 1)
+                return PressureConverter.convert(feature.value, unit, UnitOfPressure.PSI)
         return feature.value
 
     @property
     def native_unit_of_measurement(self):
-        if self.device_class in (SensorDeviceClass.ENUM, SensorDeviceClass.TIMESTAMP):
+        if self._configured_device_class in (SensorDeviceClass.ENUM, SensorDeviceClass.TIMESTAMP):
             return None
         feature = self.feature(self._vehicle_feature)
         unit = feature.unit if isinstance(feature, Measurement) else None
         if self._vehicle_feature == VehicleFeatures.Speed:
             return unit or self._unit_of_measurement
         if self._unit_of_measurement in (None, "MI_OR_KM"):
-            return unit or None
+            if not unit:
+                return None
+            normalized = str(unit).strip().lower()
+            if self._configured_device_class == SensorDeviceClass.DISTANCE:
+                return _DISTANCE_UNITS.get(normalized, unit)
+            if self._configured_device_class == SensorDeviceClass.DURATION:
+                return _DURATION_UNITS.get(normalized, unit)
+            return unit
         return self._unit_of_measurement or None
 
     @property

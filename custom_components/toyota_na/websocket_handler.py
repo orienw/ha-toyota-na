@@ -288,7 +288,7 @@ class ToyotaWebSocketHandler:
                 ):
                     return
                 self._retry_delays.pop(vin, None)
-                _LOGGER.info(
+                _LOGGER.debug(
                     "WebSocket: received vehicle status for VIN ...%s (updated: %s)",
                     vin[-4:],
                     status.get("lastUpdateDateTime", "?"),

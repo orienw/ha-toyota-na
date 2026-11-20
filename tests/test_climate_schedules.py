@@ -6,12 +6,13 @@ import types
 import unittest
 from contextlib import contextmanager
 from copy import deepcopy
-from datetime import datetime
+from datetime import date, datetime, time
 from unittest.mock import AsyncMock, Mock, patch
 from zoneinfo import ZoneInfo
 
 import aiohttp
 import pytest
+import voluptuous as vol
 from common import entity_id, make_vehicle, settle
 from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -1063,3 +1064,55 @@ class TestClimateSchedules:
         await hass.async_block_till_done()
         assert account.get_vehicles.await_count == refreshes
         assert account.entry.data == data
+
+    async def test_climate_schedule_accepts_yaml_date_and_time_and_rejects_unknown_fields(
+        self, hass, schedules
+    ):
+        vehicle = schedules.vehicle
+        body = build_climate_schedule(
+            SETTINGS,
+            None,
+            {"date": date(2026, 9, 22), "time": time(8, 30), "temperature": 22},
+            ZONE,
+            now=NOW,
+        )
+        assert body["reservationType"] == "ONE_TIME"
+        assert body["date"] == "09-22-2026"
+        assert body["time"] == "15:30"
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            build_climate_schedule(
+                SETTINGS,
+                None,
+                {"date": datetime(2026, 9, 22, 8, 30), "time": time(8, 30), "temperature": 22},
+                ZONE,
+                now=NOW,
+            )
+
+        vehicle.update_climate_schedule = AsyncMock()
+        await hass.services.async_call(
+            DOMAIN,
+            "set_climate_schedule",
+            {
+                "vehicle": schedules.device_id,
+                "date": date(2026, 9, 22),
+                "start_time": time(8, 30),
+                "temperature": 22,
+            },
+            blocking=True,
+        )
+        vehicle.update_climate_schedule.assert_awaited_once_with(
+            None,
+            zone=ZONE,
+            delete=False,
+            date=date(2026, 9, 22),
+            time=time(8, 30),
+            temperature=22,
+        )
+
+        with pytest.raises(vol.Invalid):
+            await hass.services.async_call(
+                DOMAIN,
+                "set_climate_schedule",
+                {"vehicle": schedules.device_id, "temp": 22},
+                blocking=True,
+            )

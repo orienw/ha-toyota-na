@@ -221,8 +221,9 @@ def backdoor_candidates(backdoor_type: str | None) -> tuple[str, ...]:
         backdoor_type = backdoor_type.lower()
     if backdoor_type not in _BACKDOOR_TYPES:
         return _BACKDOOR_TYPES
-    return (backdoor_type,) + tuple(
-        candidate for candidate in _BACKDOOR_TYPES if candidate != backdoor_type
+    return (
+        backdoor_type,
+        *(candidate for candidate in _BACKDOOR_TYPES if candidate != backdoor_type),
     )
 
 

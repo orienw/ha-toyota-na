@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 
 import pytest
 from common import entity_id, make_17cy_vehicle, make_24mm_vehicle, make_vehicle
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.vehicle import VehicleFeatures
@@ -107,6 +109,7 @@ async def test_door_reporting_only_its_lock_shows_closed(hass, setup_vehicles, f
 async def test_rest_ranges_keep_zero_values_and_report_distance_units(
     hass, setup_vehicles, factory, extra, unit
 ):
+    hass.config.units = US_CUSTOMARY_SYSTEM if unit == "mi" else METRIC_SYSTEM
     vehicle = factory()
     vehicle._has_electric = True
     vehicle._has_remote_subscription = False
@@ -134,10 +137,12 @@ async def test_rest_ranges_keep_zero_values_and_report_distance_units(
         state = hass.states.get(entity_id(hass, "sensor", f"TESTVIN.{name}"))
         assert state.state == value
         assert state.attributes["unit_of_measurement"] == unit
+        assert state.attributes["device_class"] == SensorDeviceClass.DISTANCE
     assert entity_id(hass, "sensor", "TESTVIN.EV Travelable Distance") is None
 
 
 async def test_removed_ev_travelable_distance_sensor_leaves_the_registry(hass, setup_vehicles):
+    hass.config.units = US_CUSTOMARY_SYSTEM
     vehicle = make_vehicle()
     vehicle._has_electric = True
     vehicle._has_remote_subscription = False

@@ -1,11 +1,10 @@
 """Enable the vehicle's saved climate preferences."""
 
-from zoneinfo import ZoneInfo
-
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import EntityCategory
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 
 from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
 from .climate_helpers import climate_parameters
@@ -209,7 +208,7 @@ class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
     @property
     def extra_state_attributes(self):
         if self.schedule:
-            return local_climate_schedule(self.schedule, ZoneInfo(self.hass.config.time_zone))
+            return local_climate_schedule(self.schedule, dt_util.get_default_time_zone())
         return None
 
     async def async_turn_on(self, **kwargs):
@@ -223,7 +222,7 @@ class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
             raise ServiceValidationError("This climate schedule is unavailable.")
         with translate_service_errors():
             await self.vehicle.update_climate_schedule(
-                self._identifier, zone=ZoneInfo(self.hass.config.time_zone), enabled=enabled
+                self._identifier, zone=dt_util.get_default_time_zone(), enabled=enabled
             )
         self.coordinator.async_update_listeners()
 

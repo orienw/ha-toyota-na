@@ -111,7 +111,9 @@ class ElectricStatusHttpTests(unittest.IsolatedAsyncioTestCase):
                             [item[0] for item in requests],
                             [f"/oneapi/{version}/electric/status" for version in versions],
                         )
-                        for version, (_, query, headers, body) in zip(versions, requests):
+                        for version, (_, query, headers, body) in zip(
+                            versions, requests, strict=True
+                        ):
                             self.assertEqual(
                                 query, {"realtime-status": request_no} if request_no else {}
                             )

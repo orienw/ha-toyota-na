@@ -1999,9 +1999,11 @@ class ToyotaVehicle:
         if command not in self._command_map:
             return False
 
-        if command in (RemoteRequestCommand.EngineStart, RemoteRequestCommand.EngineStop):
-            if self.can_start_climate:
-                return True
+        if (
+            command in (RemoteRequestCommand.EngineStart, RemoteRequestCommand.EngineStop)
+            and self.can_start_climate
+        ):
+            return True
 
         keys = self._COMMAND_CAPABILITIES.get(command)
         if keys is None:
