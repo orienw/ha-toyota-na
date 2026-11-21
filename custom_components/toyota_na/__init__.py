@@ -22,7 +22,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .auth import ToyotaOneAuth
-from .client import ToyotaOneClient
+from .client import HTTP_TIMEOUT, ToyotaOneClient
 from .command_refresh import refresh_after_command
 from .const import (
     COMMAND_MAP,
@@ -151,6 +151,8 @@ class ToyotaCoordinator(DataUpdateCoordinator[list[ToyotaVehicle]]):
         self.background_tasks: set[asyncio.Task[Any]] = set()
         self._vehicles_by_vin: dict[str, ToyotaVehicle] = {}
         self._unsupported_vins: set[str] = set()
+        # Stays set until the entry reloads, so a later poll's error can't undo reauth.
+        self.reauth_required = False
 
     def schedule_background_task(self, coro) -> asyncio.Task[Any]:
         """Run a follow-up task and evict it on completion so unload only cancels live ones."""
@@ -176,6 +178,7 @@ class ToyotaCoordinator(DataUpdateCoordinator[list[ToyotaVehicle]]):
     @callback
     def handle_auth_error(self, err: AuthError) -> None:
         """Mark the entry as needing reauthentication and notify entities."""
+        self.reauth_required = True
         auth_err = ConfigEntryAuthFailed(err)
         auth_err.__cause__ = err
         self.last_exception = auth_err
@@ -192,6 +195,8 @@ class ToyotaCoordinator(DataUpdateCoordinator[list[ToyotaVehicle]]):
 
     async def _async_update_data(self) -> list[ToyotaVehicle]:
         entry = self.config_entry
+        if self.reauth_required:
+            raise ConfigEntryAuthFailed("Sign in to Toyota again.")
         try:
             _LOGGER.debug("Updating vehicle status")
             raw_vehicles = await get_vehicles(
@@ -234,6 +239,7 @@ class ToyotaCoordinator(DataUpdateCoordinator[list[ToyotaVehicle]]):
             sync_remote_access_issues(self.hass, entry, vehicles)
             return vehicles
         except AuthError as e:
+            self.reauth_required = True
             await self._stop_websocket()
             if not self.last_update_success:
                 # Home Assistant skips listeners when a failed poll follows another, so
@@ -299,7 +305,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
                 for key, field in fields.items()
                 if key in service_call.data
             }
-            with translate_service_errors():
+            with translate_service_errors(coordinator):
                 await vehicle.update_climate_schedule(
                     service_call.data.get("schedule_id"),
                     zone=dt_util.get_default_time_zone(),
@@ -320,7 +326,7 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
                 for key, field in fields.items()
                 if key in service_call.data
             }
-            with translate_service_errors():
+            with translate_service_errors(coordinator):
                 await vehicle.update_charge_schedule(
                     service_call.data.get("schedule_id"),
                     delete=remote_action == "delete_charge_schedule",
@@ -337,13 +343,13 @@ async def async_setup(hass: HomeAssistant, _processed_config) -> bool:
             )
 
         if remote_action.upper() == "REFRESH":
-            with translate_service_errors():
+            with translate_service_errors(coordinator):
                 await vehicle.poll_vehicle_refresh()
             if config_entry is not None:
                 record_vehicle_wake(hass, config_entry, vin)
             coordinator.async_update_listeners()
         else:
-            with translate_service_errors():
+            with translate_service_errors(coordinator):
                 await vehicle.send_command(command)
             if config_entry is not None:
                 record_vehicle_wake(hass, config_entry, vin)
@@ -368,7 +374,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ToyotaConfigEntry) -> bo
         hass.config_entries.async_update_entry(entry, data=entry_data)
 
     # Like the app's HTTP clients, send no cookies. Home Assistant closes this session on unload.
-    session = async_create_clientsession(hass, cookie_jar=aiohttp.DummyCookieJar())
+    session = async_create_clientsession(
+        hass, cookie_jar=aiohttp.DummyCookieJar(), timeout=HTTP_TIMEOUT
+    )
     client = ToyotaOneClient(
         ToyotaOneAuth(
             refresh_secs=-180,

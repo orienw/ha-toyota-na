@@ -130,7 +130,7 @@ class ToyotaClimateSettingsSwitch(ToyotaNABaseEntity, SwitchEntity):
     async def _set_enabled(self, enabled):
         if not self.available:
             raise ServiceValidationError("Climate settings are unavailable for this vehicle.")
-        with translate_service_errors():
+        with translate_service_errors(self.coordinator):
             await self.vehicle.update_climate_settings(**self._changes(enabled))
         self.coordinator.async_update_listeners()
 
@@ -220,7 +220,7 @@ class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
     async def _set_enabled(self, enabled):
         if not self.available:
             raise ServiceValidationError("This climate schedule is unavailable.")
-        with translate_service_errors():
+        with translate_service_errors(self.coordinator):
             await self.vehicle.update_climate_schedule(
                 self._identifier, zone=dt_util.get_default_time_zone(), enabled=enabled
             )
@@ -279,7 +279,7 @@ class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
     async def _set_enabled(self, enabled):
         if not self.available:
             raise ServiceValidationError("This charge schedule is unavailable.")
-        with translate_service_errors():
+        with translate_service_errors(self.coordinator):
             await self.vehicle.update_charge_schedule(self._identifier, enabled=enabled)
         record_vehicle_wake(self.hass, self._config_entry, self.vin)
         self.coordinator.async_update_listeners()

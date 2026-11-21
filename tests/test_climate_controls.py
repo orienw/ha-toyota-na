@@ -336,7 +336,6 @@ class TestClimateControls:
         for error, message in (
             (RuntimeError("Toyota rejected the change."), "Toyota rejected the change."),
             (ClientConnectionError("Toyota connection failed."), "Toyota connection failed."),
-            (AuthError("Toyota session expired."), "Toyota session expired."),
             (TimeoutError(), "The Toyota request timed out."),
             (ClientConnectionError(), "The Toyota request failed. Try again."),
             (RuntimeError(), "The Toyota request failed. Try again."),
@@ -354,6 +353,22 @@ class TestClimateControls:
         remove_listener()
         assert controls.vehicle.climate_settings == SETTINGS
         changed.assert_not_called()
+
+    async def test_auth_failure_from_a_control_starts_reauth(self, hass, controls):
+        error = AuthError("Toyota session expired.")
+        controls.cloud.update_climate_settings.side_effect = error
+        with pytest.raises(HomeAssistantError) as raised:
+            await controls.set_value("Climate Fan Speed", 4)
+        await hass.async_block_till_done()
+
+        assert str(raised.value) == "Toyota session expired."
+        assert raised.value.__cause__ is error
+        assert controls.account.coordinator.reauth_required
+        assert controls.state("Climate Fan Speed").state == "unavailable"
+        assert any(
+            flow["context"]["source"] == "reauth"
+            for flow in hass.config_entries.flow.async_progress()
+        )
 
     async def test_unavailable_controls_are_skipped_without_writing(
         self, controls, caplog, subtests

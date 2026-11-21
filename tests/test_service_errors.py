@@ -161,6 +161,12 @@ async def test_expected_command_failures_use_home_assistant_errors(hass, command
                 assert get_entity(hass, lock)._requested_command is None
                 assert account.entry.data == data
                 assert account.get_vehicles.await_count == polls
+                coordinator = account.coordinator
+                assert coordinator.reauth_required is isinstance(error, TokenExpired)
+                if coordinator.reauth_required:
+                    # Signing in again reloads the entry; clear the flag in its place.
+                    coordinator.reauth_required = False
+                    coordinator.async_update_listeners()
 
 
 async def test_cancellation_and_unexpected_errors_propagate(hass, commands, subtests):

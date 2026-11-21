@@ -22,12 +22,15 @@ async def get_vehicles(
     ws_handler=None,
 ) -> list[ToyotaVehicle]:
     api_vehicles = await client.get_user_vehicle_list()
+    if not isinstance(api_vehicles, list):
+        # Treated as a failed read so known vehicles keep their readings.
+        raise RuntimeError("Toyota returned no vehicle list.")
     supported_generations = {item.value for item in GENERATION_TRANSPORTS}
     # VINs already reported as unsupported, so each warns once per setup, not every poll.
     reported = unsupported_vins if unsupported_vins is not None else set()
     vehicles: list[ToyotaVehicle] = []
 
-    for api_vehicle in api_vehicles or []:
+    for api_vehicle in api_vehicles:
         vin = api_vehicle.get("vin")
         if not vin:
             continue

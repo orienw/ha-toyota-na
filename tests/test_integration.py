@@ -48,6 +48,7 @@ async def test_setup_reads_the_vehicle_into_entities_and_unloads(hass, loaded):
 
     assert entry.state is ConfigEntryState.LOADED
     assert isinstance(session.cookie_jar, aiohttp.DummyCookieJar)
+    assert session.timeout.total == 60
     assert session is client.auth._session
     assert session is not async_get_clientsession(hass)
     assert not session.closed
@@ -210,6 +211,45 @@ async def test_transient_outage_followed_by_auth_error_marks_entities_unavailabl
     assert any(
         flow["context"]["source"] == "reauth" for flow in hass.config_entries.flow.async_progress()
     )
+
+
+async def test_poll_finishing_after_websocket_auth_error_keeps_reauth(hass, freezer, loaded):
+    entry, client, websocket = loaded
+    coordinator = entry.runtime_data.coordinator
+
+    async def poll_interrupted_by_auth_error():
+        websocket.on_auth_error(TokenExpired())
+        raise RuntimeError("Temporary outage")
+
+    client.get_user_vehicle_list.side_effect = poll_interrupted_by_auth_error
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    reads = client.get_user_vehicle_list.await_count
+
+    assert coordinator.reauth_required
+    assert hass.states.get(LOCK).state == "unavailable"
+    freezer.tick(timedelta(seconds=601))
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK).state == "unavailable"
+    assert client.get_user_vehicle_list.await_count == reads
+    assert any(
+        flow["context"]["source"] == "reauth" for flow in hass.config_entries.flow.async_progress()
+    )
+
+
+async def test_missing_vehicle_list_fails_the_poll_and_keeps_readings(hass, loaded):
+    entry, client, _ = loaded
+    coordinator = entry.runtime_data.coordinator
+    [vehicle] = coordinator.data
+    client.get_user_vehicle_list.side_effect = [None]
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert not coordinator.last_update_success
+    assert coordinator.data == [vehicle]
+    assert hass.states.get(LOCK).state == "unlocked"
 
 
 async def test_failed_polls_keep_tracebacks_at_debug(hass, setup_vehicles, caplog):

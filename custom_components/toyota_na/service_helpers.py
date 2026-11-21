@@ -10,7 +10,7 @@ from .exceptions import AuthError
 
 
 @contextmanager
-def translate_service_errors():
+def translate_service_errors(coordinator=None):
     try:
         yield
     except json.JSONDecodeError as err:
@@ -20,6 +20,8 @@ def translate_service_errors():
     except TimeoutError as err:
         raise HomeAssistantError(str(err) or "The Toyota request timed out.") from err
     except AuthError as err:
+        if (handler := getattr(coordinator, "handle_auth_error", None)) is not None:
+            handler(err)
         raise HomeAssistantError(
             str(err) or "Toyota authentication failed. Sign in again."
         ) from err

@@ -107,7 +107,7 @@ class ToyotaLock(ToyotaNABaseEntity, LockEntity):
             self._requested_command = command
             self.async_write_ha_state()
             try:
-                with translate_service_errors():
+                with translate_service_errors(self.coordinator):
                     await self.vehicle.send_command(COMMAND_MAP[command])
             except Exception, asyncio.CancelledError:
                 if command_id == self._command_id:
