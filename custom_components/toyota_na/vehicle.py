@@ -478,6 +478,7 @@ class ToyotaVehicle:
         self._health = {}
         self._notifications = None
         self._feature_timestamps: dict[tuple, datetime] = {}
+        self._status_openings: set[VehicleFeatures] = set()
 
     def update_metadata(
         self,
@@ -1042,7 +1043,9 @@ class ToyotaVehicle:
             self._feature_timestamps[key] = observed_at
         return True
 
-    def _store_opening(self, feature, closed, locked, observed_at=None) -> bool:
+    def _store_opening(
+        self, feature, closed, locked, observed_at=None, *, from_status=False
+    ) -> bool:
         """Merge known opening state without converting missing values to false."""
         if closed is None and locked is None:
             return False
@@ -1052,6 +1055,8 @@ class ToyotaVehicle:
 
         if closed is not None and self._accept_observation((feature, "closed"), observed_at):
             merged_closed = closed
+            if from_status:
+                self._status_openings.add(feature)
         else:
             merged_closed = current_closed
 
@@ -1186,7 +1191,7 @@ class ToyotaVehicle:
             return
 
         for feature, (closed, locked) in self._rest_openings(categories).items():
-            self._store_opening(feature, closed, locked, observed_at)
+            self._store_opening(feature, closed, locked, observed_at, from_status=True)
 
     def apply_graphql_status(self, status: dict) -> bool:
         """Apply a pushed or polled AppSync status to this vehicle."""
@@ -1255,7 +1260,7 @@ class ToyotaVehicle:
                     door = doors.get(door_key)
                     if door:
                         closed, locked = opening_state_from_graphql(door)
-                        self._store_opening(feature, closed, locked, observed_at)
+                        self._store_opening(feature, closed, locked, observed_at, from_status=True)
 
             windows = vehicle_state.get("windows")
             if windows:
@@ -1263,7 +1268,7 @@ class ToyotaVehicle:
                     window = windows.get(win_key)
                     if window:
                         closed, _ = opening_state_from_graphql(window)
-                        self._store_opening(feature, closed, None, observed_at)
+                        self._store_opening(feature, closed, None, observed_at, from_status=True)
 
             tires = vehicle_state.get("tires") or {}
             tire_observed_at = parse_api_timestamp(
@@ -1308,7 +1313,9 @@ class ToyotaVehicle:
                 opening = vehicle_state.get(opening_key)
                 if opening:
                     closed, locked = opening_state_from_graphql(opening)
-                    if self._store_opening(VehicleFeatures.Trunk, closed, locked, observed_at):
+                    if self._store_opening(
+                        VehicleFeatures.Trunk, closed, locked, observed_at, from_status=True
+                    ):
                         break
 
             for key, feature in (
@@ -1319,7 +1326,7 @@ class ToyotaVehicle:
                 opening = vehicle_state.get(key)
                 if opening:
                     closed, _ = opening_state_from_graphql(opening)
-                    self._store_opening(feature, closed, None, observed_at)
+                    self._store_opening(feature, closed, None, observed_at, from_status=True)
 
             engine = vehicle_state.get("engine")
             if engine:
@@ -1560,11 +1567,15 @@ class ToyotaVehicle:
                 continue
 
             if key in self._TELEMETRY_OPENINGS:
-                if self._window_telemetry and type(value) is int and value in (1, 2):
-                    # Stored without a timestamp, so any status reading takes precedence.
-                    self._store_opening(
-                        self._TELEMETRY_OPENINGS[key], closed=(value == 2), locked=None
-                    )
+                feature = self._TELEMETRY_OPENINGS[key]
+                if (
+                    self._window_telemetry
+                    and type(value) is int
+                    and value in (1, 2)
+                    and feature not in self._status_openings
+                ):
+                    # Only fill openings that have never been reported by vehicle status.
+                    self._store_opening(feature, closed=(value == 2), locked=None)
                 continue
 
             feature = self._vehicle_telemetry_map.get(key)

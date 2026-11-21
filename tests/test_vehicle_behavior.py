@@ -1560,6 +1560,72 @@ class VehicleStateTests(unittest.TestCase):
                     # Telemetry still fills an opening the status report doesn't have.
                     self.assertFalse(vehicle.features[VehicleFeatures.Moonroof].closed)
 
+    def test_failed_status_poll_does_not_let_telemetry_overwrite_untimestamped_status(self):
+        rest_closed = {
+            "vehicleStatus": [
+                {
+                    "category": "Driver Side",
+                    "sections": [{"section": "Window", "values": [{"value": "Closed"}]}],
+                }
+            ]
+        }
+        rest_open = {
+            "vehicleStatus": [
+                {
+                    "category": "Driver Side",
+                    "sections": [{"section": "Window", "values": [{"value": "Open"}]}],
+                }
+            ]
+        }
+        graphql_closed = {
+            "vehicleState": {"windows": {"driverSide": {"position": {"status": "closed"}}}}
+        }
+        graphql_open = {
+            "vehicleState": {"windows": {"driverSide": {"position": {"status": "open"}}}}
+        }
+        cases = (
+            (make_17cy_vehicle, "get_vehicle_status_17cy", rest_closed, rest_open),
+            (make_vehicle, "get_vehicle_status_21mm", rest_closed, rest_open),
+            (make_24mm_vehicle, "graphql_get_vehicle_status", graphql_closed, graphql_open),
+        )
+        for factory, status_attr, closed_status, open_status in cases:
+            with self.subTest(factory=factory.__name__):
+                client = types.SimpleNamespace(
+                    get_telemetry=AsyncMock(
+                        side_effect=[
+                            {"driverWindow": 1, "sunRoof": 1},
+                            {"driverWindow": 1, "sunRoof": 2},
+                            {"driverWindow": 2, "sunRoof": 2},
+                        ]
+                    ),
+                    get_engine_status_17cy=AsyncMock(return_value=None),
+                    get_engine_status_21mm=AsyncMock(return_value=None),
+                    get_electric_status=AsyncMock(return_value=None),
+                    get_tire_pressure=AsyncMock(return_value=None),
+                    **{
+                        status_attr: AsyncMock(
+                            side_effect=[closed_status, RuntimeError("offline"), open_status]
+                        )
+                    },
+                )
+                vehicle = factory(client)
+                vehicle._window_telemetry = True
+
+                # Poll 1: untimestamped status wins for driver window; telemetry fills moonroof.
+                asyncio.run(vehicle.update())
+                self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
+                self.assertFalse(vehicle.features[VehicleFeatures.Moonroof].closed)
+
+                # Poll 2: status read fails; telemetry must not overwrite driver window,
+                # while still updating moonroof which status has never reported.
+                asyncio.run(vehicle.update())
+                self.assertTrue(vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
+                self.assertTrue(vehicle.features[VehicleFeatures.Moonroof].closed)
+
+                # Poll 3: a subsequent status report still updates driver window.
+                asyncio.run(vehicle.update())
+                self.assertFalse(vehicle.features[VehicleFeatures.FrontDriverWindow].closed)
+
     def test_telemetry_location_populates_both_location_entities(self):
         vehicle = make_vehicle()
 
