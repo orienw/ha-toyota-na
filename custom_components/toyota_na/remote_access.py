@@ -28,8 +28,9 @@ def sync_remote_access_issues(hass, entry, vehicles) -> None:
         if translation_key is None:
             continue
         # Each repair has its own issue, so ignoring one doesn't hide a different one.
-        # States with the same banner share a repair (2/3, 8/9).
-        issue_id = f"{prefix}{vehicle.vin}_{translation_key}"
+        # States with the same banner share a repair (2/3, 8/9). Diagnostics include
+        # repair IDs, so they carry only the VIN's last four characters.
+        issue_id = f"{prefix}{vehicle.vin[-4:]}_{translation_key}"
         current.add(issue_id)
         ir.async_create_issue(
             hass,

@@ -48,7 +48,7 @@ async def test_only_states_needing_action_raise_a_repair(hass, setup_vehicles, v
             vehicle.remote_display = remote_display
             await account.coordinator.async_refresh()
             await hass.async_block_till_done()
-            prefix = f"remote_access_{account.entry.entry_id}_TESTVIN_"
+            prefix = f"remote_access_{account.entry.entry_id}_TVIN_"
             assert issues(hass) == ({f"{prefix}{expected}": expected} if expected else {})
 
 
@@ -88,8 +88,8 @@ async def test_only_this_accounts_departed_vehicles_lose_their_repairs(
     await hass.async_block_till_done()
 
     assert set(issues(hass)) == {
-        f"remote_access_{account.entry.entry_id}_TESTVIN_remote_activation_pending",
-        "remote_access_other_SOLDVIN_remote_activation_pending",
+        f"remote_access_{account.entry.entry_id}_TVIN_remote_activation_pending",
+        "remote_access_other_DVIN_remote_activation_pending",
         "unrelated",
     }
 
@@ -100,7 +100,7 @@ async def test_polls_update_repairs_and_failed_polls_keep_them(
     vehicle.remote_display = 4
     account = await setup_vehicles([vehicle])
     expected = {
-        f"remote_access_{account.entry.entry_id}_TESTVIN_remote_activation_failed": (
+        f"remote_access_{account.entry.entry_id}_TVIN_remote_activation_failed": (
             "remote_activation_failed"
         )
     }
