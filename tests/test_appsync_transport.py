@@ -555,17 +555,15 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(body=body):
                 self.session.post.reset_mock()
                 self.auth.check_tokens.reset_mock()
-                self.session.post.side_effect = [
-                    original,
-                    _Response(401, body),
-                    _Response(401, body),
-                ]
+                self.auth.check_tokens.side_effect = client_module.TokenExpired()
+                self.session.post.side_effect = [original, _Response(401, body)]
                 with self.assertRaises(client_module.TokenExpired):
                     await client_module.ToyotaOneClient.graphql_get_vehicle_status(
                         self.client, "TESTVIN24"
                     )
-                self.assertEqual(3, self.session.post.call_count)
+                self.assertEqual(2, self.session.post.call_count)
                 self.auth.check_tokens.assert_awaited_once()
+        self.auth.check_tokens.side_effect = None
         self.session.post.side_effect = [original, client_module.asyncio.CancelledError()]
         with self.assertRaises(client_module.asyncio.CancelledError):
             await client_module.ToyotaOneClient.graphql_get_vehicle_status(self.client, "TESTVIN24")
@@ -758,14 +756,42 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     self.session.post.call_args.kwargs["headers"]["Authorization"],
                 )
 
-    async def test_rejected_refreshed_token_requests_reauthentication(self):
+    async def test_rejection_after_a_successful_refresh_fails_the_read_without_reauth(self):
+        for response in (
+            _Response(401, {}),
+            _Response(403, {"errorType": "APPSYNC-AUTH-403"}),
+            _Response(200, {"errors": [{"errorType": "APIGW-403"}]}),
+        ):
+            for raise_errors in (False, True):
+                with self.subTest(status=response.status, raise_errors=raise_errors):
+                    self.auth.check_tokens.reset_mock()
+                    self.session.post.reset_mock()
+                    self.session.post.return_value = response
+                    request = client_module.ToyotaOneClient.graphql_request(
+                        self.client,
+                        "Read",
+                        "query Read { vin }",
+                        {},
+                        read_only=True,
+                        raise_errors=raise_errors,
+                    )
+                    if raise_errors:
+                        with self.assertRaises(RuntimeError) as caught:
+                            await request
+                        self.assertNotIsInstance(caught.exception, client_module.AuthError)
+                    else:
+                        self.assertIsNone(await request)
+                    self.assertEqual(2, self.session.post.call_count)
+                    self.auth.check_tokens.assert_awaited_once()
+
+    async def test_failed_token_refresh_requests_reauthentication(self):
         self.session.post.return_value = _Response(401, {})
+        self.auth.check_tokens.side_effect = client_module.TokenExpired()
         with self.assertRaises(client_module.TokenExpired):
             await client_module.ToyotaOneClient.graphql_request(
                 self.client, "Read", "query Read { vin }", {}, read_only=True
             )
-        self.assertEqual(2, self.session.post.call_count)
-        self.auth.check_tokens.assert_awaited_once()
+        self.assertEqual(1, self.session.post.call_count)
 
     async def test_permission_errors_do_not_refresh_and_partial_data_survives(self):
         for response, expected in (

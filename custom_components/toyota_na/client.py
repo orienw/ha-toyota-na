@@ -1141,9 +1141,9 @@ class ToyotaOneClient:
                     or "jwt expired" in str(err.get("message", "")).lower()
                     for err in auth_errors
                 )
-                if auth_failed:
-                    if auth_retried:
-                        raise TokenExpired("Toyota rejected the refreshed access token.")
+                # A rejection after a successful refresh is about this request, such as a
+                # vehicle without access, not the sign-in. A failed refresh raises TokenExpired.
+                if auth_failed and not auth_retried:
                     await self.auth.check_tokens(rejected_token=token)
                     if not read_only:
                         raise RuntimeError(
