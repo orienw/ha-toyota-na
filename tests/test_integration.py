@@ -183,6 +183,35 @@ async def test_websocket_auth_error_marks_entities_unavailable_and_starts_reauth
     assert client.get_user_vehicle_list.await_count == reads
 
 
+@pytest.mark.parametrize("source", ["poll", "websocket"])
+async def test_transient_outage_followed_by_auth_error_marks_entities_unavailable(
+    hass, loaded, source
+):
+    entry, client, websocket = loaded
+    coordinator = entry.runtime_data.coordinator
+    client.get_user_vehicle_list.side_effect = RuntimeError("Temporary outage")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert not coordinator.last_update_success
+    assert hass.states.get(LOCK).state == "unlocked"
+
+    if source == "poll":
+        client.get_user_vehicle_list.side_effect = TokenExpired()
+        await coordinator.async_refresh()
+    else:
+        websocket.on_auth_error(TokenExpired())
+    await hass.async_block_till_done()
+
+    assert hass.states.get(LOCK).state == "unavailable"
+    assert hass.states.get("sensor.2026_rav4_plug_in_hybrid_odometer").state == "unavailable"
+    if source == "poll":
+        websocket.stop.assert_awaited_once()
+    assert any(
+        flow["context"]["source"] == "reauth" for flow in hass.config_entries.flow.async_progress()
+    )
+
+
 async def test_failed_polls_keep_tracebacks_at_debug(hass, setup_vehicles, caplog):
     account = await setup_vehicles([])
     await settle(hass)

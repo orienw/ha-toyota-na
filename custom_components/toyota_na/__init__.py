@@ -235,6 +235,10 @@ class ToyotaCoordinator(DataUpdateCoordinator[list[ToyotaVehicle]]):
             return vehicles
         except AuthError as e:
             await self._stop_websocket()
+            if not self.last_update_success:
+                # Home Assistant skips listeners when a failed poll follows another, so
+                # entities would miss the switch to unavailable.
+                self.hass.loop.call_soon(self.async_update_listeners)
             raise ConfigEntryAuthFailed(e) from e
         except Exception as e:
             _LOGGER.debug("Error fetching data", exc_info=True)
