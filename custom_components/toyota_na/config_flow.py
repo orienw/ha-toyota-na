@@ -86,7 +86,7 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._async_user_step(None, {"base": "sso_account"})
             except OtpSessionError:
                 _LOGGER.error("Toyota one-time password session expired or cannot be retried")
-                return await self._async_user_step(None, {"base": "otp_not_logged_in"})
+                return await self._async_user_step(None, {"base": "otp_expired"})
             except AuthError:
                 errors["base"] = "otp_not_logged_in"
                 _LOGGER.error("Not logged in with one time password")

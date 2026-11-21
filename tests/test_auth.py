@@ -429,7 +429,7 @@ class TestAuthFlow:
 
         assert errors_logged(caplog, config_flow.__name__)
         assert result["step_id"] == "user"
-        assert result["errors"] == {"base": "otp_not_logged_in"}
+        assert result["errors"] == {"base": "otp_expired"}
         result = await hass.config_entries.flow.async_configure(result["flow_id"], CREDENTIALS)
         await hass.async_block_till_done()
         assert result["type"] is FlowResultType.CREATE_ENTRY
