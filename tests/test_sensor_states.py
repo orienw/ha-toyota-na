@@ -5,7 +5,9 @@ from common import FakeVehicle, entity_id
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import EntityCategory
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 
+from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.vehicle import VehicleFeatures as F
 from custom_components.toyota_na.vehicle_values import Measurement
 
@@ -290,3 +292,56 @@ async def test_battery_distance_duration_and_speed_device_classes_and_unit_norma
     ):
         options = registry.async_get(entity_id(hass, "sensor", f"TESTVIN.{name}")).options
         assert options["sensor"]["suggested_display_precision"] == precision, name
+
+
+# What each unit system shows for readings Toyota reports in miles, kilometers, kPa and mph.
+UNIT_READINGS = {
+    F.Odometer: Measurement(1000, "mi"),
+    F.DistanceToEmpty: Measurement(250, "km"),
+    F.FrontDriverTire: Measurement(240, "kPa"),
+    F.Speed: Measurement(60, "mph"),
+}
+FRESH_UNITS = {
+    "us": {
+        "Odometer": ("mi", 1000),
+        "Distance To Empty": ("mi", 155.343),
+        "Front Driver Tire": ("psi", 34.809),
+        "Speed": ("mph", 60),
+    },
+    "metric": {
+        "Odometer": ("km", 1609.344),
+        "Distance To Empty": ("km", 250),
+        "Front Driver Tire": ("kPa", 240),
+        "Speed": ("km/h", 96.561),
+    },
+}
+# Entities registered before they had device classes keep the unit they always showed.
+UPGRADED_UNITS = {
+    "Odometer": ("mi", 1000),
+    "Distance To Empty": ("km", 250),
+    "Front Driver Tire": ("psi", 34.809),
+    "Speed": ("mph", 60),
+}
+
+
+@pytest.mark.parametrize("system", ["us", "metric"])
+@pytest.mark.parametrize("install", ["fresh", "upgraded"])
+async def test_display_units_follow_the_unit_system_only_for_new_entities(
+    hass, setup_vehicles, system, install
+):
+    hass.config.units = US_CUSTOMARY_SYSTEM if system == "us" else METRIC_SYSTEM
+    registry = er.async_get(hass)
+    if install == "upgraded":
+        for name in UPGRADED_UNITS:
+            registry.async_get_or_create("sensor", DOMAIN, f"TESTVIN.{name}")
+    vehicle = FakeVehicle(set())
+    vehicle.features = dict(UNIT_READINGS)
+
+    await setup_vehicles([vehicle])
+
+    expected = UPGRADED_UNITS if install == "upgraded" else FRESH_UNITS[system]
+    for name, (unit, value) in expected.items():
+        state = hass.states.get(entity_id(hass, "sensor", f"TESTVIN.{name}"))
+        assert state.attributes["unit_of_measurement"] == unit, name
+        assert float(state.state) == pytest.approx(value, abs=0.01), name
+        assert "device_class" in state.attributes, name
