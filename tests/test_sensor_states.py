@@ -220,7 +220,7 @@ async def test_added_once_a_vehicle_reports_the_state(hass, remote_access):
     )
 
 
-async def test_battery_distance_and_duration_device_classes_and_unit_normalization(
+async def test_battery_distance_duration_and_speed_device_classes_and_unit_normalization(
     hass, setup_vehicles
 ):
     vehicle = FakeVehicle(set())
@@ -233,6 +233,7 @@ async def test_battery_distance_and_duration_device_classes_and_unit_normalizati
         F.BatteryPowerSupplyTime: Measurement(4, "hrs"),
         F.TripDetailsA: Measurement(12, ""),
         F.RemainingChargeTimeTo80: Measurement(30, ""),
+        F.Speed: Measurement(70, "MPH"),
     }
     await setup_vehicles([vehicle])
 
@@ -240,6 +241,8 @@ async def test_battery_distance_and_duration_device_classes_and_unit_normalizati
     assert battery.state == "82"
     assert battery.attributes["device_class"] == SensorDeviceClass.BATTERY
     assert battery.attributes["unit_of_measurement"] == "%"
+    # Home Assistant's battery icon follows the level.
+    assert "icon" not in battery.attributes
 
     odometer = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Odometer"))
     assert odometer.state == "1000"
@@ -261,6 +264,11 @@ async def test_battery_distance_and_duration_device_classes_and_unit_normalizati
     assert supply_time.attributes["device_class"] == SensorDeviceClass.DURATION
     assert supply_time.attributes["unit_of_measurement"] == "h"
 
+    speed = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Speed"))
+    assert speed.attributes["device_class"] == SensorDeviceClass.SPEED
+    assert speed.attributes["unit_of_measurement"] == "km/h"
+    assert float(speed.state) == pytest.approx(112.654, abs=0.05)
+
     # Missing units clear device_class cleanly so Home Assistant never warns.
     trip_a = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Trip Details A"))
     assert trip_a.state == "12"
@@ -270,7 +278,7 @@ async def test_battery_distance_and_duration_device_classes_and_unit_normalizati
     assert charge_80.state == "30"
     assert "device_class" not in charge_80.attributes
 
-    # Home Assistant would otherwise infer two decimals for distances and durations.
+    # Home Assistant would otherwise infer two decimals for distances, durations and speed.
     registry = er.async_get(hass)
     for name, precision in (
         ("Odometer", 0),
@@ -278,6 +286,7 @@ async def test_battery_distance_and_duration_device_classes_and_unit_normalizati
         ("Trip Details A", 1),
         ("Remaining Charge Time", 0),
         ("Battery Power Supply Time", 0),
+        ("Speed", 0),
     ):
         options = registry.async_get(entity_id(hass, "sensor", f"TESTVIN.{name}")).options
         assert options["sensor"]["suggested_display_precision"] == precision, name

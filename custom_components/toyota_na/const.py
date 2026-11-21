@@ -592,7 +592,6 @@ SENSORS = [
     {
         "state_class": SensorStateClass.MEASUREMENT,
         "device_class": SensorDeviceClass.BATTERY,
-        "icon": "mdi:gauge",
         "feature": VehicleFeatures.ChargeLevel,
         "name": "EV Battery Level",
         "unit": PERCENTAGE,

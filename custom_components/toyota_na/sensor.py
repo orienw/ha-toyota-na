@@ -8,7 +8,13 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, UnitOfLength, UnitOfPressure, UnitOfTime
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfLength,
+    UnitOfPressure,
+    UnitOfSpeed,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -30,6 +36,7 @@ _DISPLAY_PRECISION = {
     SensorDeviceClass.PRESSURE: 1,
     SensorDeviceClass.DISTANCE: 0,
     SensorDeviceClass.DURATION: 0,
+    SensorDeviceClass.SPEED: 0,
 }
 _DISTANCE_UNITS = {
     "mi": UnitOfLength.MILES,
@@ -39,6 +46,11 @@ _DISTANCE_UNITS = {
     "kms": UnitOfLength.KILOMETERS,
     "kilometer": UnitOfLength.KILOMETERS,
     "kilometers": UnitOfLength.KILOMETERS,
+}
+_SPEED_UNITS = {
+    "mph": UnitOfSpeed.MILES_PER_HOUR,
+    "km/h": UnitOfSpeed.KILOMETERS_PER_HOUR,
+    "kph": UnitOfSpeed.KILOMETERS_PER_HOUR,
 }
 _DURATION_UNITS = {
     "min": UnitOfTime.MINUTES,
@@ -95,7 +107,7 @@ async def async_setup_entry(
                     continue
                 yield ToyotaSensor(
                     config["feature"],
-                    config["icon"],
+                    config.get("icon"),
                     config["unit"],
                     config["state_class"],
                     coordinator,
@@ -200,7 +212,7 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
     def __init__(
         self,
         vehicle_feature: VehicleFeatures,
-        icon: str,
+        icon: str | None,
         unit_of_measurement: str | None,
         state_class: SensorStateClass | None,
         *args: Any,
@@ -213,7 +225,7 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         self._attr_icon = icon
         self._attr_state_class = state_class
         self._configured_device_class = device_class
-        # Without one, Home Assistant infers two decimals for distances and durations.
+        # Without one, Home Assistant infers two decimals for distances, durations and speed.
         if display_precision is None:
             display_precision = _DISPLAY_PRECISION.get(device_class)
         self._attr_suggested_display_precision = display_precision
@@ -261,7 +273,9 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         feature = self.feature(self._vehicle_feature)
         unit = feature.unit if isinstance(feature, Measurement) else None
         if self._vehicle_feature == VehicleFeatures.Speed:
-            return unit or self._unit_of_measurement
+            if not unit:
+                return self._unit_of_measurement
+            return _SPEED_UNITS.get(str(unit).strip().lower(), unit)
         if self._unit_of_measurement in (None, "MI_OR_KM"):
             if not unit:
                 return None
