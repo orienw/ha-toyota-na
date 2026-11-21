@@ -1,1 +1,2 @@
 * text=auto eol=lf
+tests/snapshots/*.ambr linguist-generated=true
