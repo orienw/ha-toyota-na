@@ -72,3 +72,17 @@ def test_authentication_errors_keep_their_hierarchy_and_details(error_type):
     assert error.args == ("Toyota rejected the request",)
     assert str(error) == "Toyota rejected the request"
     assert repr(error) == f"{error_type.__name__}('Toyota rejected the request')"
+
+
+def test_unitless_reading_keeps_the_last_known_unit():
+    from common import make_vehicle
+
+    from custom_components.toyota_na.vehicle import VehicleFeatures
+
+    vehicle = make_vehicle()
+    vehicle._parse_telemetry({"odometer": {"value": 1234, "unit": "mi"}})
+    vehicle._parse_telemetry({"odometer": 1235})
+    assert vehicle.features[VehicleFeatures.Odometer] == Measurement(1235, "mi")
+
+    vehicle._parse_telemetry({"odometer": {"value": 2000, "unit": "km"}})
+    assert vehicle.features[VehicleFeatures.Odometer] == Measurement(2000, "km")

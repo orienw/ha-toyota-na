@@ -1076,6 +1076,10 @@ class ToyotaVehicle:
             return False
         if not self._accept_observation((feature, "value"), observed_at):
             return False
+        current = self._features.get(feature)
+        if not unit and isinstance(current, Measurement) and current.unit:
+            # A unitless reading would otherwise publish as whatever unit HA last displayed.
+            unit = current.unit
         if value in (65535, "65535") and feature in (
             VehicleFeatures.RemainingChargeTime,
             VehicleFeatures.RemainingChargeTimeTo80,
