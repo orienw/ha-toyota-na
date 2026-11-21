@@ -3,7 +3,6 @@ import logging
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
 from .auth import OtpSessionError, PasswordHistoryError, SsoAccountError
@@ -34,7 +33,7 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _async_user_step(self, user_input, errors):
         if user_input is not None:
             try:
-                self.client = ToyotaOneClient(session=async_get_clientsession(self.hass))
+                self.client = ToyotaOneClient()
                 self.user_info = user_input
                 authorization = await self.client.auth.authorize(
                     user_input["username"], user_input["password"]

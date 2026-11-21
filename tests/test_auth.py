@@ -407,6 +407,16 @@ class TestAuthFlow:
         assert result["data_schema"]({"username": "owner", "password": "password"}) == (CREDENTIALS)
         auth.request_tokens.assert_not_awaited()
 
+    async def test_config_flow_does_not_pass_ha_cookie_session(self, hass, auth):
+        with patch.object(
+            config_flow,
+            "ToyotaOneClient",
+            return_value=types.SimpleNamespace(auth=auth),
+        ) as client_factory:
+            auth.authorize.return_value = {"callbacks": []}
+            await self.sign_in(hass)
+        client_factory.assert_called_once_with()
+
     async def test_expired_otp_session_returns_to_credentials(self, hass, auth, caplog):
         auth.authorize.side_effect = [{"callbacks": []}, auth_module.OtpSessionError(), "code"]
         result = await self.sign_in(hass)

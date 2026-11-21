@@ -1096,3 +1096,12 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client_module.HTTP_TIMEOUT, shared.request.call_args.kwargs["timeout"])
         shared.close.assert_not_awaited()
         self.session.request.assert_not_called()
+
+    async def test_standalone_request_session_uses_dummy_cookie_jar(self):
+        with patch.object(
+            client_module.aiohttp, "ClientSession", return_value=self.session
+        ) as factory:
+            async with client_module.request_session(None) as (session, shared):
+                self.assertIs(self.session, session)
+                self.assertFalse(shared)
+        self.assertIsInstance(factory.call_args.kwargs["cookie_jar"], aiohttp.DummyCookieJar)

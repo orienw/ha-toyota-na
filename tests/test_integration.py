@@ -5,12 +5,14 @@ from copy import deepcopy
 from datetime import timedelta
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 from common import EMAIL, STATUS_24MM, FakeClient, FakeWebSocket, account_entry, set_up, settle
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import UnitOfLength
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import DistanceConverter
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
@@ -41,9 +43,14 @@ async def loaded(hass, caplog):
 
 
 async def test_setup_reads_the_vehicle_into_entities_and_unloads(hass, loaded):
-    entry, _, websocket = loaded
+    entry, client, websocket = loaded
+    session = client._session
 
     assert entry.state is ConfigEntryState.LOADED
+    assert isinstance(session.cookie_jar, aiohttp.DummyCookieJar)
+    assert session is client.auth._session
+    assert session is not async_get_clientsession(hass)
+    assert not session.closed
     assert hass.states.get(LOCK).state == "unlocked"
     odometer = hass.states.get("sensor.2026_rav4_plug_in_hybrid_odometer")
     assert float(odometer.state) == pytest.approx(
@@ -59,6 +66,7 @@ async def test_setup_reads_the_vehicle_into_entities_and_unloads(hass, loaded):
 
     assert entry.state is ConfigEntryState.NOT_LOADED
     assert getattr(entry, "runtime_data", None) is None
+    assert session.closed
     websocket.stop.assert_awaited_once()
     assert hass.states.get(LOCK).state == "unavailable"
 

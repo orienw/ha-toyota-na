@@ -185,7 +185,9 @@ class ToyotaWebSocketHandler:
             self._session = shared_session
             self._owns_session = False
         else:
-            self._session = aiohttp.ClientSession(timeout=HTTP_TIMEOUT)
+            self._session = aiohttp.ClientSession(
+                timeout=HTTP_TIMEOUT, cookie_jar=aiohttp.DummyCookieJar()
+            )
             self._owns_session = True
         try:
             self._ws = await self._session.ws_connect(

@@ -356,7 +356,9 @@ async def request_session(session=None):
     if session is not None and not getattr(session, "closed", False):
         yield session, True
         return
-    async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as owned:
+    async with aiohttp.ClientSession(
+        timeout=HTTP_TIMEOUT, cookie_jar=aiohttp.DummyCookieJar()
+    ) as owned:
         yield owned, False
 
 

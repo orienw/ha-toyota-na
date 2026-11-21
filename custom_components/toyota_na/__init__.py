@@ -17,7 +17,7 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import service
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -363,7 +363,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ToyotaConfigEntry) -> bo
         del entry_data["password"]
         hass.config_entries.async_update_entry(entry, data=entry_data)
 
-    session = async_get_clientsession(hass)
+    # Like the app's HTTP clients, send no cookies. Home Assistant closes this session on unload.
+    session = async_create_clientsession(hass, cookie_jar=aiohttp.DummyCookieJar())
     client = ToyotaOneClient(
         ToyotaOneAuth(
             refresh_secs=-180,
