@@ -177,8 +177,10 @@ class ToyotaCoordinator(DataUpdateCoordinator[list[ToyotaVehicle]]):
 
     @callback
     def handle_auth_error(self, err: AuthError) -> None:
-        """Mark the entry as needing reauthentication and notify entities."""
+        """Stop push updates, mark the entry as needing reauthentication, and notify entities."""
         self.reauth_required = True
+        if self.ws_handler is not None:
+            self.schedule_background_task(self._stop_websocket())
         auth_err = ConfigEntryAuthFailed(err)
         auth_err.__cause__ = err
         self.last_exception = auth_err
@@ -187,11 +189,6 @@ class ToyotaCoordinator(DataUpdateCoordinator[list[ToyotaVehicle]]):
         self.async_update_listeners()
         if self.config_entry is not None:
             self.config_entry.async_start_reauth_if_available(self.hass)
-
-    async def async_handle_auth_error(self, err: AuthError) -> None:
-        """Stop push subscriptions and start reauthentication."""
-        await self._stop_websocket()
-        self.handle_auth_error(err)
 
     async def _async_update_data(self) -> list[ToyotaVehicle]:
         entry = self.config_entry

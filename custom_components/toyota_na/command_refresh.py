@@ -13,9 +13,9 @@ ENGINE_STATUS_TIMEOUT = 90
 
 async def _handle_auth_error(coordinator, err: AuthError) -> None:
     """Mark the coordinator as needing reauthentication without an extra full poll."""
-    handler = getattr(coordinator, "async_handle_auth_error", None)
+    handler = getattr(coordinator, "handle_auth_error", None)
     if handler is not None:
-        await handler(err)
+        handler(err)
         return
     if coordinator.config_entry is not None:
         coordinator.config_entry.async_start_reauth_if_available(coordinator.hass)

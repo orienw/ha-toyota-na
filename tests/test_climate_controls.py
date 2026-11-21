@@ -365,6 +365,8 @@ class TestClimateControls:
         assert raised.value.__cause__ is error
         assert controls.account.coordinator.reauth_required
         assert controls.state("Climate Fan Speed").state == "unavailable"
+        # Live updates stop too, as they do when a poll or the WebSocket hits the failure.
+        controls.account.coordinator.ws_handler.stop.assert_awaited_once()
         assert any(
             flow["context"]["source"] == "reauth"
             for flow in hass.config_entries.flow.async_progress()
