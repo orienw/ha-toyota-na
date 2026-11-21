@@ -7,5 +7,5 @@
     "iot_class": "cloud_polling",
     "issue_tracker": "https://github.com/orienw/ha-toyota-na/issues",
     "requirements": [],
-    "version": "2.12.0b2"
+    "version": "2.12.0b3"
 }
