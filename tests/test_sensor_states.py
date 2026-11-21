@@ -269,3 +269,15 @@ async def test_battery_distance_and_duration_device_classes_and_unit_normalizati
     charge_80 = hass.states.get(entity_id(hass, "sensor", "TESTVIN.Remaining Charge Time to 80%"))
     assert charge_80.state == "30"
     assert "device_class" not in charge_80.attributes
+
+    # Home Assistant would otherwise infer two decimals for distances and durations.
+    registry = er.async_get(hass)
+    for name, precision in (
+        ("Odometer", 0),
+        ("Distance To Empty", 0),
+        ("Trip Details A", 1),
+        ("Remaining Charge Time", 0),
+        ("Battery Power Supply Time", 0),
+    ):
+        options = registry.async_get(entity_id(hass, "sensor", f"TESTVIN.{name}")).options
+        assert options["sensor"]["suggested_display_precision"] == precision, name

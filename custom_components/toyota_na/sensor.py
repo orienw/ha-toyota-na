@@ -26,6 +26,11 @@ from .vehicle_values import Measurement
 
 # Toyota reports measurement units in varying case and spellings.
 _PRESSURE_UNITS = {"psi": UnitOfPressure.PSI, "kpa": UnitOfPressure.KPA, "bar": UnitOfPressure.BAR}
+_DISPLAY_PRECISION = {
+    SensorDeviceClass.PRESSURE: 1,
+    SensorDeviceClass.DISTANCE: 0,
+    SensorDeviceClass.DURATION: 0,
+}
 _DISTANCE_UNITS = {
     "mi": UnitOfLength.MILES,
     "mile": UnitOfLength.MILES,
@@ -97,6 +102,7 @@ async def async_setup_entry(
                     config["name"],
                     vehicle.vin,
                     device_class=config.get("device_class"),
+                    display_precision=config.get("display_precision"),
                     states=config.get("states"),
                     translation_key=config.get("translation_key"),
                 )
@@ -199,6 +205,7 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         state_class: SensorStateClass | None,
         *args: Any,
         device_class: SensorDeviceClass | None = None,
+        display_precision: int | None = None,
         states: dict[str, str] | None = None,
         translation_key: str | None = None,
     ):
@@ -206,8 +213,10 @@ class ToyotaSensor(ToyotaNABaseEntity, SensorEntity):
         self._attr_icon = icon
         self._attr_state_class = state_class
         self._configured_device_class = device_class
-        if device_class == SensorDeviceClass.PRESSURE:
-            self._attr_suggested_display_precision = 1
+        # Without one, Home Assistant infers two decimals for distances and durations.
+        if display_precision is None:
+            display_precision = _DISPLAY_PRECISION.get(device_class)
+        self._attr_suggested_display_precision = display_precision
         self._attr_translation_key = translation_key
         self._attr_options = list(dict.fromkeys(states.values())) if states else None
         self._states = states

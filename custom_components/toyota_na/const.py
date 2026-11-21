@@ -504,6 +504,7 @@ SENSORS = [
         "feature": VehicleFeatures.TripDetailsA,
         "name": "Trip Details A",
         "unit": "MI_OR_KM",
+        "display_precision": 1,
         "electric": False,
     },
     {
@@ -513,6 +514,7 @@ SENSORS = [
         "feature": VehicleFeatures.TripDetailsB,
         "name": "Trip Details B",
         "unit": "MI_OR_KM",
+        "display_precision": 1,
         "electric": False,
     },
     {
