@@ -360,28 +360,6 @@ async def request_session(session=None):
         yield owned, False
 
 
-def _rest_auth_error(status, payload):
-    """Return whether a REST error response indicates a rejected access token."""
-    if status == 401:
-        return True
-    if status != 403 or not isinstance(payload, dict):
-        return False
-    candidates = [payload]
-    status_block = payload.get("status")
-    messages = status_block.get("messages") if isinstance(status_block, dict) else None
-    if isinstance(messages, list):
-        candidates.extend(item for item in messages if isinstance(item, dict))
-    for item in candidates:
-        for key in ("responseCode", "errorType", "code"):
-            if item.get(key) in ("APIGW-403", "APPSYNC-AUTH-403"):
-                return True
-        for key in ("message", "description", "detailedDescription"):
-            text = str(item.get(key, "")).strip().lower()
-            if text == "unauthorized" or "jwt expired" in text:
-                return True
-    return False
-
-
 async def _vehicle_health(self, endpoint, vin, generation, region, brand):
     """Return only the payload; Toyota can answer errors with a 2xx body and no payload."""
     body = await self.api_request(
@@ -1463,7 +1441,7 @@ class ToyotaOneClient:
                         except json.JSONDecodeError:
                             parsed_body = None
                         check_tokens = getattr(self.auth, "check_tokens", None)
-                        if _rest_auth_error(resp.status, parsed_body) and callable(check_tokens):
+                        if resp.status == 401 and callable(check_tokens):
                             if auth_retried:
                                 if auth_failure_raises_expired:
                                     raise TokenExpired(

@@ -936,44 +936,99 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(caught.exception.message, "Bad Request")
 
     async def test_rest_get_refreshes_rejected_token_once_and_retries(self):
-        for status, body in (
-            (401, {}),
-            (403, {"status": {"messages": [{"responseCode": "APIGW-403"}]}}),
-            (403, {"message": "jwt expired"}),
-        ):
-            with self.subTest(status=status, body=body):
-                self.session.request.reset_mock()
-                rejected = AsyncMock()
-                rejected.__aenter__.return_value = rejected
-                rejected.status = status
-                rejected.reason = "Unauthorized"
-                rejected.text.return_value = json.dumps(body)
-                rejected.raise_for_status = MagicMock(
-                    side_effect=aiohttp.ClientResponseError(MagicMock(), (), status=status)
-                )
-                ok = AsyncMock()
-                ok.__aenter__.return_value = ok
-                ok.status = 200
-                ok.json.return_value = {"payload": {"ok": True}}
-                self.session.request.side_effect = [rejected, ok]
+        rejected = AsyncMock()
+        rejected.__aenter__.return_value = rejected
+        rejected.status = 401
+        rejected.reason = "Unauthorized"
+        rejected.text.return_value = "{}"
+        rejected.raise_for_status = MagicMock(
+            side_effect=aiohttp.ClientResponseError(MagicMock(), (), status=401)
+        )
+        ok = AsyncMock()
+        ok.__aenter__.return_value = ok
+        ok.status = 200
+        ok.json.return_value = {"payload": {"ok": True}}
+        self.session.request.side_effect = [rejected, ok]
 
-                tokens = iter(["old-token", "new-token"])
+        tokens = iter(["old-token", "new-token"])
+        auth = types.SimpleNamespace(
+            get_access_token=AsyncMock(side_effect=lambda: next(tokens)),
+            get_guid=AsyncMock(return_value="guid"),
+            get_device_id=lambda: "device",
+            check_tokens=AsyncMock(),
+        )
+        client = ToyotaOneClient(auth=auth)
+        result = await client.api_get("v2/telemetry")
+
+        self.assertEqual({"ok": True}, result)
+        auth.check_tokens.assert_awaited_once_with(rejected_token="old-token")
+        self.assertEqual(2, self.session.request.call_count)
+        self.assertEqual(
+            "Bearer new-token",
+            self.session.request.call_args.kwargs["headers"]["AUTHORIZATION"],
+        )
+
+    async def test_rest_403_does_not_refresh_tokens_or_retry(self):
+        for body, expected_code in (
+            (
+                {
+                    "status": {
+                        "messages": [{"responseCode": "APIGW-403", "description": "Forbidden"}]
+                    }
+                },
+                "APIGW-403",
+            ),
+            (
+                {
+                    "status": {
+                        "messages": [
+                            {"responseCode": "APPSYNC-AUTH-403", "description": "Unauthorized"}
+                        ]
+                    }
+                },
+                "APPSYNC-AUTH-403",
+            ),
+            ({"message": "jwt expired"}, None),
+            ({"message": "Unauthorized"}, None),
+            (
+                {
+                    "status": {
+                        "messages": [
+                            {"responseCode": "RESOURCE-DENIED", "description": "Not entitled"}
+                        ]
+                    }
+                },
+                "RESOURCE-DENIED",
+            ),
+        ):
+            with self.subTest(body=body):
+                self.session.request.reset_mock()
+                forbidden = AsyncMock()
+                forbidden.__aenter__.return_value = forbidden
+                forbidden.status = 403
+                forbidden.reason = "Forbidden"
+                forbidden.text.return_value = json.dumps(body)
+                forbidden.raise_for_status = MagicMock(
+                    side_effect=aiohttp.ClientResponseError(
+                        MagicMock(), (), status=403, message="Forbidden"
+                    )
+                )
+                self.session.request.return_value = forbidden
                 auth = types.SimpleNamespace(
-                    get_access_token=AsyncMock(side_effect=lambda: next(tokens)),
+                    get_access_token=AsyncMock(return_value="valid-token"),
                     get_guid=AsyncMock(return_value="guid"),
                     get_device_id=lambda: "device",
                     check_tokens=AsyncMock(),
                 )
                 client = ToyotaOneClient(auth=auth)
-                result = await client.api_get("v2/telemetry")
 
-                self.assertEqual({"ok": True}, result)
-                auth.check_tokens.assert_awaited_once_with(rejected_token="old-token")
-                self.assertEqual(2, self.session.request.call_count)
-                self.assertEqual(
-                    "Bearer new-token",
-                    self.session.request.call_args.kwargs["headers"]["AUTHORIZATION"],
-                )
+                with self.assertRaises(aiohttp.ClientResponseError) as caught:
+                    await client.api_get("v2/legacy/remote/status")
+
+                self.assertEqual(403, caught.exception.status)
+                self.assertEqual(expected_code, getattr(caught.exception, "response_code", None))
+                auth.check_tokens.assert_not_awaited()
+                self.session.request.assert_called_once()
 
     async def test_rest_mutation_401_refreshes_without_replaying(self):
         rejected = AsyncMock()
