@@ -1,0 +1,1257 @@
+# serializer version: 1
+# name: test_client_request[get_climate_schedules]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/ac-reservation',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_climate_settings]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/climate-settings',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_electric_realtime_status]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'device-id': 'device-id',
+          'vin': 'VIN0000000000TEST',
+          'x-region': 'US',
+        }),
+        'method': 'POST',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v2/electric/realtime-status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_electric_status]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v3/electric/status',
+      }),
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v2/electric/status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_engine_status_17cy]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/legacy/remote/engine-status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_engine_status_17cyplus]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'vin': 'VIN0000000000TEST',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/global/remote/engine-status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_engine_status_21mm]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/engine-status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_engine_status_route]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/engine-status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_notification_history]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'GUID': 'account-guid',
+          'User-Agent': 'okhttp/5.3.2',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v2/notification/history',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_service_campaigns]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'vin': 'VIN0000000000TEST',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v2/service-campaign',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_software_update]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APIVERSION': 'v1',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'vin': 'VIN0000000000TEST',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oa24mm/v1/ota/update/check',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_telemetry]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'GENERATION': '21MM',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v2/telemetry',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_tire_pressure]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'GENERATION': '21MM',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/telemetry/tires/pressure',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_user_vehicle_list]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v2/vehicle/guid',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_vehicle_health_report]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'GENERATION': '21MM',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/vehiclehealth/report',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_vehicle_health_status]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'GENERATION': '21MM',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/vehiclehealth/status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_vehicle_status_17cy]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v2/legacy/remote/status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_vehicle_status_17cyplus]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'vin': 'VIN0000000000TEST',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/global/remote/status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_vehicle_status_21mm]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[get_vehicle_status_route]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': None,
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'GET',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[graphql_confirm_subscription]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'operationName': 'ConfirmSubscriptionStatus',
+          'query': '''
+            mutation ConfirmSubscriptionStatus($vin: String!, $backdoorType: String!) {
+              confirmSubscriptionActive(vin: $vin, payload: {
+                vehicleCapabilities: { backdoorType: $backdoorType }
+              }) { vin }
+            }
+          ''',
+          'variables': dict({
+            'backdoorType': 'hatch',
+            'vin': 'VIN0000000000TEST',
+          }),
+        }),
+        'headers': dict({
+          'Authorization': 'Bearer access-token',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'backdoorType': 'hatch',
+          'vin': 'VIN0000000000TEST',
+          'x-api-key': 'da2-zgeayo2qh5eo7cj6pmdwhwugze',
+          'x-channel': 'ONEAPP',
+          'x-deviceid': 'device-id',
+          'x-guid': 'account-guid',
+          'x-region': 'US',
+          'x-resolver-api-key': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+        }),
+        'method': 'POST',
+        'url': 'https://oa-api.telematicsct.com/graphql',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[graphql_get_vehicle_status]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'operationName': 'GetVehicleStatus',
+          'query': '''
+            query GetVehicleStatus($vin: String!) { getVehicleStatus(vin: $vin) {
+                vin lastUpdateDateTime
+                vehicleState {
+                  lastUpdateDateTime driverPosition
+                  doors {
+                    driverSide { lock { status } position { status } }
+                    passengerSide { lock { status } position { status } }
+                    rearDriverSide { lock { status } position { status } }
+                    rearPassengerSide { lock { status } position { status } }
+                  }
+                  windows {
+                    driverSide { position { status } }
+                    passengerSide { position { status } }
+                    rearDriverSide { position { status } }
+                    rearPassengerSide { position { status } }
+                  }
+                  hatch { lock { status } position { status } }
+                  hood { position { status } }
+                  glassHatch { position { status } }
+                  moonroof { position { status } }
+                  trunk { lock { status } position { status } }
+                  tailgate { lock { status } position { status } }
+                  tires {
+                    frontLeft { psi kpa bar displayLowTirePressureWarning }
+                    frontRight { psi kpa bar displayLowTirePressureWarning }
+                    rearLeft { psi kpa bar displayLowTirePressureWarning }
+                    rearRight { psi kpa bar displayLowTirePressureWarning }
+                    spare { psi kpa bar displayLowTirePressureWarning }
+                    lastUpdateDateTime
+                  }
+                  engine { running lastUpdateDateTime status startTime stopTime lastUpdateBy }
+                }
+                tripdetails {
+                  lastUpdateDateTime
+                  tripA { value unit }
+                  tripB { value unit }
+                  tripCount { value unit }
+                }
+                location { latitude longitude lastUpdateDateTime }
+                telemetry {
+                  lastUpdateDateTime
+                  odo { unit value }
+                  fugage { unit value }
+                  range { unit value }
+                  totalAverageFuelConsumption { unit value }
+                  averageFuelConsumptionSinceStart { unit value }
+                }
+                electric {
+                  lastUpdateDateTime
+                  battery {
+                    chargeRemainingAmount { unit value }
+                    powerSupplyPossibleTime { unit value }
+                    travelableDistance { unit value }
+                    travelableDistanceAC { unit value }
+                    plugInEnergy { unit value }
+                    stateOfChargeDisplay { unit value }
+                  }
+                  charging {
+                    chargeType chargingStatus chargingState
+                    remainingChargeTime { unit value }
+                    remainingChargeTimeTo80Percent { unit value }
+                    actualChargingRate { unit value }
+                    connector { status plugInInfo plugStatus }
+                    chargeSettings {
+                      schedules {
+                        enabled settingId startTime endTime daysOfTheWeek status nextChargeSettingId
+                      }
+                      targetLimit { value unit }
+                      maxACCurrent { value setting }
+                      maxDCPower { value setting }
+                      electricSupplyModeLimit { value setting }
+                      electricSupplyLimitFunction
+                      acCurrentSelections { key enabled }
+                      dcPowerSelections { key enabled }
+                      electricSupplyLimitSelections { key enabled }
+                      lastUpdateDateTime
+                    }
+                    limitSelectionValues
+                    lastUpdateDateTime
+                  }
+                  gasoline {
+                    powerSupplyPossibleTime { unit value }
+                    travelableDistance { unit value }
+                  }
+                }
+            } }
+          ''',
+          'variables': dict({
+            'vin': 'VIN0000000000TEST',
+          }),
+        }),
+        'headers': dict({
+          'Authorization': 'Bearer access-token',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'backdoorType': 'hatch',
+          'vin': 'VIN0000000000TEST',
+          'x-api-key': 'da2-zgeayo2qh5eo7cj6pmdwhwugze',
+          'x-channel': 'ONEAPP',
+          'x-deviceid': 'device-id',
+          'x-guid': 'account-guid',
+          'x-region': 'US',
+          'x-resolver-api-key': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+        }),
+        'method': 'POST',
+        'url': 'https://oa-api.telematicsct.com/graphql',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[graphql_pre_wake]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'operationName': 'SendPreWakeCommand',
+          'query': '''
+            mutation SendPreWakeCommand($guid: String!) {
+              postPreWake(guid: $guid) {
+                timestamp
+                status { messages { responseCode } }
+              }
+            }
+          ''',
+          'variables': dict({
+            'guid': 'guid',
+          }),
+        }),
+        'headers': dict({
+          'Authorization': 'Bearer access-token',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'vin': '',
+          'x-api-key': 'da2-zgeayo2qh5eo7cj6pmdwhwugze',
+          'x-channel': 'ONEAPP',
+          'x-deviceid': 'device-id',
+          'x-guid': 'account-guid',
+          'x-region': 'US',
+          'x-resolver-api-key': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+        }),
+        'method': 'POST',
+        'url': 'https://oa-api.telematicsct.com/graphql',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[graphql_refresh_status]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'operationName': 'RefreshVehicleStatus',
+          'query': '''
+            mutation RefreshVehicleStatus($vin: String!) {
+              postRefreshStatus(vin: $vin) {
+                payload { correlationId appRequestNo }
+                status { messages { responseCode description } }
+                timestamp
+              }
+            }
+          ''',
+          'variables': dict({
+            'vin': 'VIN0000000000TEST',
+          }),
+        }),
+        'headers': dict({
+          'Authorization': 'Bearer access-token',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'vin': 'VIN0000000000TEST',
+          'x-api-key': 'da2-zgeayo2qh5eo7cj6pmdwhwugze',
+          'x-channel': 'ONEAPP',
+          'x-deviceid': 'device-id',
+          'x-guid': 'account-guid',
+          'x-region': 'US',
+          'x-resolver-api-key': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+        }),
+        'method': 'POST',
+        'url': 'https://oa-api.telematicsct.com/graphql',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[graphql_send_remote_command]
+  dict({
+    'outcome': 'raised RuntimeError: Toyota did not return a correlation ID for the remote command.',
+    'requests': list([
+      dict({
+        'body': dict({
+          'operationName': 'SendRemoteCommand',
+          'query': '''
+            mutation SendRemoteCommand($command: String!, $autoFixCommands: [String]!) {
+              executeRemoteCommand(commandInputBody: {
+                command: $command
+                autofixCommands: $autoFixCommands
+              }) {
+                payload { requestNo correlationId returnCode }
+                status { messages { responseCode description detailedDescription } }
+              }
+            }
+          ''',
+          'variables': dict({
+            'autoFixCommands': list([
+            ]),
+            'command': 'door-lock',
+          }),
+        }),
+        'headers': dict({
+          'Authorization': 'Bearer access-token',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'vin': 'VIN0000000000TEST',
+          'x-api-key': 'da2-zgeayo2qh5eo7cj6pmdwhwugze',
+          'x-channel': 'ONEAPP',
+          'x-deviceid': 'device-id',
+          'x-guid': 'account-guid',
+          'x-region': 'US',
+          'x-resolver-api-key': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+        }),
+        'method': 'POST',
+        'url': 'https://oa-api.telematicsct.com/graphql',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[remote_request_17cy]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'command': dict({
+            'code': 'door-lock',
+            'value': 1,
+          }),
+          'deviceId': 'device-id',
+          'deviceType': 'Android',
+          'guid': 'account-guid',
+          'vin': 'VIN0000000000TEST',
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'POST',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/legacy/remote/command',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[remote_request_17cyplus]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'command': 'door-lock',
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'POST',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/global/remote/command',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[remote_request_21mm]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'autoFixPopup': False,
+          'command': 'door-lock',
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'POST',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/command',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[remote_request_route]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'autoFixPopup': False,
+          'command': 'door-lock',
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'POST',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/command',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[send_refresh_request_17cy]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'deviceId': 'device-id',
+          'deviceType': 'Android',
+          'guid': 'account-guid',
+          'vin': 'VIN0000000000TEST',
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'POST',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/legacy/remote/refresh-status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[send_refresh_request_17cyplus]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'deviceId': 'device-id',
+          'guid': 'account-guid',
+          'vin': 'VIN0000000000TEST',
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'POST',
+        'url': 'https://onecdn.telematicsct.com/oneapi/v1/global/remote/refresh-status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[send_refresh_request_21mm]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'autoFixPopup': False,
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'T',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'POST',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/refresh-status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[send_refresh_request_route]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'autoFixPopup': False,
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'POST',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/refresh-status',
+      }),
+    ]),
+  })
+# ---
+# name: test_client_request[update_climate_settings]
+  dict({
+    'outcome': 'returned',
+    'requests': list([
+      dict({
+        'body': dict({
+          'acOperations': list([
+          ]),
+        }),
+        'headers': dict({
+          'AUTHORIZATION': 'Bearer access-token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'okhttp/5.3.2',
+          'VIN': 'VIN0000000000TEST',
+          'X-API-KEY': 'pypIHG015k4ABHWbcI4G0a94F7cC0JDo1OynpAsG',
+          'X-APPBRAND': 'T',
+          'X-APPVERSION': '3.5.0',
+          'X-BRAND': 'L',
+          'X-CHANNEL': 'ONEAPP',
+          'X-DEVICE-TIMEZONE': 'PST',
+          'X-GENERATION': '21MM',
+          'X-GUID': 'account-guid',
+          'X-LOCALE': 'en-US',
+          'X-OSNAME': 'Android',
+          'X-OSVERSION': '14',
+          'x-region': 'US',
+        }),
+        'method': 'PUT',
+        'url': 'https://onecdn.telematicsct.com/v1/remote/route/climate-settings',
+      }),
+    ]),
+  })
+# ---
