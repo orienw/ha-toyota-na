@@ -21,6 +21,7 @@ from .climate_helpers import apply_climate_changes
 from .climate_schedule_helpers import build_climate_schedule, climate_schedule_matches
 from .exceptions import AuthError
 from .vehicle_helpers import (
+    app_int,
     backdoor_candidates,
     can_extend_remote_runtime,
     first_capability,
@@ -1083,6 +1084,8 @@ class ToyotaVehicle:
         if value in (65535, "65535") and feature in (
             VehicleFeatures.RemainingChargeTime,
             VehicleFeatures.RemainingChargeTimeTo80,
+            VehicleFeatures.BatteryPowerSupplyTime,
+            VehicleFeatures.GasolinePowerSupplyTime,
         ):
             value = None
         self._features[feature] = Measurement(value, unit)
@@ -1364,7 +1367,7 @@ class ToyotaVehicle:
                 self._store_numeric(
                     feature,
                     measurement.get("value"),
-                    measurement.get("unit", default_unit),
+                    measurement.get("unit") or default_unit,
                     telemetry_observed_at,
                 )
 
@@ -1381,7 +1384,7 @@ class ToyotaVehicle:
             self._store_numeric(
                 feature,
                 trip.get("value"),
-                trip.get("unit", ""),
+                trip.get("unit") or "",
                 trip_observed_at,
             )
 
@@ -1412,7 +1415,7 @@ class ToyotaVehicle:
             self._store_numeric(
                 VehicleFeatures.ChargeLevel,
                 charge_level.get("value"),
-                charge_level.get("unit", "%"),
+                charge_level.get("unit") or "%",
                 battery_observed_at,
             )
 
@@ -1420,7 +1423,7 @@ class ToyotaVehicle:
         self._store_numeric(
             VehicleFeatures.ChargeDistance,
             electric_range.get("value"),
-            electric_range.get("unit", ""),
+            electric_range.get("unit") or "",
             battery_observed_at,
         )
 
@@ -1428,7 +1431,7 @@ class ToyotaVehicle:
         self._store_numeric(
             VehicleFeatures.ChargeDistanceAC,
             electric_range_ac.get("value"),
-            electric_range_ac.get("unit", ""),
+            electric_range_ac.get("unit") or "",
             battery_observed_at,
         )
 
@@ -1442,7 +1445,7 @@ class ToyotaVehicle:
             self._store_numeric(
                 feature,
                 measurement.get("value"),
-                measurement.get("unit", ""),
+                measurement.get("unit") or "",
                 parse_api_timestamp(source.get("lastUpdateDateTime")) or observed_at,
             )
 
@@ -1474,7 +1477,7 @@ class ToyotaVehicle:
             self._store_numeric(
                 feature,
                 measurement.get("value"),
-                measurement.get("unit", ""),
+                measurement.get("unit") or "",
                 charging_observed_at,
             )
         settings = charging.get("chargeSettings") or {}
@@ -1494,7 +1497,7 @@ class ToyotaVehicle:
         self._store_numeric(
             VehicleFeatures.ChargeTargetLimit,
             target.get("value"),
-            target.get("unit", "%"),
+            target.get("unit") or "%",
             settings_observed_at,
         )
 
@@ -1574,12 +1577,12 @@ class ToyotaVehicle:
                 feature = self._TELEMETRY_OPENINGS[key]
                 if (
                     self._window_telemetry
-                    and type(value) is int
-                    and value in (1, 2)
+                    and app_int(value) in (1, 2)
                     and feature not in self._status_openings
                 ):
                     # Only fill openings that have never been reported by vehicle status.
-                    self._store_opening(feature, closed=(value == 2), locked=None)
+                    # The app reads rear windows as text and the others as numbers.
+                    self._store_opening(feature, closed=(app_int(value) == 2), locked=None)
                 continue
 
             feature = self._vehicle_telemetry_map.get(key)
@@ -1591,7 +1594,7 @@ class ToyotaVehicle:
                     self._store_numeric(
                         feature,
                         value["value"],
-                        value.get("unit", ""),
+                        value.get("unit") or "",
                         feature_observed_at,
                     )
                 else:

@@ -86,3 +86,21 @@ def test_unitless_reading_keeps_the_last_known_unit():
 
     vehicle._parse_telemetry({"odometer": {"value": 2000, "unit": "km"}})
     assert vehicle.features[VehicleFeatures.Odometer] == Measurement(2000, "km")
+
+
+def test_null_unit_uses_the_default_unit():
+    from common import make_24mm_vehicle
+
+    from custom_components.toyota_na.vehicle import VehicleFeatures
+
+    vehicle = make_24mm_vehicle()
+    vehicle.apply_graphql_status(
+        {
+            "electric": {
+                "battery": {"chargeRemainingAmount": {"value": 60, "unit": None}},
+                "charging": {"chargeSettings": {"targetLimit": {"value": 80, "unit": None}}},
+            }
+        }
+    )
+    assert vehicle.features[VehicleFeatures.ChargeLevel] == Measurement(60, "%")
+    assert vehicle.features[VehicleFeatures.ChargeTargetLimit] == Measurement(80, "%")

@@ -818,6 +818,25 @@ class VehicleStateTests(unittest.TestCase):
         vehicle.apply_graphql_status({"telemetry": {"odo": {"value": 65535, "unit": "mi"}}})
         self.assertEqual(vehicle.features[VehicleFeatures.Odometer].value, 65535)
 
+    def test_appsync_unavailable_power_supply_times_have_no_value(self):
+        # The app shows 65535 power supply minutes as blank, as it does charge times.
+        vehicle = make_24mm_vehicle()
+        for value, expected in ((90, 90), (65535, None), ("65535", None)):
+            time = {"value": value, "unit": "min"}
+            vehicle.apply_graphql_status(
+                {
+                    "electric": {
+                        "battery": {"powerSupplyPossibleTime": time},
+                        "gasoline": {"powerSupplyPossibleTime": time},
+                    }
+                }
+            )
+            for key in (
+                VehicleFeatures.BatteryPowerSupplyTime,
+                VehicleFeatures.GasolinePowerSupplyTime,
+            ):
+                self.assertEqual(vehicle.features[key].value, expected)
+
     def test_partial_electric_status_preserves_existing_values(self):
         for make in (make_vehicle, make_17cy_vehicle):
             vehicle = make()
@@ -1508,14 +1527,15 @@ class VehicleStateTests(unittest.TestCase):
             vehicle._parse_telemetry({key: 0 for key in openings})
             for feature in openings.values():
                 self.assertNotIn(feature, vehicle.features)
-            # Values other than 1 (open) and 2 (closed) keep the last reading.
+            # Values other than 1 (open) and 2 (closed), as numbers or text, keep the last reading.
             for value, closed in (
                 (1, False),
                 (2, True),
                 (True, True),
                 (3, True),
-                ("1", True),
-                ({}, True),
+                ("1", False),
+                ({}, False),
+                ("2", True),
             ):
                 vehicle._parse_telemetry(
                     {"lastTimestamp": "2026-10-31T00:07:38Z", **{key: value for key in openings}}
