@@ -46,6 +46,7 @@ TO_REDACT = {
     "imei",
     "emergencyContact",
     "nickName",
+    "vehicleName",
     "parkingNotes",
     "euiccid",
     "vehicleUnitTerminalNumber",

@@ -114,18 +114,24 @@ async def test_personal_and_device_details_are_redacted(diagnostics):
             }
         ],
         graphql_get_vehicle_status={},
-        get_telemetry={"parkingNotes": parking_notes},
+        get_telemetry={"parkingNotes": parking_notes, "vehicleName": "Test vehicle name"},
     )
 
     serialized = json.dumps(result)
-    for value in (*contact.values(), *private.values(), *dcm.values(), parking_notes):
+    for value in (
+        *contact.values(),
+        *private.values(),
+        *dcm.values(),
+        parking_notes,
+        "Test vehicle name",
+    ):
         assert value not in serialized
     vehicle = result["vehicle_list"]["data"][0]
     assert vehicle["emergencyContact"] == REDACTED
     for key in private:
         assert vehicle[key] == REDACTED
     assert vehicle["dcm"] == dict.fromkeys(dcm, REDACTED)
-    assert result["telemetry"]["data"] == [{"parkingNotes": REDACTED}]
+    assert result["telemetry"]["data"] == [{"parkingNotes": REDACTED, "vehicleName": REDACTED}]
     for key, value in descriptive.items():
         assert vehicle[key] == value
 
