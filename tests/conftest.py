@@ -9,6 +9,8 @@ from common import FakeClient, FakeWebSocket, account_entry, set_up
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.syrupy import HomeAssistantSnapshotExtension
+from syrupy.assertion import SnapshotAssertion
 
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.wake_policy import CONF_WAKE_INTERVAL
@@ -17,6 +19,12 @@ from custom_components.toyota_na.wake_policy import CONF_WAKE_INTERVAL
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Let Home Assistant load the integration from custom_components."""
+
+
+@pytest.fixture
+def snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
+    """Store snapshots in tests/snapshots on every supported Home Assistant version."""
+    return snapshot.use_extension(HomeAssistantSnapshotExtension)
 
 
 @dataclass
