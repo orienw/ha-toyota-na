@@ -66,6 +66,13 @@ class Socket:
         if frame["type"] == "connection_init":
             self._put({"type": "connection_ack", "payload": {"connectionTimeoutMs": 300_000}})
         elif frame["type"] == "start":
+            authorization = frame["payload"]["extensions"]["authorization"]
+            if authorization["Authorization"] != f"Bearer {self._cloud.access_token}":
+                # AppSync's subscription error, with the type Toyota's app treats as a
+                # rejected token. Not observed from Toyota.
+                error = {"errorType": "APPSYNC-AUTH-403", "message": "Unauthorized"}
+                self._put({"type": "error", "id": frame["id"], "payload": {"errors": [error]}})
+                return
             vin = json.loads(frame["payload"]["data"])["variables"]["vin"]
             self._cloud.subscriptions[vin] = frame["id"]
             self._put({"type": "start_ack", "id": frame["id"]})
