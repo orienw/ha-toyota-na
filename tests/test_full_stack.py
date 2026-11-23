@@ -4,53 +4,15 @@ Other integration tests replace the client, vehicles or WebSocket handler. These
 so they catch the seams between those parts: sign-in recovery, reauthentication and live updates.
 """
 
-from contextlib import ExitStack
-from unittest.mock import patch
-
 import payloads
 import pytest
-from common import account_entry, entity_id, set_up
-from homeassistant.config_entries import ConfigEntryState
+from common import entity_id
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
-from toyota_cloud import ToyotaCloud
-
-from custom_components.toyota_na.const import DOMAIN
-from custom_components.toyota_na.wake_policy import CONF_WAKE_INTERVAL
 
 APPSYNC_EV = payloads.vehicle_entry("24MM", True)
 APPSYNC_GAS = payloads.vehicle_entry("24MM", False)
 REST_GAS = payloads.vehicle_entry("21MM", False)
 LEGACY_GAS = payloads.vehicle_entry("17CY", False)
-
-
-@pytest.fixture
-async def toyota(hass, caplog):
-    """Set up an account against a fake cloud serving the given vehicles."""
-    hass.config.units = US_CUSTOMARY_SYSTEM
-    with ExitStack() as stack:
-
-        async def setup(vehicles):
-            cloud = ToyotaCloud(vehicles)
-            stack.enter_context(
-                patch(
-                    "custom_components.toyota_na.async_create_clientsession",
-                    return_value=cloud.session,
-                )
-            )
-            for module in ("", ".button", ".lock"):
-                stack.enter_context(
-                    patch(f"custom_components.toyota_na{module}.COMMAND_REFRESH_DELAY", 0)
-                )
-            entry = account_entry(options={CONF_WAKE_INTERVAL: 0})
-            entry.add_to_hass(hass)
-            await set_up(hass, entry, caplog)
-            return cloud, entry
-
-        yield setup
-        for entry in hass.config_entries.async_entries(DOMAIN):
-            if entry.state is ConfigEntryState.LOADED:
-                assert await hass.config_entries.async_unload(entry.entry_id)
 
 
 def odometer(hass, vehicle):

@@ -230,6 +230,18 @@ def graphql_status(step: int, vehicle_vin: str | None = None, *, windows: bool =
     return status
 
 
+def climate_schedules() -> dict:
+    """`ac-reservation` with no saved schedules."""
+    return {
+        "returnCode": "ONE-RES-10000",
+        "temperatureUnit": "F",
+        "minTemp": 65,
+        "maxTemp": 85,
+        "tempInterval": 1,
+        "airConditioningReservation": [],
+    }
+
+
 def health_report() -> dict:
     return {"vehicleStatus": {"engOilLevelStatus": "Normal"}}
 

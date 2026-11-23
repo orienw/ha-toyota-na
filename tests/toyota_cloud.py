@@ -251,5 +251,17 @@ class ToyotaCloud:
             return payloads.tire_pressure(0, vin)
         if path.endswith("/notification/history"):
             return [{"vin": vehicle["vin"], "notifications": []} for vehicle in self.vehicles]
-        # Settings, schedules, health and command acknowledgements: accepted, nothing to report.
+        if path.endswith("/electric/status"):
+            return payloads.electric_status(0)
+        if method == "GET" and path.endswith("/remote/route/ac-reservation"):
+            return payloads.climate_schedules()
+        for ending, response in (
+            ("/vehiclehealth/report", payloads.health_report),
+            ("/vehiclehealth/status", payloads.health_status),
+            ("/service-campaign", payloads.service_campaigns),
+            ("/ota/update/check", payloads.software_update),
+        ):
+            if path.endswith(ending):
+                return response()
+        # Settings and command acknowledgements: accepted, nothing to report.
         return None
