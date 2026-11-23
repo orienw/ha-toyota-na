@@ -8,6 +8,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 from common import EMAIL, STATUS_24MM, FakeClient, FakeWebSocket, account_entry, set_up, settle
+from ha_helpers import async_fire_time_changed
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import UnitOfLength
 from homeassistant.data_entry_flow import FlowResultType
@@ -15,7 +16,6 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import DistanceConverter
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.toyota_na.const import CONF_WINDOW_TELEMETRY, DOMAIN
 from custom_components.toyota_na.exceptions import TokenExpired

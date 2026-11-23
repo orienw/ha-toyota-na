@@ -2,6 +2,8 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+# Home Assistant must alias httpx before respx imports it; only respx's pytest plugin is off.
+addopts = "-p no:respx"
 
 [tool.ruff]
 target-version = "py314"

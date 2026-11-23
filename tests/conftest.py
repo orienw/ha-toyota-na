@@ -6,10 +6,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from common import FakeClient, FakeWebSocket, account_entry, set_up
+from ha_helpers import HomeAssistantSnapshotExtension, MockConfigEntry
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.syrupy import HomeAssistantSnapshotExtension
 from syrupy.assertion import SnapshotAssertion
 
 from custom_components.toyota_na.const import DOMAIN

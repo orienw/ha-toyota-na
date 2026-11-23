@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 from common import entity_id, get_entity, make_24mm_vehicle
+from ha_helpers import async_fire_time_changed
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.toyota_na import lock as lock_module
 from custom_components.toyota_na.vehicle import VehicleFeatures

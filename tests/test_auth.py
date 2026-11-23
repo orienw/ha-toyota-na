@@ -17,10 +17,10 @@ import aiohttp
 import jwt
 import pytest
 from common import FakeVehicle, account_entry
+from ha_helpers import MockConfigEntry
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.toyota_na import auth as auth_module
 from custom_components.toyota_na import config_flow

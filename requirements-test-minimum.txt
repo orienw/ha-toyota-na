@@ -1,0 +1,4 @@
+# The minimum supported Home Assistant, whose test helpers were a separate project.
+homeassistant==2026.8.0
+pytest-homeassistant-custom-component==0.13.354
+ruff==0.16.6

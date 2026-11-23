@@ -7,12 +7,12 @@ from datetime import timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+from ha_helpers import MockConfigEntry, async_fire_time_changed
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_component import DATA_INSTANCES
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.vehicle import (

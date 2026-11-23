@@ -4,9 +4,9 @@ import logging
 
 import pytest
 from common import FakeVehicle
+from ha_helpers import MockConfigEntry
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import UpdateFailed
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.remote_access import sync_remote_access_issues

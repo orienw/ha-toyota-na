@@ -6,10 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 import pytest
 from common import FakeVehicle
+from ha_helpers import get_diagnostics_for_config_entry
 from homeassistant.components.diagnostics import REDACTED
-from pytest_homeassistant_custom_component.components.diagnostics import (
-    get_diagnostics_for_config_entry,
-)
 
 
 @pytest.fixture

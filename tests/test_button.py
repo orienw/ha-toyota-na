@@ -6,16 +6,13 @@ from unittest.mock import patch
 
 import pytest
 from common import FakeClient, FakeVehicle, FakeWebSocket, account_entry, entity_id, set_up, settle
+from ha_helpers import async_capture_events, async_fire_time_changed
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import UnitOfPressure
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
-from pytest_homeassistant_custom_component.common import (
-    async_capture_events,
-    async_fire_time_changed,
-)
 
 from custom_components.toyota_na.const import CONF_WINDOW_TELEMETRY, DOMAIN
 from custom_components.toyota_na.vehicle import (

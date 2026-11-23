@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from common import FakeVehicle, entity_id, make_17cy_vehicle, make_vehicle
+from ha_helpers import async_fire_time_changed
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.toyota_na import command_refresh
 from custom_components.toyota_na.const import DOMAIN

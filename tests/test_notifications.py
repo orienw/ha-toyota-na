@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from common import LEXUS_21MM_COUPE, FakeVehicle, entity_id
+from ha_helpers import async_capture_events
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.toyota_na import client as client_module
 from custom_components.toyota_na import event

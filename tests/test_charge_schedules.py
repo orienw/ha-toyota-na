@@ -11,10 +11,10 @@ import aiohttp
 import pytest
 import voluptuous as vol
 from common import entity_id, make_17cy_vehicle, make_24mm_vehicle, set_up
+from ha_helpers import MockConfigEntry, async_capture_events
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
 from custom_components.toyota_na import client as client_module
 from custom_components.toyota_na import vehicle as vehicle_module
