@@ -58,7 +58,9 @@ class RecordingClient:
         generation, electric = scenario["generation"], scenario["electric"]
         failing = step and scenario["status_fails_second_poll"]
         if name == "get_user_vehicle_list":
-            return [payloads.vehicle_entry(generation, electric)]
+            return [
+                payloads.vehicle_entry(generation, electric, capabilities=scenario["capabilities"])
+            ]
         if name == "get_telemetry":
             return payloads.telemetry(step)
         if name.startswith("get_vehicle_status"):
@@ -78,7 +80,7 @@ class RecordingClient:
         if name in ("get_electric_status", "get_electric_realtime_status"):
             return payloads.electric_status(step)
         if name == "get_tire_pressure":
-            return {"tirePressure": [], "unit": "psi"}
+            return payloads.tire_pressure(step, payloads.vin(generation, electric))
         if name == "get_vehicle_health_report":
             return payloads.health_report()
         if name == "get_vehicle_health_status":
@@ -154,6 +156,7 @@ def scenario(generation, electric, **changes):
         "status_timestamped": True,
         "status_fails_second_poll": False,
         "status_windows": True,
+        "capabilities": True,
         **changes,
     }
 
@@ -173,6 +176,8 @@ SCENARIOS = [
         scenario(generation, False, window_telemetry=True)
         for generation in ("17CY", "21MM", "NG86", "24MM")
     ),
+    # What a vehicle is offered when Toyota reports no capabilities or features for it.
+    *(scenario(*vehicle, capabilities=False) for vehicle in VEHICLES),
 ]
 
 
@@ -184,6 +189,8 @@ def scenario_id(scenario):
         parts.append("untimestamped")
     if scenario["status_fails_second_poll"]:
         parts.append("statusfails")
+    if not scenario["capabilities"]:
+        parts.append("nocapabilities")
     return "-".join(parts)
 
 

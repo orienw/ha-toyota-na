@@ -241,7 +241,7 @@ class ToyotaCloud:
         if path.endswith(("/remote/engine-status", "/remote/route/engine-status")):
             return copy.deepcopy(self.engine_status[vin])
         if path.endswith("/telemetry/tires/pressure"):
-            return {"tirePressure": [], "unit": "psi"}
+            return payloads.tire_pressure(0, vin)
         if path.endswith("/notification/history"):
             return [{"vin": vehicle["vin"], "notifications": []} for vehicle in self.vehicles]
         # Settings, schedules, health and command acknowledgements: accepted, nothing to report.

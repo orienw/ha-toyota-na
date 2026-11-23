@@ -67,9 +67,14 @@ def vin(generation: str, electric: bool) -> str:
     return f"VIN{generation:0>13}{'E' if electric else 'G'}"
 
 
-def vehicle_entry(generation: str, electric: bool) -> dict:
-    """One vehicle from `v2/vehicle/guid`."""
-    return {
+def vehicle_entry(generation: str, electric: bool, *, capabilities: bool = True) -> dict:
+    """One vehicle from `v2/vehicle/guid`.
+
+    Every capability and feature is on, to reach each request a generation can send. That is
+    more than Toyota reports for any one vehicle. Without capabilities, the entry has none of
+    those models, like the older payloads that omit them.
+    """
+    entry = {
         "vin": vin(generation, electric),
         "generation": generation,
         "brand": "T",
@@ -79,12 +84,16 @@ def vehicle_entry(generation: str, electric: bool) -> dict:
         "remoteSubscriptionStatus": "ACTIVE",
         "evVehicle": electric,
         "backdoorType": "hatch",
-        "remoteServiceCapabilities": dict(CAPABILITIES),
-        "extendedCapabilities": dict(CAPABILITIES),
-        "features": dict(FEATURES),
-        "capabilities": [{"name": "remoteStart", "value": True}],
         "remoteDisplay": 0,
     }
+    if capabilities:
+        entry |= {
+            "remoteServiceCapabilities": dict(CAPABILITIES),
+            "extendedCapabilities": dict(CAPABILITIES),
+            "features": dict(FEATURES),
+            "capabilities": [{"name": "remoteStart", "value": True}],
+        }
+    return entry
 
 
 def rest_status(step: int, *, timestamped: bool = True, windows: bool = True) -> dict:
@@ -163,6 +172,23 @@ def telemetry(step: int) -> dict:
         "rrWindow": "2",
         "sunRoof": 1,
         "vehicleLocation": {"latitude": 34.0, "longitude": -118.0},
+    }
+
+
+def tire_pressure(step: int, vehicle_vin: str) -> dict:
+    """`v1/telemetry/tires/pressure`: newer than telemetry, and one tire goes low on step two."""
+
+    def tire(value, low=False):
+        return {"value": value, "unit": "psi", "displayLowTirePressureWarning": low}
+
+    return {
+        "vin": vehicle_vin,
+        "tirePressureTimestamp": f"2026-09-15T12:0{step}:30Z",
+        "flTirePressure": tire(36 - 8 * step, low=bool(step)),
+        "frTirePressure": tire(36),
+        "rlTirePressure": tire(34),
+        "rrTirePressure": tire(34),
+        "spareTirePressure": tire(60),
     }
 
 

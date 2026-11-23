@@ -94,6 +94,13 @@ async def test_rest_vehicle_reads_into_entities(hass, toyota):
     door = entity_id(hass, "binary_sensor", f"{REST_GAS['vin']}.Front Driver Door")
     assert hass.states.get(door).state == "off"
     assert cloud.requested("/v1/remote/route/status")
+    # The tire endpoint's newer reading replaces telemetry's 240 kPa.
+    tire = entity_id(hass, "sensor", f"{REST_GAS['vin']}.Front Driver Tire")
+    assert hass.states.get(tire).state == "36"
+    warning = entity_id(
+        hass, "binary_sensor", f"{REST_GAS['vin']}.Front Driver Tire Pressure Warning"
+    )
+    assert hass.states.get(warning).state == "off"
 
     cloud.rest_status[REST_GAS["vin"]] = payloads.rest_status(1)
     cloud.telemetry[REST_GAS["vin"]] = payloads.telemetry(1)
