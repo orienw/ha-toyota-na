@@ -1,5 +1,7 @@
 """Readable sensor states retain the existing entity IDs."""
 
+from datetime import UTC, datetime
+
 import pytest
 from common import FakeVehicle, entity_id
 from homeassistant.components.sensor import SensorDeviceClass
@@ -9,7 +11,7 @@ from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 
 from custom_components.toyota_na.const import DOMAIN
 from custom_components.toyota_na.vehicle import VehicleFeatures as F
-from custom_components.toyota_na.vehicle_values import Measurement
+from custom_components.toyota_na.vehicle_values import Measurement, RemoteStart
 
 SENSORS = (
     "Plug Status",
@@ -345,3 +347,24 @@ async def test_display_units_follow_the_unit_system_only_for_new_entities(
         assert state.attributes["unit_of_measurement"] == unit, name
         assert float(state.state) == pytest.approx(value, abs=0.01), name
         assert "device_class" in state.attributes, name
+
+
+async def test_remote_start_counts_down_only_while_running(hass, setup_vehicles, freezer):
+    freezer.move_to("2026-10-23T12:00:00Z")
+    started = datetime(2026, 10, 23, 11, 55, tzinfo=UTC)
+    vehicle = FakeVehicle([])
+    vehicle.features[F.RemoteStartStatus] = RemoteStart(True, 10, started)
+    account = await setup_vehicles([vehicle])
+    sensor = entity_id(hass, "binary_sensor", "TESTVIN.Remote Start")
+
+    def attributes(remote):
+        vehicle.features[F.RemoteStartStatus] = remote
+        account.coordinator.async_update_listeners()
+        return hass.states.get(sensor).attributes
+
+    assert hass.states.get(sensor).attributes["minutes_remaining"] == 5
+    # A poll can lag the end of a session.
+    assert attributes(RemoteStart(True, 3, started))["minutes_remaining"] == 0
+    finished = attributes(RemoteStart(False, 10, started))
+    assert "minutes_remaining" not in finished
+    assert finished["total_runtime"] == 10

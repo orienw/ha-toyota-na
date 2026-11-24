@@ -135,12 +135,15 @@ class ToyotaBinarySensor(ToyotaNABaseEntity, BinarySensorEntity):
                 and remote_start.time_left is not None
                 and remote_start.start_time is not None
             ):
-                return {
+                attributes = {
                     "end_time": remote_start.end_time,
-                    "minutes_remaining": remote_start.time_left,
                     "start_time": remote_start.start_time,
                     "total_runtime": remote_start.timer,
                 }
+                # A finished session has no time left, and a poll can lag a session's end.
+                if remote_start.on:
+                    attributes["minutes_remaining"] = max(0, remote_start.time_left)
+                return attributes
 
     @property
     def available(self):
