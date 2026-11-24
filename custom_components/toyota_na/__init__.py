@@ -22,7 +22,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .auth import ToyotaOneAuth
-from .client import HTTP_TIMEOUT, ToyotaOneClient
+from .client import ToyotaOneClient
 from .command_refresh import refresh_after_command
 from .const import (
     COMMAND_MAP,
@@ -36,6 +36,7 @@ from .exceptions import AuthError
 from .generations import GENERATION_TRANSPORTS
 from .remote_access import sync_remote_access_issues
 from .service_helpers import translate_service_errors
+from .session import HTTP_TIMEOUT
 from .vehicle import RemoteRequestCommand, ToyotaVehicle
 from .vehicle_discovery import get_vehicles
 from .wake_policy import automatic_wake_due, record_vehicle_wake

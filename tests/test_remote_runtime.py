@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import test_appsync_transport as transport
 from common import make_24mm_vehicle
 
+from custom_components.toyota_na import appsync as appsync_module
 from custom_components.toyota_na.vehicle import RemoteRequestCommand
 
 
@@ -75,7 +76,7 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 return_value=transport._WebSocketSession(websocket),
             ),
             patch.object(
-                transport.client_module, "_wait_for_remote_command_result", side_effect=TimeoutError
+                appsync_module, "_wait_for_remote_command_result", side_effect=TimeoutError
             ),
         ):
             with self.assertRaisesRegex(RuntimeError, "accepted.*did not report completion"):

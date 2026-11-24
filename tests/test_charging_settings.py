@@ -12,6 +12,7 @@ from common import entity_id, make_24mm_vehicle
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
+from custom_components.toyota_na import appsync as appsync_module
 from custom_components.toyota_na import client as client_module
 from custom_components.toyota_na.charging_helpers import (
     CHARGE_SETTINGS,
@@ -446,9 +447,12 @@ async def test_commands_for_one_vehicle_are_serialized():
         await asyncio.sleep(0)
         active -= 1
 
-    with patch.object(client_module, "_execute_appsync_operation", side_effect=execute):
+    with patch.object(appsync_module, "_execute_appsync_operation", side_effect=execute):
         await asyncio.gather(
-            *(client_module._run_appsync_operation(client, "TESTVIN", None, "CA") for _ in range(3))
+            *(
+                appsync_module._run_appsync_operation(client, "TESTVIN", None, "CA")
+                for _ in range(3)
+            )
         )
     assert peak == 1
 

@@ -10,16 +10,16 @@ from typing import TYPE_CHECKING
 
 import aiohttp
 
-from .client import (
+from .appsync import (
     GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS,
     GRAPHQL_VEHICLE_STATUS_FIELDS,
-    HTTP_TIMEOUT,
     appsync_authorization,
     appsync_subscription_message,
     appsync_ws_url,
     graphql_schema_errors,
 )
 from .exceptions import AuthError
+from .session import HTTP_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 

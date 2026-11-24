@@ -10,6 +10,7 @@ from uuid import UUID
 
 import aiohttp
 
+from custom_components.toyota_na import appsync as appsync_module
 from custom_components.toyota_na import client as client_module
 
 # AppSync reports a field missing from the schema as a validation error message.
@@ -687,9 +688,9 @@ class GraphQLRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(4, self.session.post.call_count)
 
     def test_resolver_validation_errors_are_not_schema_errors(self):
-        self.assertTrue(client_module.graphql_schema_errors([SCHEMA_ERROR]))
+        self.assertTrue(appsync_module.graphql_schema_errors([SCHEMA_ERROR]))
         self.assertFalse(
-            client_module.graphql_schema_errors(
+            appsync_module.graphql_schema_errors(
                 [{"errorType": "ValidationError", "message": "Invalid VIN"}]
             )
         )

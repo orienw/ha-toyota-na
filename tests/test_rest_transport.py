@@ -13,6 +13,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from custom_components.toyota_na import client as client_module
+from custom_components.toyota_na import session as session_module
 from custom_components.toyota_na.client import ToyotaOneClient
 from custom_components.toyota_na.exceptions import LoginError
 
@@ -39,7 +40,7 @@ class RequestTimeoutTests(unittest.IsolatedAsyncioTestCase):
         app = web.Application()
         app.router.add_post("/command", stall)
         async with TestServer(app) as server:
-            with patch.object(client_module, "HTTP_TIMEOUT", aiohttp.ClientTimeout(total=0.02)):
+            with patch.object(session_module, "HTTP_TIMEOUT", aiohttp.ClientTimeout(total=0.02)):
                 with self.assertRaises(TimeoutError):
                     await client_module.ToyotaOneClient.api_request(
                         Client(), "POST", str(server.make_url("/command")), json={}
@@ -1093,7 +1094,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         client = ToyotaOneClient(auth=auth, session=shared)
         self.assertEqual({"status": "started"}, await client.api_get("v2/telemetry"))
         shared.request.assert_called_once()
-        self.assertEqual(client_module.HTTP_TIMEOUT, shared.request.call_args.kwargs["timeout"])
+        self.assertEqual(session_module.HTTP_TIMEOUT, shared.request.call_args.kwargs["timeout"])
         shared.close.assert_not_awaited()
         self.session.request.assert_not_called()
 
@@ -1101,7 +1102,7 @@ class RestTransportTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             client_module.aiohttp, "ClientSession", return_value=self.session
         ) as factory:
-            async with client_module.request_session(None) as (session, shared):
+            async with session_module.request_session(None) as (session, shared):
                 self.assertIs(self.session, session)
                 self.assertFalse(shared)
         self.assertIsInstance(factory.call_args.kwargs["cookie_jar"], aiohttp.DummyCookieJar)
