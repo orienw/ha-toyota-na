@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -21,7 +22,6 @@ from .vehicle import (
     fetch_engine_status,
     fetch_vehicle_status,
 )
-from .vehicle_helpers import endpoint_generation, is_appsync_generation
 
 _LOGGER = logging.getLogger(__name__)
 # Toyota's structured response codes, never its free text.
@@ -91,7 +91,7 @@ async def async_get_config_entry_diagnostics(
     ws_handler = getattr(runtime_data, "ws_handler", None)
 
     # Keep the report available while Toyota's vehicle list is failing.
-    vehicle_list = {"data": None}
+    vehicle_list: dict[str, Any] = {"data": None}
     try:
         if client is not None:
             vehicle_list["data"] = await client.get_user_vehicle_list()
@@ -99,8 +99,9 @@ async def async_get_config_entry_diagnostics(
         _LOGGER.debug("Vehicle list diagnostics failed: %s", err)
         # Toyota's message text can carry account details that redaction can't see.
         error = type(err).__name__
-        if isinstance(getattr(err, "status", None), int):
-            error += f" {err.status}"
+        status = getattr(err, "status", None)
+        if isinstance(status, int):
+            error += f" {status}"
         code = getattr(err, "response_code", None)
         if isinstance(code, str) and TOYOTA_ERROR_CODE.fullmatch(code):
             error += f" [{code}]"
@@ -110,6 +111,8 @@ async def async_get_config_entry_diagnostics(
         vehicle_list["unexpected"] = type(vehicle_list["data"]).__name__
         vehicle_list["data"] = None
     user_vehicle_list = vehicle_list["data"] or []
+    if TYPE_CHECKING:
+        assert client is not None  # the list is empty without one
     # Climate, tire pressure and vehicle health as the last poll read them, to see what Toyota
     # reports.
     coordinator = getattr(runtime_data, "coordinator", None)
@@ -134,24 +137,12 @@ async def async_get_config_entry_diagnostics(
         user_electric_status = None
         vin = vehicle["vin"]
         raw_generation = vehicle.get("generation")
-        api_generation = (
-            raw_generation.strip().upper()
-            if isinstance(raw_generation, str) and raw_generation.strip()
-            else None
-        )
+        api_generation = raw_generation.strip().upper() if isinstance(raw_generation, str) else ""
         try:
-            transport = (
-                GENERATION_TRANSPORTS[ApiVehicleGeneration(api_generation)]
-                if api_generation is not None
-                else None
-            )
+            transport = GENERATION_TRANSPORTS.get(ApiVehicleGeneration(api_generation))
         except ValueError:
             transport = None
-        generation = (
-            transport.endpoint_generation
-            if transport is not None
-            else endpoint_generation(api_generation)
-        )
+        generation = transport.endpoint_generation if transport is not None else api_generation
         raw_region = vehicle.get("region")
         region = raw_region.upper() if isinstance(raw_region, str) and raw_region else "US"
         raw_brand = vehicle.get("brand")
@@ -180,7 +171,9 @@ async def async_get_config_entry_diagnostics(
                 )
 
         try:
-            user_telemetry = await client.get_telemetry(vin, region, generation)
+            # Telemetry and electric status are requested by generation.
+            if generation:
+                user_telemetry = await client.get_telemetry(vin, region, generation)
         except Exception as err:
             _LOGGER.debug("Telemetry diagnostics failed for VIN ...%s: %s", vin[-4:], err)
 
@@ -202,11 +195,7 @@ async def async_get_config_entry_diagnostics(
                 )
 
         try:
-            if not (
-                transport.uses_appsync
-                if transport is not None
-                else is_appsync_generation(api_generation)
-            ):
+            if api_generation and not (transport is not None and transport.uses_appsync):
                 user_electric_status = await client.get_electric_status(
                     vin, region=region, generation=api_generation
                 )

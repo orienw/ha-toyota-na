@@ -6,6 +6,7 @@ import logging
 import uuid
 from collections.abc import Callable, Mapping
 from time import monotonic
+from typing import TYPE_CHECKING
 
 import aiohttp
 
@@ -46,22 +47,22 @@ class ToyotaWebSocketHandler:
         self._client = client
         self._status_callback = status_callback
         self._auth_error_callback = auth_error_callback
-        self._session = None
+        self._session: aiohttp.ClientSession | None = None
         self._owns_session = False
-        self._ws = None
-        self._subscriptions = {}  # vin -> subscription_id
-        self._basic_status_vins = set()
-        self._cached_status = {}  # vin -> latest vehicle status dict
+        self._ws: aiohttp.ClientWebSocketResponse | None = None
+        self._subscriptions: dict[str, str] = {}  # vin -> subscription_id
+        self._basic_status_vins: set[str] = set()
+        self._cached_status: dict[str, dict] = {}  # vin -> latest vehicle status dict
         self._vehicle_contexts: dict[str, dict] = {}
-        self._task = None
-        self._retry_tasks = {}
-        self._retry_delays = {}
+        self._task: asyncio.Task | None = None
+        self._retry_tasks: dict[str, asyncio.Task] = {}
+        self._retry_delays: dict[str, float] = {}
         self._running = False
         self._ready = False
         self._reconnect_delay = 5
         self._max_reconnect_delay = 300
-        self._keepalive_timeout = 300
-        self._keepalive_deadline = None
+        self._keepalive_timeout: float = 300
+        self._keepalive_deadline: float | None = None
 
     @property
     def is_connected(self):
@@ -93,6 +94,8 @@ class ToyotaWebSocketHandler:
             self._basic_status_vins.discard(vin)
             sub_id = self._subscriptions.pop(vin, None)
             if sub_id and self.is_connected:
+                if TYPE_CHECKING:
+                    assert self._ws is not None
                 try:
                     await self._ws.send_json({"id": sub_id, "type": "stop"})
                 except Exception as err:
@@ -226,6 +229,7 @@ class ToyotaWebSocketHandler:
     async def _handle_message(self, msg, token, guid):
         """Handle an AppSync WebSocket protocol message."""
         msg_type = msg.get("type")
+        vin: str | None
 
         if msg_type == "connection_ack":
             self._ready = True
@@ -359,6 +363,8 @@ class ToyotaWebSocketHandler:
             authorization,
         )
         self._schedule_retry(vin, delay=30)
+        if TYPE_CHECKING:
+            assert self._ws is not None
         await self._ws.send_json(subscription)
 
     def _cancel_retry(self, vin):
@@ -387,6 +393,8 @@ class ToyotaWebSocketHandler:
             await asyncio.sleep(delay)
             sub_id = self._subscriptions.pop(vin, None)
             if sub_id:
+                if TYPE_CHECKING:
+                    assert self._ws is not None
                 await self._ws.send_json({"id": sub_id, "type": "stop"})
                 self._schedule_retry(vin)
                 return

@@ -27,8 +27,3 @@ check_untyped_defs = true
 [[tool.mypy.overrides]]
 module = "voluptuous.*"
 follow_imports = "skip"
-
-# Not yet clean. Remove a module from this list once it passes.
-[[tool.mypy.overrides]]
-module = ["toyota_na.diagnostics", "toyota_na.websocket_handler"]
-ignore_errors = true

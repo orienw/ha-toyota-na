@@ -361,13 +361,16 @@ async def test_report_without_a_client_keeps_config_redacted(
 
 async def test_vehicle_entries_without_a_vin_are_skipped(diagnostics):
     vehicles = ["unexpected", {"generation": "21MM"}, {"vin": "TESTVIN"}]
-    _, result = await diagnostics(vehicles, get_telemetry={}, get_electric_status={})
+    account, result = await diagnostics(vehicles, get_telemetry={}, get_electric_status={})
     assert result["vehicle_list"]["data"] == [
         "unexpected",
         {"generation": "21MM"},
         {"vin": REDACTED},
     ]
-    assert result["telemetry"]["data"] == [{}]
+    # Toyota is asked by generation, so a vehicle listed without one is not read.
+    assert result["telemetry"]["data"] == [None]
+    account.client.get_telemetry.assert_not_awaited()
+    account.client.get_electric_status.assert_not_awaited()
 
 
 async def test_diagnostics_normalizes_generation_and_redacts_pii_fields(diagnostics):
