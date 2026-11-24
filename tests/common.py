@@ -127,10 +127,6 @@ class FakeVehicle:
             return self.subscribed
         return command in self.supported
 
-    @property
-    def can_receive_status(self):
-        return True
-
     async def send_command(self, command):
         self.sent.append(command)
 

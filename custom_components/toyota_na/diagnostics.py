@@ -206,10 +206,7 @@ async def async_get_config_entry_diagnostics(
         climate_settings.append(getattr(vehicles.get(vin), "climate_settings", None) or None)
         climate_schedules.append(getattr(vehicles.get(vin), "climate_schedules", None) or None)
         tire_pressure.append(getattr(vehicles.get(vin), "tire_pressure", None) or None)
-        health = getattr(vehicles.get(vin), "health", None) or {}
-        vehicle_health.append(
-            {key: value for key, value in health.items() if key != "read_at"} or None
-        )
+        vehicle_health.append(getattr(vehicles.get(vin), "health", None) or None)
         notifications = getattr(vehicles.get(vin), "notifications", None)
         notification_history.append(
             [

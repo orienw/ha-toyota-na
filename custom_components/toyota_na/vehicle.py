@@ -386,6 +386,7 @@ class ToyotaVehicle:
         self._engine_details: dict = {}
         self._schedule_lock = asyncio.Lock()
         self._health: dict = {}
+        self._health_read_at: dict[str, float] = {}
         self._tire_pressure: dict | None = None
         self._notifications = None
         self._feature_timestamps: dict[tuple, datetime] = {}
@@ -525,10 +526,6 @@ class ToyotaVehicle:
             return default
         value = self._feature_flags.get(name)
         return type(value) is int and value == 1
-
-    @property
-    def can_receive_status(self) -> bool:
-        return self._generation in GENERATION_TRANSPORTS
 
     @property
     def can_start_climate(self) -> bool:
@@ -720,31 +717,30 @@ class ToyotaVehicle:
         except Exception as e:
             _LOGGER.debug("Error fetching telemetry: %s", e)
 
-        if self.can_receive_status:
-            if self._transport.appsync_push and ws_handler is not None:
-                try:
-                    # Cached push data fills gaps. The polled source below wins when
-                    # neither response has timestamps.
-                    self.apply_graphql_status(ws_handler.get_cached_status(self._vin))
-                except AuthError:
-                    raise
-                except Exception as e:
-                    _LOGGER.debug("Error parsing cached vehicle status: %s", e)
-
+        if self._transport.appsync_push and ws_handler is not None:
             try:
-                await self.poll_vehicle_status()
+                # Cached push data fills gaps. The polled source below wins when
+                # neither response has timestamps.
+                self.apply_graphql_status(ws_handler.get_cached_status(self._vin))
             except AuthError:
                 raise
             except Exception as e:
-                _LOGGER.debug("Error fetching vehicle status: %s", e)
+                _LOGGER.debug("Error parsing cached vehicle status: %s", e)
 
-            if self._transport.engine_transport is not None:
-                try:
-                    await self.poll_engine_status()
-                except AuthError:
-                    raise
-                except Exception as e:
-                    _LOGGER.debug("Error fetching engine status: %s", e)
+        try:
+            await self.poll_vehicle_status()
+        except AuthError:
+            raise
+        except Exception as e:
+            _LOGGER.debug("Error fetching vehicle status: %s", e)
+
+        if self._transport.engine_transport is not None:
+            try:
+                await self.poll_engine_status()
+            except AuthError:
+                raise
+            except Exception as e:
+                _LOGGER.debug("Error fetching engine status: %s", e)
 
         try:
             if self.electric and not self.uses_appsync:
@@ -1575,7 +1571,7 @@ class ToyotaVehicle:
         Each response is read every poll until it answers, then hourly.
         """
         now = time.monotonic()
-        read_at = self._health.setdefault("read_at", {})
+        read_at = self._health_read_at
         reads = (
             (
                 "report",
@@ -1627,11 +1623,7 @@ class ToyotaVehicle:
 
     async def update_tire_pressure(self) -> None:
         # Toyota's app reads this endpoint only when tire pressure is enabled.
-        if (
-            self.uses_appsync
-            or not self.can_receive_status
-            or not self.feature_enabled("tirePressure")
-        ):
+        if self.uses_appsync or not self.feature_enabled("tirePressure"):
             return
         status = await self._client.get_tire_pressure(
             self.vin,
@@ -1732,11 +1724,9 @@ class ToyotaVehicle:
         # the ones last read or pass as an empty list.
         if not isinstance(schedules, list) or any(not isinstance(item, dict) for item in schedules):
             return
-        previous = self._charge_settings.get("_schedules_updated_at")
-        if previous is not None and (observed_at is None or observed_at < previous):
+        if not self._accept_observation(("charge_settings", "schedules"), observed_at):
             return
         self._charge_settings["schedules"] = schedules
-        self._charge_settings["_schedules_updated_at"] = observed_at
         self._features[VehicleFeatures.ChargeScheduleCount] = Measurement(len(schedules), "")
 
     async def _read_charge_schedules(self):

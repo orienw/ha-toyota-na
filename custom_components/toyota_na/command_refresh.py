@@ -27,7 +27,7 @@ async def refresh_after_command(coordinator, vin=None, command=None, *, delay=10
             for _ in range(3):
                 await asyncio.sleep(delay)
                 vehicle = next((item for item in coordinator.data or [] if item.vin == vin), None)
-                if vehicle is None or not vehicle.can_receive_status:
+                if vehicle is None:
                     return
                 try:
                     received = await vehicle.poll_vehicle_status()
@@ -57,7 +57,7 @@ async def refresh_after_command(coordinator, vin=None, command=None, *, delay=10
                     vehicle = next(
                         (item for item in coordinator.data or [] if item.vin == vin), None
                     )
-                    if remaining <= 0 or vehicle is None or not vehicle.can_receive_status:
+                    if remaining <= 0 or vehicle is None:
                         return
                     try:
                         running = await asyncio.wait_for(

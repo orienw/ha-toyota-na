@@ -131,7 +131,6 @@ def readings(vehicle) -> list[str]:
             "notifications",
             "subscribed",
             "electric",
-            "can_receive_status",
             "uses_appsync",
             "endpoint_generation",
         )

@@ -171,7 +171,6 @@ async def test_climate_settings_and_tire_pressure_come_from_the_last_poll(diagno
 async def test_vehicle_health_comes_from_the_last_poll(diagnostics):
     read = FakeVehicle(set(), vin="READ")
     read.health = {
-        "read_at": 1000.0,
         "report": {
             "vhrid": "report-1",
             "vhrgenID": "generated-1",
@@ -182,7 +181,7 @@ async def test_vehicle_health_comes_from_the_last_poll(diagnostics):
         "campaigns": [{"campaignNumber": "24V123"}],
     }
     other = FakeVehicle(set(), vin="OTHER")
-    other.health = {"read_at": 1000.0}
+    other.health = {}
     _, result = await diagnostics(
         [{"vin": vin, "generation": "24MM"} for vin in ("READ", "OTHER")],
         [read, other],

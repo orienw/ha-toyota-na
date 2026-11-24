@@ -189,7 +189,7 @@ async def test_ev_fallback_preserves_primary_schedules_and_source_times(cloud, p
     assert await vehicle._read_charge_schedules() == []
     assert vehicle.charge_settings["schedules"] == []
     assert vehicle.charge_settings["maxNoOfChargeSchedules"] == 0
-    assert vehicle.charge_settings["_schedules_updated_at"] == (
+    assert vehicle._feature_timestamps.get(("charge_settings", "schedules")) == (
         datetime.fromisoformat(primary_time) if primary_time else None
     )
     feature = VehicleFeatures.ChargeLevel
@@ -461,9 +461,8 @@ async def test_stale_read_back_does_not_confirm_a_change_on_each_transport(
         await vehicle.update_charge_schedule(1, enabled=False)
     sleep.assert_awaited_once_with(5)
     assert not vehicle.charge_settings["schedules"][0]["enabled"]
-    assert (
-        vehicle.charge_settings["_schedules_updated_at"].isoformat() == "2026-09-14T16:00:00+00:00"
-    )
+    updated_at = vehicle._feature_timestamps[("charge_settings", "schedules")]
+    assert updated_at.isoformat() == "2026-09-14T16:00:00+00:00"
 
 
 async def test_stale_empty_list_does_not_confirm_a_delete(cloud):

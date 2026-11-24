@@ -48,7 +48,7 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
         client.get_service_campaigns.assert_awaited_once_with("TESTVIN")
         client.get_software_update.assert_awaited_once_with("TESTVIN")
         self.assertEqual(
-            {key: value for key, value in vehicle.health.items() if key != "read_at"},
+            vehicle.health,
             {"report": REPORT, "status": STATUS, "campaigns": CAMPAIGNS, "software": SOFTWARE},
         )
 
@@ -67,7 +67,7 @@ class VehicleHealthReadTests(unittest.IsolatedAsyncioTestCase):
                 vehicle = make_vehicle(health_client())
                 vehicle._feature_flags = flags
                 await vehicle.update_health()
-                self.assertEqual(set(vehicle.health) - {"read_at"}, expected)
+                self.assertEqual(set(vehicle.health), expected)
 
     async def test_reads_are_hourly_across_polls(self):
         client = health_client()

@@ -456,8 +456,7 @@ def _websocket_contexts(vehicles):
             "backdoor_type": vehicle.backdoor_type,
         }
         for vehicle in vehicles
-        if vehicle.can_receive_status
-        and (transport := GENERATION_TRANSPORTS.get(vehicle.generation)) is not None
+        if (transport := GENERATION_TRANSPORTS.get(vehicle.generation)) is not None
         and transport.appsync_push
     }
 
