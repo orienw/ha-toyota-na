@@ -10,7 +10,13 @@ from .vehicle_helpers import app_flag, app_int, app_string
 _RECALL_TYPES = ("rec-s", "safety recalls")
 _CAMPAIGN_TYPES = ("lsc", "ssc", "service campaigns")
 # The app's software update texts by notificationStatus; anything else is up to date.
-_SOFTWARE_STATUS = {1: "available", 5: "available", 2: "initialized", 7: "initialized", 4: "failed"}
+_SOFTWARE_STATUS: dict[int | None, str] = {
+    1: "available",
+    5: "available",
+    2: "initialized",
+    7: "initialized",
+    4: "failed",
+}
 
 
 def _text(value: Any) -> str:

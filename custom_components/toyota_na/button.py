@@ -4,14 +4,14 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from . import ToyotaCoordinator
 from .base_entity import ToyotaNABaseEntity
 from .command_refresh import refresh_after_command
 from .const import COMMAND_BUTTONS, COMMAND_REFRESH_DELAY
 from .entity_discovery import setup_entity_discovery
 from .service_helpers import translate_service_errors
-from .vehicle import RemoteRequestCommand, ToyotaVehicle
+from .vehicle import RemoteRequestCommand
 from .wake_policy import record_vehicle_wake
 
 
@@ -21,7 +21,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up vehicle command buttons."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
+    coordinator: ToyotaCoordinator = config_entry.runtime_data.coordinator
 
     def discover_buttons():
         for vehicle in coordinator.data or []:

@@ -9,20 +9,20 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from . import ToyotaCoordinator
 from .base_entity import ToyotaNABaseEntity, vehicle_entity_unique_id
 from .const import BINARY_SENSORS, DOMAIN, HEALTH_BINARY_SENSORS
 from .entity_discovery import setup_entity_discovery
 from .health_helpers import health_reading
-from .vehicle import ToyotaVehicle, VehicleFeatures
+from .vehicle import VehicleFeatures
 from .vehicle_values import Opening, RemoteStart
 
 _LOGGER = logging.getLogger(__name__)
 
 # Tailgate state arrives in the Trunk feature. Name its sensors after the
 # tailgate, like Toyota's app, and replace the trunk-named entities.
-_BACKDOOR_SENSOR_NAMES = {
+_BACKDOOR_SENSOR_NAMES: dict[str | None, dict[str, str]] = {
     "tailgate": {"Trunk": "Tailgate", "Trunk Door Lock": "Tailgate Lock"},
 }
 
@@ -33,7 +33,7 @@ async def async_setup_entry(
     async_add_devices: AddEntitiesCallback,
 ):
     """Set up the binary_sensor platform."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
+    coordinator: ToyotaCoordinator = config_entry.runtime_data.coordinator
     registry = er.async_get(hass)
 
     def discover_binary_sensors():

@@ -67,10 +67,11 @@ class ToyotaClimateNumber(ToyotaNABaseEntity, NumberEntity):
         return (climate_bounds(self.settings, self._key) or (0, 0, 1))[2]
 
     async def async_set_native_value(self, value):
-        if not self.available:
+        vehicle = self.vehicle
+        if vehicle is None or not self.available:
             raise ServiceValidationError("This climate setting is unavailable for this vehicle.")
         with translate_service_errors(self.coordinator):
-            await self.vehicle.update_climate_settings(**{self._key: value})
+            await vehicle.update_climate_settings(**{self._key: value})
         self.coordinator.async_update_listeners()
 
 

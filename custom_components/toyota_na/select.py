@@ -24,7 +24,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                 ("rearDriver", "Rear Driver Seat Climate"),
                 ("rearPassenger", "Rear Passenger Seat Climate"),
             ):
-                entity = ToyotaClimateSelect(setting, coordinator, name, vehicle.vin)
+                entity: ToyotaNABaseEntity = ToyotaClimateSelect(
+                    setting, coordinator, name, vehicle.vin
+                )
                 if entity.available:
                     yield entity
             for field, (name, *_) in CHARGE_SETTINGS.items():
@@ -82,14 +84,15 @@ class ToyotaClimateSelect(ToyotaNABaseEntity, SelectEntity):
         return "Ventilate" if vent.get("enabled") else "Off"
 
     async def async_select_option(self, option):
-        if not self.available or option not in self.options:
+        vehicle = self.vehicle
+        if vehicle is None or not self.available or option not in self.options:
             raise ServiceValidationError("This climate preference is unavailable for this vehicle.")
         with translate_service_errors(self.coordinator):
             if self._setting == "airflow":
                 key = next(key for key, label in AIRFLOWS.items() if label == option)
-                await self.vehicle.update_climate_settings(airflow=key)
+                await vehicle.update_climate_settings(airflow=key)
             else:
-                await self.vehicle.update_climate_settings(seat=(self._setting, option))
+                await vehicle.update_climate_settings(seat=(self._setting, option))
         self.coordinator.async_update_listeners()
 
 
@@ -132,11 +135,12 @@ class ToyotaChargeSelect(ToyotaNABaseEntity, SelectEntity):
         )
 
     async def async_select_option(self, option):
-        if not self.available or option not in self.options:
+        vehicle = self.vehicle
+        if vehicle is None or not self.available or option not in self.options:
             raise ServiceValidationError(
                 "This charging preference is unavailable for this vehicle."
             )
         with translate_service_errors(self.coordinator):
-            await self.vehicle.set_charge_setting(self._field, option)
+            await vehicle.set_charge_setting(self._field, option)
         record_vehicle_wake(self.hass, self._config_entry, self.vin)
         self.coordinator.async_update_listeners()

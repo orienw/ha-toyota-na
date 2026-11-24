@@ -59,7 +59,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     def discover_switches():
         for vehicle in coordinator.data or []:
-            entity = ToyotaClimateSettingsSwitch(coordinator, "Use Climate Settings", vehicle.vin)
+            entity: ToyotaNABaseEntity = ToyotaClimateSettingsSwitch(
+                coordinator, "Use Climate Settings", vehicle.vin
+            )
             if entity.available:
                 yield entity
             for name, icon, setting in CLIMATE_SWITCHES:
@@ -128,10 +130,11 @@ class ToyotaClimateSettingsSwitch(ToyotaNABaseEntity, SwitchEntity):
         await self._set_enabled(False)
 
     async def _set_enabled(self, enabled):
-        if not self.available:
+        vehicle = self.vehicle
+        if vehicle is None or not self.available:
             raise ServiceValidationError("Climate settings are unavailable for this vehicle.")
         with translate_service_errors(self.coordinator):
-            await self.vehicle.update_climate_settings(**self._changes(enabled))
+            await vehicle.update_climate_settings(**self._changes(enabled))
         self.coordinator.async_update_listeners()
 
     def _changes(self, enabled):
@@ -218,10 +221,11 @@ class ToyotaClimateScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
         await self._set_enabled(False)
 
     async def _set_enabled(self, enabled):
-        if not self.available:
+        vehicle = self.vehicle
+        if vehicle is None or not self.available:
             raise ServiceValidationError("This climate schedule is unavailable.")
         with translate_service_errors(self.coordinator):
-            await self.vehicle.update_climate_schedule(
+            await vehicle.update_climate_schedule(
                 self._identifier, zone=dt_util.get_default_time_zone(), enabled=enabled
             )
         self.coordinator.async_update_listeners()
@@ -277,9 +281,10 @@ class ToyotaChargeScheduleSwitch(ToyotaNABaseEntity, SwitchEntity):
         await self._set_enabled(False)
 
     async def _set_enabled(self, enabled):
-        if not self.available:
+        vehicle = self.vehicle
+        if vehicle is None or not self.available:
             raise ServiceValidationError("This charge schedule is unavailable.")
         with translate_service_errors(self.coordinator):
-            await self.vehicle.update_charge_schedule(self._identifier, enabled=enabled)
+            await vehicle.update_charge_schedule(self._identifier, enabled=enabled)
         record_vehicle_wake(self.hass, self._config_entry, self.vin)
         self.coordinator.async_update_listeners()

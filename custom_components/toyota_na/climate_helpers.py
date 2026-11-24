@@ -2,6 +2,7 @@
 
 import math
 from copy import deepcopy
+from typing import Any
 
 AIRFLOWS = {
     "upperBody": "Upper body",
@@ -36,6 +37,7 @@ def climate_parameters(settings: dict, category: str) -> dict:
 
 
 def climate_bounds(settings: dict, key: str) -> tuple | None:
+    values: tuple[Any, Any, Any]
     if key == "temperature":
         values = (
             settings.get("minTemp"),

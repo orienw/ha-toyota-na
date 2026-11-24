@@ -86,6 +86,7 @@ class ToyotaOneAuth:
         self._updated_at = None
         self._device_id = None
         self._code_verifier = None
+        self.otp_callbacks: dict | None = None
         self._token_lock = asyncio.Lock()
         if initial_tokens:
             try:
@@ -104,7 +105,7 @@ class ToyotaOneAuth:
     async def get_id_info(self):
         await self.check_tokens()
         return jwt.decode(
-            self._id_token,
+            self._id_token,  # type: ignore[arg-type]
             algorithms=["RS256"],
             options={"verify_signature": False},
             audience="oneappsdkclient",
@@ -200,7 +201,7 @@ class ToyotaOneAuth:
         ):
             raise RuntimeError("Toyota returned an incomplete token response.")
         guid = jwt.decode(
-            id_token,
+            id_token,  # type: ignore[arg-type]
             algorithms=["RS256"],
             options={"verify_signature": False},
             audience="oneappsdkclient",

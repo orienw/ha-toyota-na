@@ -1,9 +1,7 @@
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-)
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from . import ToyotaCoordinator
 from .const import DOMAIN
 from .vehicle import ToyotaVehicle, VehicleFeatures
 
@@ -13,12 +11,12 @@ def vehicle_entity_unique_id(vin: str, sensor_name: str) -> str:
     return f"{vin}.{sensor_name}"
 
 
-class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
+class ToyotaNABaseEntity(CoordinatorEntity[ToyotaCoordinator]):
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        coordinator: DataUpdateCoordinator[list[ToyotaVehicle]],
+        coordinator: ToyotaCoordinator,
         sensor_name: str,
         vin: str,
     ) -> None:
@@ -52,12 +50,12 @@ class ToyotaNABaseEntity(CoordinatorEntity[list[ToyotaVehicle]]):
             "L": "Lexus",
         }.get(brand, "Toyota Motor North America")
 
-        return {
-            "identifiers": {(DOMAIN, self.vin)},
-            "name": model,
-            "model": model,
-            "manufacturer": manufacturer,
-        }
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.vin)},
+            name=model,
+            model=model,
+            manufacturer=manufacturer,
+        )
 
     @property
     def available(self) -> bool:

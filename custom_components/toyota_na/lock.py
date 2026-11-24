@@ -8,8 +8,8 @@ from homeassistant.components.lock import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from . import ToyotaCoordinator
 from .base_entity import ToyotaNABaseEntity
 from .command_refresh import refresh_after_command
 from .const import (
@@ -20,7 +20,6 @@ from .const import (
 )
 from .entity_discovery import setup_entity_discovery
 from .service_helpers import translate_service_errors
-from .vehicle import ToyotaVehicle
 from .wake_policy import record_vehicle_wake
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,7 +31,7 @@ async def async_setup_entry(
     async_add_devices: AddEntitiesCallback,
 ):
     """Set up the lock platform."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
+    coordinator: ToyotaCoordinator = config_entry.runtime_data.coordinator
 
     def discover_locks():
         for vehicle in coordinator.data or []:

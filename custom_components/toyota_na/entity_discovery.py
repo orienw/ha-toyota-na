@@ -10,7 +10,7 @@ def setup_entity_discovery(
     remove_stale_entities=None,
 ) -> None:
     """Discover entities on updates, forgetting IDs that were explicitly removed."""
-    known_ids = set()
+    known_ids: set[str] = set()
 
     def add_new_entities() -> None:
         if remove_stale_entities is not None:

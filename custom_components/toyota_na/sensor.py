@@ -18,21 +18,21 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import PressureConverter
 
+from . import ToyotaCoordinator
 from .base_entity import ToyotaNABaseEntity
 from .climate_schedule_helpers import local_climate_schedule
 from .const import DOMAIN, HEALTH_SENSORS, REMOTE_ACCESS_STATES, SENSORS
 from .entity_discovery import setup_entity_discovery
 from .health_helpers import health_reading
-from .vehicle import ToyotaVehicle, VehicleFeatures
+from .vehicle import VehicleFeatures
 from .vehicle_values import Measurement
 
 # Toyota reports measurement units in varying case and spellings.
 _PRESSURE_UNITS = {"psi": UnitOfPressure.PSI, "kpa": UnitOfPressure.KPA, "bar": UnitOfPressure.BAR}
-_DISPLAY_PRECISION = {
+_DISPLAY_PRECISION: dict[SensorDeviceClass | None, int] = {
     SensorDeviceClass.PRESSURE: 1,
     SensorDeviceClass.DISTANCE: 0,
     SensorDeviceClass.DURATION: 0,
@@ -78,7 +78,7 @@ async def async_setup_entry(
     async_add_devices: AddEntitiesCallback,
 ):
     """Set up vehicle sensors."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
+    coordinator: ToyotaCoordinator = config_entry.runtime_data.coordinator
 
     # EV Travelable Distance was removed. It repeated EV Range, in kilometers on older vehicles.
     registry = er.async_get(hass)
@@ -135,15 +135,17 @@ class ToyotaClimateSchedulesSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def native_value(self):
-        if self.available:
-            return len(self.vehicle.climate_schedules["airConditioningReservation"])
+        vehicle = self.vehicle
+        if vehicle is not None and self.available:
+            return len(vehicle.climate_schedules["airConditioningReservation"])
         return None
 
     @property
     def extra_state_attributes(self):
-        if not self.available:
+        vehicle = self.vehicle
+        if vehicle is None or not self.available:
             return None
-        settings = self.vehicle.climate_schedules
+        settings = vehicle.climate_schedules
         zone = dt_util.get_default_time_zone()
         return {
             "schedules": [
@@ -174,11 +176,17 @@ class ToyotaRemoteAccessSensor(ToyotaNABaseEntity, SensorEntity):
 
     @property
     def native_value(self):
-        return REMOTE_ACCESS_STATES.get(self.vehicle.remote_display) if self.available else None
+        vehicle = self.vehicle
+        if vehicle is None or not self.available:
+            return None
+        return REMOTE_ACCESS_STATES.get(vehicle.remote_display)
 
     @property
     def extra_state_attributes(self):
-        return {"raw_value": self.vehicle.remote_display} if self.available else None
+        vehicle = self.vehicle
+        if vehicle is None or not self.available:
+            return None
+        return {"raw_value": vehicle.remote_display}
 
 
 class ToyotaHealthSensor(ToyotaNABaseEntity, SensorEntity):

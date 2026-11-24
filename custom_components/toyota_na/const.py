@@ -1,3 +1,5 @@
+from typing import Any
+
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE, UnitOfPressure
@@ -357,7 +359,7 @@ CONNECTOR_STATES = {
 }
 
 # Toyota's remoteDisplay values, named after the app's banners.
-REMOTE_ACCESS_STATES = {
+REMOTE_ACCESS_STATES: dict[int | None, str] = {
     0: "unsupported",
     1: "authorization_required",
     2: "subscription_cancelled",
@@ -396,7 +398,7 @@ NOTIFICATION_EVENT_TYPES = {
 }
 
 # Toyota's Health tab tiles, gated on the app's feature flags.
-HEALTH_SENSORS = (
+HEALTH_SENSORS: tuple[dict[str, Any], ...] = (
     {
         "name": "Safety Recalls",
         "icon": "mdi:alert-octagon-outline",
@@ -454,7 +456,7 @@ HEALTH_BINARY_SENSORS = (
     },
 )
 
-SENSORS = [
+SENSORS: list[dict[str, Any]] = [
     {
         "state_class": SensorStateClass.MEASUREMENT,
         "icon": "mdi:calendar-clock",

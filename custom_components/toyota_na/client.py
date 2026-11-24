@@ -715,7 +715,7 @@ class ToyotaOneClient:
             if not isinstance(detail, str) or not detail:
                 detail = "Toyota could not return the vehicle list."
             err = RuntimeError(f"{detail} [ONE-VL-10002]")
-            err.response_code = "ONE-VL-10002"
+            err.response_code = "ONE-VL-10002"  # type: ignore[attr-defined]
             raise err
         return body.get("payload", body)
 
@@ -1496,7 +1496,7 @@ class ToyotaOneClient:
                                     err.message = detail
                                 if isinstance(code, str) and code:
                                     err.message = f"{err.message} [{code}]"
-                                    err.response_code = code
+                                    err.response_code = code  # type: ignore[attr-defined]
                             raise
                     try:
                         resp_json = await resp.json()

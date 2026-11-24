@@ -468,15 +468,15 @@ class ToyotaVehicle:
         self._legacy_capabilities = legacy_capabilities or []
         self._remote_display = remote_display
         self._window_telemetry = window_telemetry
-        self._climate_settings = {}
+        self._climate_settings: dict = {}
         self._climate_lock = asyncio.Lock()
-        self._climate_schedules = {}
+        self._climate_schedules: dict = {}
         self._climate_schedule_lock = asyncio.Lock()
-        self._climate_schedule_writes = set()
-        self._charge_settings = {}
-        self._engine_details = {}
+        self._climate_schedule_writes: set[object] = set()
+        self._charge_settings: dict = {}
+        self._engine_details: dict = {}
         self._schedule_lock = asyncio.Lock()
-        self._health = {}
+        self._health: dict = {}
         self._tire_pressure = None
         self._notifications = None
         self._feature_timestamps: dict[tuple, datetime] = {}
@@ -911,7 +911,9 @@ class ToyotaVehicle:
         if status and self._features.get(VehicleFeatures.RemoteStartStatus) is previous:
             self._parse_engine_status(status)
         current = self._features.get(VehicleFeatures.RemoteStartStatus)
-        return current.on if current is not None and current is not previous else None
+        if isinstance(current, RemoteStart) and current is not previous:
+            return current.on
+        return None
 
     async def poll_vehicle_refresh(self) -> None:
         """Instruct Toyota's cloud to wake the vehicle and upload fresh status."""
@@ -1394,7 +1396,7 @@ class ToyotaVehicle:
             parse_api_timestamp(status.get("lastUpdateDateTime")),
         )
 
-    def _parse_graphql_electric_status(self, electric: dict, observed_at=None) -> None:
+    def _parse_graphql_electric_status(self, electric: dict | None, observed_at=None) -> None:
         """Parse the AppSync electric document returned for EVs and PHEVs."""
         if not electric:
             return
@@ -1586,8 +1588,8 @@ class ToyotaVehicle:
                     self._store_opening(feature, closed=(app_int(value) == 2), locked=None)
                 continue
 
-            feature = self._vehicle_telemetry_map.get(key)
-            if feature is not None:
+            if key in self._vehicle_telemetry_map:
+                feature = self._vehicle_telemetry_map[key]
                 feature_observed_at = observed_at
                 if key.endswith("TirePressure") and tire_observed_at is not None:
                     feature_observed_at = tire_observed_at
@@ -1606,7 +1608,8 @@ class ToyotaVehicle:
         category_map = {
             key.lower(): feature for key, feature in self._vehicle_status_category_map.items()
         }
-        openings, named = {}, set()
+        openings: dict = {}
+        named: set[str] = set()
         for category in categories:
             if not isinstance(category, dict) or not isinstance(category.get("sections"), list):
                 continue
@@ -1912,7 +1915,7 @@ class ToyotaVehicle:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + SCHEDULE_UPDATE_TIMEOUT
         readback_delay = 5
-        error = None
+        error: Exception | None = None
         while loop.time() < deadline:
             try:
                 schedules = await asyncio.wait_for(read(), deadline - loop.time())
@@ -2016,8 +2019,8 @@ class ToyotaVehicle:
                     "external_power_active_hybrid",
                 ),
             }
-            state = self.features.get(VehicleFeatures.ChargingState)
-            state = str(state.value).lower() if state is not None else None
+            reading = self.features.get(VehicleFeatures.ChargingState)
+            state = str(reading.value).lower() if isinstance(reading, Measurement) else None
             return state in states[command] and (
                 command == RemoteRequestCommand.ChargeStart or self.uses_appsync
             )
@@ -2030,9 +2033,9 @@ class ToyotaVehicle:
         ):
             return True
 
-        keys = self._COMMAND_CAPABILITIES.get(command)
-        if keys is None:
+        if command not in self._COMMAND_CAPABILITIES:
             return True
+        keys = self._COMMAND_CAPABILITIES[command]
         supported = first_capability(
             self._remote_capabilities,
             self._extended_capabilities,

@@ -6,12 +6,11 @@ from homeassistant.components.event import EventEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from . import ToyotaCoordinator
 from .base_entity import ToyotaNABaseEntity
 from .const import NOTIFICATION_EVENT_TYPES
 from .entity_discovery import setup_entity_discovery
-from .vehicle import ToyotaVehicle
 from .vehicle_helpers import app_string, parse_api_timestamp
 
 _OLDEST = datetime.min.replace(tzinfo=UTC)
@@ -24,7 +23,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up notification events."""
     runtime_data = config_entry.runtime_data
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = runtime_data.coordinator
+    coordinator: ToyotaCoordinator = runtime_data.coordinator
 
     def discover_events():
         for vehicle in coordinator.data or []:
@@ -57,7 +56,7 @@ class ToyotaNotificationEvent(ToyotaNABaseEntity, EventEntity):
         self._started = started
         # IDs only accumulate, so a read that comes back empty can't make old
         # notifications look new on the next one.
-        self._seen = set()
+        self._seen: set = set()
 
     @property
     def _notifications(self):

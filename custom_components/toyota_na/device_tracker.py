@@ -6,11 +6,11 @@ from homeassistant.components.device_tracker import SourceType, TrackerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from . import ToyotaCoordinator
 from .base_entity import ToyotaNABaseEntity
 from .entity_discovery import setup_entity_discovery
-from .vehicle import ToyotaVehicle, VehicleFeatures
+from .vehicle import VehicleFeatures
 from .vehicle_values import Location
 
 features_sensors = [
@@ -25,7 +25,7 @@ async def async_setup_entry(
     async_add_devices: AddEntitiesCallback,
 ):
     """Set up the device_tracker platform."""
-    coordinator: DataUpdateCoordinator[list[ToyotaVehicle]] = config_entry.runtime_data.coordinator
+    coordinator: ToyotaCoordinator = config_entry.runtime_data.coordinator
 
     def discover_locations():
         for vehicle in coordinator.data or []:
