@@ -16,12 +16,8 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 
 from .client import ToyotaOneClient
-from .vehicle import (
-    GENERATION_TRANSPORTS,
-    ApiVehicleGeneration,
-    fetch_engine_status,
-    fetch_vehicle_status,
-)
+from .generations import transport_for
+from .vehicle import fetch_engine_status, fetch_vehicle_status
 
 _LOGGER = logging.getLogger(__name__)
 # Toyota's structured response codes, never its free text.
@@ -138,10 +134,7 @@ async def async_get_config_entry_diagnostics(
         vin = vehicle["vin"]
         raw_generation = vehicle.get("generation")
         api_generation = raw_generation.strip().upper() if isinstance(raw_generation, str) else ""
-        try:
-            transport = GENERATION_TRANSPORTS.get(ApiVehicleGeneration(api_generation))
-        except ValueError:
-            transport = None
+        transport = transport_for(api_generation)
         generation = transport.endpoint_generation if transport is not None else api_generation
         raw_region = vehicle.get("region")
         region = raw_region.upper() if isinstance(raw_region, str) and raw_region else "US"

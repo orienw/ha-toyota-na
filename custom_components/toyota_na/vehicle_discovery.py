@@ -2,12 +2,12 @@ import logging
 
 from .client import ToyotaOneClient
 from .exceptions import AuthError
-from .vehicle import (
+from .generations import (
     GENERATION_TRANSPORTS,
     KNOWN_UNSUPPORTED_GENERATIONS,
     ApiVehicleGeneration,
-    ToyotaVehicle,
 )
+from .vehicle import ToyotaVehicle
 from .vehicle_helpers import has_remote_subscription, is_electric_vehicle, normalize_remote_display
 
 _LOGGER = logging.getLogger(__name__)

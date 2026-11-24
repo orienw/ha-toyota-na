@@ -10,6 +10,7 @@ from urllib.parse import urlencode, urljoin
 import aiohttp
 
 from .exceptions import AuthError, TokenExpired
+from .generations import transport_for
 
 API_GATEWAY = "https://onecdn.telematicsct.com/oneapi/"
 REMOTE_ROUTE = "https://onecdn.telematicsct.com/v1/remote/route/"
@@ -307,6 +308,12 @@ def _vehicle_headers(vehicle_vin, region="US", **extra):
         "x-region": region,
         **extra,
     }
+
+
+def _legacy_electric(generation):
+    """Whether a generation is on Toyota's first electric API."""
+    transport = transport_for(generation)
+    return transport is not None and transport.legacy_electric
 
 
 def appsync_authorization(token, guid, vin="", region="US", device_id=None):
@@ -925,7 +932,7 @@ class ToyotaOneClient:
                 f"Toyota did not accept the charging command ({code or 'no request number'})."
             )
 
-        version = "v2" if generation == "17CY" else "v3"
+        version = "v2" if _legacy_electric(generation) else "v3"
         query = urlencode({"remote-control": result["appRequestNo"]})
         loop = asyncio.get_running_loop()
         deadline = loop.time() + ELECTRIC_COMMAND_TIMEOUT
@@ -1018,7 +1025,7 @@ class ToyotaOneClient:
                 {},
                 headers,
             )
-            if generation != "17CY":
+            if not _legacy_electric(generation):
                 return await self.get_electric_status(
                     vin, realtime_electric_status["appRequestNo"], region, generation
                 )
@@ -1036,7 +1043,8 @@ class ToyotaOneClient:
         self, vin, realtime_status=None, region="US", generation="17CYPLUS"
     ):
         """Read EV status, retrying the legacy request if v3 has no readings."""
-        versions = ("v2",) if generation == "17CY" else ("v3", "v2")
+        legacy = _legacy_electric(generation)
+        versions = ("v2",) if legacy else ("v3", "v2")
         primary = None
         for version in versions:
             try:
@@ -1044,7 +1052,7 @@ class ToyotaOneClient:
                 if realtime_status:
                     url += "?" + urlencode({"realtime-status": realtime_status})
                 headers = _vehicle_headers(vin, region)
-                if version == "v3" or generation == "17CY":
+                if version == "v3" or legacy:
                     headers["X-GENERATION"] = generation
                 electric_status = await self.api_get(url, headers)
                 vehicle_info = (
@@ -1347,7 +1355,8 @@ class ToyotaOneClient:
         self, vin, generation, schedule, region="US", brand="T", *, delete=False
     ):
         """Submit a schedule using its generation's time format and confirmation."""
-        appsync = generation in ("24MM", "26BEV")
+        transport = transport_for(generation)
+        appsync = transport is not None and transport.uses_appsync
         body = dict(schedule)
         endpoint = REMOTE_ROUTE + "charging" if appsync else "v1/electric/charging"
         method = "PUT" if "settingId" in body else "POST"

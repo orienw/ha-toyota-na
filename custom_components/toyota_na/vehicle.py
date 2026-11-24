@@ -3,7 +3,6 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, auto, unique
 
@@ -20,6 +19,7 @@ from .client import ToyotaOneClient
 from .climate_helpers import apply_climate_changes
 from .climate_schedule_helpers import build_climate_schedule, climate_schedule_matches
 from .exceptions import AuthError
+from .generations import GENERATION_TRANSPORTS, ApiVehicleGeneration, GenerationTransport
 from .vehicle_helpers import (
     app_int,
     backdoor_candidates,
@@ -39,20 +39,6 @@ _LOGGER = logging.getLogger(__name__)
 SCHEDULE_UPDATE_TIMEOUT = 90
 # Toyota's app reads vehicle health once per dashboard load.
 HEALTH_READ_INTERVAL = 3600
-
-# Legacy generation that Toyota reports for non-connected pre-2018 vehicles.
-KNOWN_UNSUPPORTED_GENERATIONS = frozenset({"PRE17CY"})
-
-
-@unique
-class ApiVehicleGeneration(Enum):
-    CY17 = "17CY"
-    CY17PLUS = "17CYPLUS"
-    MM21 = "21MM"
-    MM24 = "24MM"
-    BEV26 = "26BEV"
-    GR86 = "GR86"
-    NG86 = "NG86"
 
 
 @unique
@@ -175,83 +161,6 @@ _MODERN_COMMAND_MAP = {
     RemoteRequestCommand.VehicleFinder: "find-vehicle",
     RemoteRequestCommand.Refresh: "refresh",
     RemoteRequestCommand.ExtendRuntime: "add-runtime",
-}
-
-
-@dataclass(frozen=True)
-class GenerationTransport:
-    """Wire transport and capability rules for one Toyota telematics generation."""
-
-    endpoint_generation: str
-    status_transport: str
-    engine_transport: str | None
-    refresh_transports: tuple[str, ...]
-    command_transport: str
-    uses_appsync: bool = False
-    appsync_push: bool = False
-    explicit_command_capabilities: bool = False
-    allows_ev_climate_schedules: bool = True
-
-
-GENERATION_TRANSPORTS: dict[ApiVehicleGeneration, GenerationTransport] = {
-    ApiVehicleGeneration.CY17: GenerationTransport(
-        endpoint_generation="17CY",
-        status_transport="legacy",
-        engine_transport="legacy",
-        refresh_transports=("legacy",),
-        command_transport="legacy",
-        allows_ev_climate_schedules=False,
-    ),
-    ApiVehicleGeneration.CY17PLUS: GenerationTransport(
-        endpoint_generation="17CYPLUS",
-        status_transport="global",
-        engine_transport="global",
-        refresh_transports=("global",),
-        command_transport="global",
-    ),
-    ApiVehicleGeneration.MM21: GenerationTransport(
-        endpoint_generation="17CYPLUS",
-        status_transport="route_21mm",
-        engine_transport="route_21mm",
-        refresh_transports=("graphql", "route_21mm"),
-        command_transport="route_21mm",
-        appsync_push=True,
-    ),
-    ApiVehicleGeneration.MM24: GenerationTransport(
-        endpoint_generation="17CYPLUS",
-        status_transport="graphql",
-        engine_transport=None,
-        refresh_transports=("graphql",),
-        command_transport="graphql",
-        uses_appsync=True,
-        appsync_push=True,
-    ),
-    ApiVehicleGeneration.BEV26: GenerationTransport(
-        endpoint_generation="17CYPLUS",
-        status_transport="graphql",
-        engine_transport=None,
-        refresh_transports=("graphql",),
-        command_transport="graphql",
-        uses_appsync=True,
-        appsync_push=True,
-    ),
-    ApiVehicleGeneration.NG86: GenerationTransport(
-        endpoint_generation="NG86",
-        status_transport="route",
-        engine_transport="route",
-        refresh_transports=("route",),
-        command_transport="route",
-        explicit_command_capabilities=True,
-        allows_ev_climate_schedules=False,
-    ),
-    ApiVehicleGeneration.GR86: GenerationTransport(
-        endpoint_generation="GR86",
-        status_transport="route",
-        engine_transport="route",
-        refresh_transports=("route",),
-        command_transport="route",
-        explicit_command_capabilities=True,
-    ),
 }
 
 

@@ -33,13 +33,10 @@ from .const import (
     UPDATE_INTERVAL,
 )
 from .exceptions import AuthError
+from .generations import GENERATION_TRANSPORTS
 from .remote_access import sync_remote_access_issues
 from .service_helpers import translate_service_errors
-from .vehicle import (
-    GENERATION_TRANSPORTS,
-    RemoteRequestCommand,
-    ToyotaVehicle,
-)
+from .vehicle import RemoteRequestCommand, ToyotaVehicle
 from .vehicle_discovery import get_vehicles
 from .wake_policy import automatic_wake_due, record_vehicle_wake
 from .websocket_handler import ToyotaWebSocketHandler
