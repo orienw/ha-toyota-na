@@ -9,11 +9,15 @@ integration against it instead of against payloads written from the app. To add 
 Read the new file in `tests/fixtures/diagnostics/` before committing it. Home Assistant has already
 redacted identifiers, but Toyota's free text is kept. Then read the new snapshot: it is what the
 integration makes of that vehicle.
+
+A fixture's test runs at the fixture's `recorded` time, so readings are as old as the reporter saw
+them. It is set to when the fixture was made; change it if the download is older than that.
 """
 
 import copy
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 FIXTURES = Path(__file__).parent / "fixtures" / "diagnostics"
@@ -120,6 +124,9 @@ if __name__ == "__main__":
     source, name = sys.argv[1:]
     target = FIXTURES / f"{name}.json"
     target.parent.mkdir(exist_ok=True)
-    fixture = fixture_from_download(json.loads(Path(source).read_text()))
+    fixture = {
+        "recorded": datetime.now(UTC).isoformat(timespec="seconds"),
+        **fixture_from_download(json.loads(Path(source).read_text())),
+    }
     target.write_text(json.dumps(fixture, indent=2) + "\n")
     print(f"Wrote {target} with {len(fixture['vehicles'])} vehicle(s)")

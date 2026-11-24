@@ -242,8 +242,34 @@ def climate_schedules() -> dict:
     }
 
 
+def climate_settings() -> dict:
+    """`climate-settings` with the driver's seat heater on."""
+    return {
+        "temperature": 72,
+        "temperatureUnit": "F",
+        "minTemp": 65,
+        "maxTemp": 85,
+        "tempInterval": 1,
+        "settingsOn": True,
+        "acOperations": [
+            {
+                "categoryName": "seatHeat",
+                "available": True,
+                "acParameters": [{"name": "frontDriver", "available": True, "enabled": True}],
+            }
+        ],
+    }
+
+
 def health_report() -> dict:
-    return {"vehicleStatus": {"engOilLevelStatus": "Normal"}}
+    """A report whose recall and campaign are in `service-campaign` too."""
+    return {
+        "vehicleStatus": {"engOilLevelStatus": "Normal"},
+        "recallsListExists": True,
+        "safetyRecallsList": [{"title": "Airbag", "dealerReferenceID": "24V123"}],
+        "campaignsExists": True,
+        "serviceCampaigns": [{"title": "Warranty", "dealerRefID": "24S456"}],
+    }
 
 
 def health_status() -> dict:
@@ -251,7 +277,15 @@ def health_status() -> dict:
 
 
 def service_campaigns() -> list:
-    return [{"campaignType": "REC-S", "campaignNumber": "24V123"}]
+    return [
+        {"campaignType": "REC-S", "campaignNumber": "24V123"},
+        {
+            "campaignType": "SSC",
+            "campaignNumber": "24S456",
+            "campaignTitle": "Warranty",
+            "description": "Extended coverage",
+        },
+    ]
 
 
 def software_update() -> dict:

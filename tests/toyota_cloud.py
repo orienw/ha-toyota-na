@@ -255,6 +255,8 @@ class ToyotaCloud:
             return payloads.electric_status(0)
         if method == "GET" and path.endswith("/remote/route/ac-reservation"):
             return payloads.climate_schedules()
+        if method == "GET" and path.endswith("/remote/route/climate-settings"):
+            return payloads.climate_settings()
         for ending, response in (
             ("/vehiclehealth/report", payloads.health_report),
             ("/vehiclehealth/status", payloads.health_status),

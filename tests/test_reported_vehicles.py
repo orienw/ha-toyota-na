@@ -11,7 +11,7 @@ from unittest.mock import patch
 import payloads
 import pytest
 from common import FakeWebSocket, account_entry, set_up
-from diagnostics_fixture import FIXTURES, ReportedClient, fixture_from_download
+from diagnostics_fixture import FIXTURES, SECTIONS, ReportedClient, fixture_from_download
 from ha_helpers import get_diagnostics_for_config_entry
 from homeassistant.helpers import entity_registry as er
 
@@ -56,16 +56,20 @@ async def test_a_download_replays_into_the_reporters_entities(hass, hass_client,
     download = await get_diagnostics_for_config_entry(hass, hass_client, entry)
     await hass.config_entries.async_remove(entry.entry_id)
 
+    # A section the cloud never answered would replay as nothing and prove nothing.
+    for section in SECTIONS:
+        assert any(download[section]["data"]) or section == "notification_history", section
+
     fixture = fixture_from_download({"data": download})
     replayed = entity_states(hass, await replay(hass, fixture, caplog))
 
-    assert reported
     assert replayed == reported
 
 
 @pytest.mark.parametrize("path", sorted(FIXTURES.glob("*.json")), ids=lambda path: path.stem)
 async def test_reported_vehicle(hass, path, snapshot, freezer, caplog):
-    freezer.move_to("2027-01-01T12:00:00Z")
-    entry = await replay(hass, json.loads(path.read_text()), caplog)
+    fixture = json.loads(path.read_text())
+    freezer.move_to(fixture["recorded"])
+    entry = await replay(hass, fixture, caplog)
     states = entity_states(hass, entry)
     assert [f"{name}: {state}" for name, state in sorted(states.items())] == snapshot
