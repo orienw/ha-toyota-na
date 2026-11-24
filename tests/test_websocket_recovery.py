@@ -414,6 +414,18 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.handler.get_cached_status("FIRSTVIN"))
         self.assertEqual(self.received, [])
 
+    async def test_removing_car_survives_the_connection_dropping_during_the_stop(self):
+        async def drop(frame):
+            # The listen loop clears the connection while the stop is still being sent.
+            self.handler._ws = None
+            raise ConnectionResetError
+
+        self.socket.send_json.side_effect = drop
+        await self.handler.update_vehicle_contexts({"SECONDVIN": {"region": "CA"}})
+
+        self.socket.close.assert_awaited_once()
+        self.assertEqual(self.handler._subscriptions, {"SECONDVIN": "second"})
+
     async def test_changed_region_resubscribes_and_added_car_joins_existing_connection(self):
         await self.handler.update_vehicle_contexts(
             {

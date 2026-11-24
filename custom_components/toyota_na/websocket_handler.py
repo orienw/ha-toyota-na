@@ -108,14 +108,14 @@ class ToyotaWebSocketHandler:
             self._refreshed.discard(vin)
             self._subscription_tokens.pop(vin, None)
             sub_id = self._subscriptions.pop(vin, None)
-            if sub_id and self.is_connected:
-                if TYPE_CHECKING:
-                    assert self._ws is not None
+            # Held here because a dropped connection clears it while the stop is being sent.
+            ws = self._ws
+            if sub_id and ws is not None and not ws.closed:
                 try:
-                    await self._ws.send_json({"id": sub_id, "type": "stop"})
+                    await ws.send_json({"id": sub_id, "type": "stop"})
                 except Exception as err:
                     _LOGGER.debug("WebSocket: failed to stop subscription: %s", err)
-                    await self._ws.close()
+                    await ws.close()
 
         if not self._running:
             return
