@@ -477,7 +477,7 @@ class ToyotaVehicle:
         self._engine_details: dict = {}
         self._schedule_lock = asyncio.Lock()
         self._health: dict = {}
-        self._tire_pressure = None
+        self._tire_pressure: dict | None = None
         self._notifications = None
         self._feature_timestamps: dict[tuple, datetime] = {}
         self._status_openings: set[VehicleFeatures] = set()
@@ -1730,12 +1730,13 @@ class ToyotaVehicle:
             self.region,
             self.brand,
         )
-        self._tire_pressure = status
         self._parse_tire_pressure(status)
 
     def _parse_tire_pressure(self, status) -> None:
-        if not isinstance(status, dict) or status.get("vin", self.vin) != self.vin:
+        if not status or not isinstance(status, dict) or status.get("vin", self.vin) != self.vin:
             return
+        # An unusable response must not replace the last one read.
+        self._tire_pressure = status
         observed_at = parse_api_timestamp(status.get("tirePressureTimestamp"))
         for key, warning_feature in (
             ("flTirePressure", VehicleFeatures.FrontDriverTireWarning),

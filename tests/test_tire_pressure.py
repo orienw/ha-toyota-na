@@ -74,6 +74,15 @@ class TirePressureTests(unittest.IsolatedAsyncioTestCase):
                 await vehicle.update_tire_pressure()
                 self.assertEqual(requested, client.get_tire_pressure.await_count == 1)
 
+    async def test_an_unusable_response_keeps_the_last_one_read(self):
+        responses = [deepcopy(TIRES), None, {}, {**TIRES, "vin": "OTHERVIN"}]
+        vehicle = make_vehicle(
+            types.SimpleNamespace(get_tire_pressure=AsyncMock(side_effect=responses))
+        )
+        for _ in responses:
+            await vehicle.update_tire_pressure()
+            self.assertEqual(TIRES, vehicle.tire_pressure)
+
     def test_missing_malformed_or_older_readings_preserve_known_warnings(self):
         for factory in (make_17cy_vehicle, make_vehicle):
             with self.subTest(factory=factory.__name__):
