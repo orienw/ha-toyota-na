@@ -390,6 +390,22 @@ def graphql_schema_errors(errors):
     )
 
 
+def _token_rejected(errors):
+    """Recognize the errors Toyota's app answers by refreshing its sign-in."""
+    return any(
+        err.get("errorType") in ("APIGW-403", "APPSYNC-AUTH-403")
+        or (err.get("extensions") or {}).get("code") in ("APIGW-403", "APPSYNC-AUTH-403")
+        or str(err.get("message", "")).lower() == "unauthorized"
+        or "jwt expired" in str(err.get("message", "")).lower()
+        for err in errors
+        if isinstance(err, dict)
+    )
+
+
+class _TokenRejected(RuntimeError):
+    """AppSync refused a socket's access token before its operation was sent."""
+
+
 def _failed_status_sections(data, errors):
     """Find sections lost to errors in fields omitted by the basic selection."""
     status = (data or {}).get("getVehicleStatus")
@@ -524,7 +540,10 @@ async def _wait_for_remote_socket_event(ws, expected_type, subscription_id=None)
         if message_type == "ka":
             continue
         if message_type in ("connection_error", "error"):
-            raise RuntimeError(_remote_socket_error(message))
+            payload = message.get("payload")
+            errors = payload.get("errors") if isinstance(payload, dict) else None
+            error = _TokenRejected if _token_rejected(errors or []) else RuntimeError
+            raise error(_remote_socket_error(message))
         if message_type == expected_type and (
             subscription_id is None or message.get("id") == subscription_id
         ):
@@ -595,6 +614,16 @@ async def _run_appsync_operation(self, vin, submit, region, *, fail_on_unknown=F
 
 async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unknown=False):
     token = await self.auth.get_access_token()
+    try:
+        return await _appsync_operation(self, token, vin, submit, region, fail_on_unknown)
+    except _TokenRejected:
+        # Nothing has been sent yet, so try once more with a refreshed token.
+        await self.auth.check_tokens(rejected_token=token)
+        token = await self.auth.get_access_token()
+        return await _appsync_operation(self, token, vin, submit, region, fail_on_unknown)
+
+
+async def _appsync_operation(self, token, vin, submit, region, fail_on_unknown):
     guid = await self.auth.get_guid()
     authorization = appsync_authorization(
         token,
@@ -614,10 +643,10 @@ async def _execute_appsync_operation(self, vin, submit, region, *, fail_on_unkno
             except TimeoutError:
                 raise RuntimeError("The Toyota connection timed out. Try again.") from None
             except aiohttp.ClientError as err:
-                status = (
-                    f" (HTTP {err.status})" if isinstance(err, aiohttp.ClientResponseError) else ""
-                )
-                raise RuntimeError(f"Could not connect to Toyota{status}. Try again.") from None
+                status = err.status if isinstance(err, aiohttp.ClientResponseError) else None
+                error = _TokenRejected if status == 401 else RuntimeError
+                detail = f" (HTTP {status})" if status is not None else ""
+                raise error(f"Could not connect to Toyota{detail}. Try again.") from None
             await ws.send_json({"type": "connection_init"})
             await _wait_for_remote_socket_event(ws, "connection_ack")
 
@@ -1133,14 +1162,7 @@ class ToyotaOneClient:
                         return original_data
                 errors = result.get("errors") or []
                 auth_errors = errors or ([result] if status == 403 else [])
-                auth_failed = status == 401 or any(
-                    err.get("errorType") in ("APIGW-403", "APPSYNC-AUTH-403")
-                    or (err.get("extensions") or {}).get("code")
-                    in ("APIGW-403", "APPSYNC-AUTH-403")
-                    or str(err.get("message", "")).lower() == "unauthorized"
-                    or "jwt expired" in str(err.get("message", "")).lower()
-                    for err in auth_errors
-                )
+                auth_failed = status == 401 or _token_rejected(auth_errors)
                 # A rejection after a successful refresh is about this request, such as a
                 # vehicle without access, not the sign-in. A failed refresh raises TokenExpired.
                 if auth_failed and not auth_retried:

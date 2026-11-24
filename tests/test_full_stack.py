@@ -120,10 +120,6 @@ async def test_vehicle_toyota_refuses_keeps_the_account_signed_in(hass, toyota):
     assert not cloud.socket.closed
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="A command's AppSync socket neither refreshes a rejected token nor starts reauth",
-)
 async def test_sign_in_failure_during_an_action_stops_live_updates(hass, toyota):
     cloud, entry = await toyota([APPSYNC_EV])
     cloud.revoke_access_token(refresh_works=False)

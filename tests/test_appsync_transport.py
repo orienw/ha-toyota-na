@@ -334,6 +334,74 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("CA", connection_headers["x-region"])
         self.assertEqual("TESTVIN24", connection_headers["vin"])
 
+    async def test_a_rejected_token_is_refreshed_before_the_command_is_sent(self):
+        rejected = {"errorType": "APPSYNC-AUTH-403", "message": "Unauthorized"}
+        refused = {"message": "Feature unavailable"}
+
+        class Refusing(_WebSocket):
+            """Answer the subscription with an error."""
+
+            def __init__(self, error):
+                super().__init__()
+                self.error = error
+
+            async def receive(self):
+                if self.stage != 1:
+                    return await super().receive()
+                self.stage += 1
+                frame = {"type": "error", "id": self.subscription_id}
+                return _Message({**frame, "payload": {"errors": [self.error]}})
+
+        class Unreachable:
+            """Fail the WebSocket handshake with an HTTP status."""
+
+            def __init__(self, status):
+                self.status = status
+
+            async def __aenter__(self):
+                raise aiohttp.ClientResponseError(MagicMock(), (), status=self.status)
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        class Session(_WebSocketSession):
+            def __init__(self, *connections):
+                super().__init__(None)
+                self.connections = list(connections)
+
+            def ws_connect(self, url, protocols, heartbeat):
+                connection = self.connections.pop(0)
+                if isinstance(connection, Unreachable):
+                    return connection
+                return _SocketContext(connection)
+
+        for name, connections, refreshes, error in (
+            ("subscription", (Refusing(rejected), _WebSocket()), 1, None),
+            ("handshake", (Unreachable(401), _WebSocket()), 1, None),
+            ("rejected again", (Refusing(rejected), Refusing(rejected)), 1, "Unauthorized"),
+            ("refused for another reason", (Refusing(refused),), 0, "Feature unavailable"),
+            ("unreachable", (Unreachable(403),), 0, "HTTP 403"),
+        ):
+            with self.subTest(name):
+                client = _CommandClient()
+                client.auth.check_tokens = AsyncMock()
+                with patch.object(
+                    client_module.aiohttp, "ClientSession", return_value=Session(*connections)
+                ):
+                    send = client_module.ToyotaOneClient.remote_request_24mm(
+                        client, "TESTVIN24", "door-lock", "US"
+                    )
+                    if error is None:
+                        self.assertEqual("completed", (await send)["status"].lower())
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, error):
+                            await send
+                self.assertEqual(refreshes, client.auth.check_tokens.await_count)
+                if refreshes:
+                    client.auth.check_tokens.assert_awaited_with(rejected_token="token")
+                # The command goes out once, and only on a connection Toyota accepted.
+                self.assertEqual(0 if error else 1, len(client.command_calls))
+
     async def test_status_query_sends_vehicle_context_headers(self):
         session = _HttpSession()
 
