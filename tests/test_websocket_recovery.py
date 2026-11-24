@@ -250,6 +250,96 @@ class SubscriptionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("FIRSTVIN", self.handler._retry_tasks)
         self.client.graphql_confirm_subscription.assert_awaited_once_with("FIRSTVIN", None, "US")
 
+    async def reject_token(self, vin, delay):
+        """Toyota refuses the vehicle's subscription for its token; run the retry that follows."""
+        rejection = {"errorType": "APPSYNC-AUTH-403", "message": "Unauthorized"}
+        with self.assertLogs(websocket_module.__name__, level="WARNING"):
+            await self.handler._handle_message(
+                {
+                    "type": "error",
+                    "id": self.handler._subscriptions[vin],
+                    "payload": {"errors": [rejection]},
+                },
+                "connection-token",
+                "guid",
+            )
+        retry = self.handler._retry_tasks[vin]
+        (await self.next_sleep(delay)).set()
+        await retry
+        await self.next_sleep(30)
+
+    async def test_rejected_token_is_refreshed_before_the_subscription_is_retried(self):
+        self.auth.check_tokens = AsyncMock()
+        # A connection outlives its first token, so the subscription sent a later one.
+        self.handler._subscription_tokens["FIRSTVIN"] = "rotated-token"
+        await self.reject_token("FIRSTVIN", 5)
+
+        self.auth.check_tokens.assert_awaited_once_with(rejected_token="rotated-token")
+        sent = self.socket.send_json.call_args.args[0]
+        self.assertEqual(
+            sent["payload"]["extensions"]["authorization"]["Authorization"], "Bearer fresh-token"
+        )
+        self.assertEqual(self.handler._subscriptions["SECONDVIN"], "second")
+        self.socket.close.assert_not_awaited()
+
+    async def test_vehicle_toyota_keeps_refusing_refreshes_the_sign_in_once(self):
+        self.auth.check_tokens = AsyncMock()
+        self.handler._subscription_tokens = {"FIRSTVIN": "token", "SECONDVIN": "token"}
+        for delay in (5, 10, 20):
+            await self.reject_token("FIRSTVIN", delay)
+        self.auth.check_tokens.assert_awaited_once_with(rejected_token="token")
+
+        # Another vehicle's rejection is still answered.
+        await self.reject_token("SECONDVIN", 5)
+        self.assertEqual(2, self.auth.check_tokens.await_count)
+
+        # Once Toyota accepts the vehicle, a later rejection is answered again.
+        await self.handler._handle_message(
+            {"type": "start_ack", "id": self.handler._subscriptions["FIRSTVIN"]}, "token", "guid"
+        )
+        await self.reject_token("FIRSTVIN", 40)
+        self.assertEqual(3, self.auth.check_tokens.await_count)
+        self.auth.check_tokens.assert_awaited_with(rejected_token="fresh-token")
+
+    async def test_refused_connection_refreshes_the_sign_in_once(self):
+        rejection = {"errorType": "APPSYNC-AUTH-403", "message": "Unauthorized"}
+        refusal = types.SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps({"type": "connection_error", "payload": {"errors": [rejection]}}),
+        )
+        for refused in ("handshake", "connection"):
+            with self.subTest(refused):
+                self.auth.check_tokens = AsyncMock()
+                handler = ToyotaWebSocketHandler(self.client)
+                self.addAsyncCleanup(handler.stop)
+
+                async def connect(url, refused=refused, **kwargs):
+                    if refused == "connection":
+                        return AsyncMock(closed=False, receive=AsyncMock(return_value=refusal))
+                    info = aiohttp.RequestInfo(
+                        URL(url), "GET", CIMultiDictProxy(CIMultiDict()), URL(url)
+                    )
+                    raise aiohttp.WSServerHandshakeError(info, (), status=401)
+
+                session = MagicMock(closed=False, close=AsyncMock())
+                session.ws_connect = AsyncMock(side_effect=connect)
+                with (
+                    patch.object(websocket_module.aiohttp, "ClientSession", return_value=session),
+                    self.assertLogs(websocket_module.__name__, level="DEBUG"),
+                ):
+                    await handler.start({"FIRSTVIN": {"region": "US"}})
+                    (await self.next_sleep(5)).set()
+                    # Refused again with the new token, so it is not the sign-in.
+                    await self.next_sleep(10)
+                    self.auth.check_tokens.assert_awaited_once_with(rejected_token="fresh-token")
+                    await handler.stop()
+
+        # An accepted connection ends the run of refusals.
+        handler = ToyotaWebSocketHandler(self.client)
+        handler._refreshed.add(None)
+        await handler._handle_message({"type": "connection_ack"}, "fresh-token", "guid")
+        self.assertEqual(set(), handler._refreshed)
+
     async def test_repeated_rejections_back_off_without_reconnecting_other_car(self):
         with self.assertLogs(websocket_module.__name__, level="WARNING"):
             for delay in (5, 10, 20, 40, 80, 160, 300, 300):

@@ -331,10 +331,13 @@ def graphql_schema_errors(errors):
 
 
 def _token_rejected(errors):
-    """Recognize the errors Toyota's app answers by refreshing its sign-in."""
+    """Recognize the errors Toyota's app retries as a rejected sign-in."""
     return any(
         err.get("errorType") in ("APIGW-403", "APPSYNC-AUTH-403")
-        or (err.get("extensions") or {}).get("code") in ("APIGW-403", "APPSYNC-AUTH-403")
+        or (
+            isinstance(err.get("extensions"), dict)
+            and err["extensions"].get("code") in ("APIGW-403", "APPSYNC-AUTH-403")
+        )
         or str(err.get("message", "")).lower() == "unauthorized"
         or "jwt expired" in str(err.get("message", "")).lower()
         for err in errors

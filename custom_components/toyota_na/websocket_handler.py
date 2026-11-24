@@ -13,6 +13,8 @@ import aiohttp
 from .appsync import (
     GRAPHQL_BASIC_VEHICLE_STATUS_FIELDS,
     GRAPHQL_VEHICLE_STATUS_FIELDS,
+    _token_rejected,
+    _TokenRejected,
     appsync_authorization,
     appsync_subscription_message,
     appsync_ws_url,
@@ -34,6 +36,13 @@ SUBSCRIBE_BASIC_VEHICLE_STATUS = (
 )
 
 
+def _rejects_token(msg) -> bool:
+    """Whether an AppSync error frame reports the access token as rejected."""
+    payload = msg.get("payload")
+    errors = payload.get("errors") if isinstance(payload, dict) else None
+    return isinstance(errors, list) and _token_rejected(errors)
+
+
 class ToyotaWebSocketHandler:
     """Manages AppSync WebSocket connection for vehicle status push notifications."""
 
@@ -51,6 +60,10 @@ class ToyotaWebSocketHandler:
         self._owns_session = False
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._subscriptions: dict[str, str] = {}  # vin -> subscription_id
+        self._subscription_tokens: dict[str, str] = {}  # vin -> the token its subscription sent
+        # VINs, and None for the connection, whose rejection has already refreshed the sign-in.
+        # One stays until Toyota accepts it, so a lasting refusal refreshes once, not per retry.
+        self._refreshed: set[str | None] = set()
         self._basic_status_vins: set[str] = set()
         self._cached_status: dict[str, dict] = {}  # vin -> latest vehicle status dict
         self._vehicle_contexts: dict[str, dict] = {}
@@ -92,6 +105,8 @@ class ToyotaWebSocketHandler:
             self._retry_delays.pop(vin, None)
             self._cached_status.pop(vin, None)
             self._basic_status_vins.discard(vin)
+            self._refreshed.discard(vin)
+            self._subscription_tokens.pop(vin, None)
             sub_id = self._subscriptions.pop(vin, None)
             if sub_id and self.is_connected:
                 if TYPE_CHECKING:
@@ -134,6 +149,8 @@ class ToyotaWebSocketHandler:
         self._session = None
         self._owns_session = False
         self._subscriptions.clear()
+        self._subscription_tokens.clear()
+        self._refreshed.clear()
 
     def _notify_auth_error(self, err: AuthError) -> None:
         self._running = False
@@ -213,10 +230,17 @@ class ToyotaWebSocketHandler:
                     aiohttp.WSMsgType.ERROR,
                 ):
                     break
+        except (aiohttp.ClientResponseError, _TokenRejected) as err:
+            rejected = isinstance(err, _TokenRejected) or err.status == 401
+            if rejected and None not in self._refreshed:
+                await self._client.auth.check_tokens(rejected_token=token)
+                self._refreshed.add(None)
+            raise
         finally:
             self._ready = False
             await self._cancel_retries()
             self._subscriptions.clear()
+            self._subscription_tokens.clear()
             if self._ws and not self._ws.closed:
                 await self._ws.close()
             if self._owns_session and self._session and not self._session.closed:
@@ -233,6 +257,7 @@ class ToyotaWebSocketHandler:
 
         if msg_type == "connection_ack":
             self._ready = True
+            self._refreshed.discard(None)
             self._keepalive_timeout = (
                 msg.get("payload", {}).get("connectionTimeoutMs", 300_000) / 1000
             )
@@ -258,6 +283,7 @@ class ToyotaWebSocketHandler:
             # Per app flow: call ConfirmSubscription after subscription active
             if vin:
                 self._cancel_retry(vin)
+                self._refreshed.discard(vin)
                 try:
                     context = self._vehicle_contexts.get(vin, {})
                     result = await self._client.graphql_confirm_subscription(
@@ -313,6 +339,8 @@ class ToyotaWebSocketHandler:
         elif msg_type == "connection_error" or (msg_type == "error" and not msg.get("id")):
             self._ready = False
             _LOGGER.warning("WebSocket connection error: %s", msg.get("payload", msg))
+            if _rejects_token(msg):
+                raise _TokenRejected("AppSync rejected the access token")
             raise ConnectionError("AppSync rejected the connection")
 
         elif msg_type in ("error", "complete"):
@@ -322,6 +350,7 @@ class ToyotaWebSocketHandler:
             )
             if vin is not None:
                 self._subscriptions.pop(vin)
+                sent_token = self._subscription_tokens.pop(vin, None)
                 payload = msg.get("payload")
                 errors = payload.get("errors") if isinstance(payload, dict) else None
                 if msg_type == "error" and graphql_schema_errors(errors):
@@ -332,7 +361,10 @@ class ToyotaWebSocketHandler:
                     msg_type,
                 )
                 _LOGGER.debug("WebSocket subscription response: %s", json.dumps(msg)[:500])
-                self._schedule_retry(vin)
+                rejected = (
+                    msg_type == "error" and vin not in self._refreshed and _rejects_token(msg)
+                )
+                self._schedule_retry(vin, rejected_token=sent_token if rejected else None)
 
         elif msg_type == "ka":
             self._keepalive_deadline = monotonic() + self._keepalive_timeout
@@ -343,6 +375,7 @@ class ToyotaWebSocketHandler:
             return
         sub_id = str(uuid.uuid4())
         self._subscriptions[vin] = sub_id
+        self._subscription_tokens[vin] = token
         context = self._vehicle_contexts.get(vin, {})
         authorization = appsync_authorization(
             token,
@@ -379,25 +412,31 @@ class ToyotaWebSocketHandler:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    def _schedule_retry(self, vin, delay=None):
+    def _schedule_retry(self, vin, delay=None, rejected_token=None):
         self._cancel_retry(vin)
         if not self._running or not self._ready or vin not in self._vehicle_contexts:
             return
         if delay is None:
             delay = self._retry_delays.get(vin, 5)
             self._retry_delays[vin] = min(delay * 2, self._max_reconnect_delay)
-        self._retry_tasks[vin] = asyncio.create_task(self._retry_subscription(vin, delay))
+        self._retry_tasks[vin] = asyncio.create_task(
+            self._retry_subscription(vin, delay, rejected_token)
+        )
 
-    async def _retry_subscription(self, vin, delay):
+    async def _retry_subscription(self, vin, delay, rejected_token=None):
         try:
             await asyncio.sleep(delay)
             sub_id = self._subscriptions.pop(vin, None)
+            self._subscription_tokens.pop(vin, None)
             if sub_id:
                 if TYPE_CHECKING:
                     assert self._ws is not None
                 await self._ws.send_json({"id": sub_id, "type": "stop"})
                 self._schedule_retry(vin)
                 return
+            if rejected_token is not None:
+                await self._client.auth.check_tokens(rejected_token=rejected_token)
+                self._refreshed.add(vin)
             token = await self._client.auth.get_access_token()
             guid = await self._client.auth.get_guid()
             await self._subscribe_vin(vin, token, guid)
@@ -411,7 +450,7 @@ class ToyotaWebSocketHandler:
                 await self._ws.close()
         except Exception as err:
             _LOGGER.debug("WebSocket: subscription retry failed: %s", err)
-            self._schedule_retry(vin)
+            self._schedule_retry(vin, rejected_token=rejected_token)
         finally:
             if self._retry_tasks.get(vin) is asyncio.current_task():
                 self._retry_tasks.pop(vin)

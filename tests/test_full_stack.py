@@ -93,6 +93,33 @@ async def test_revoked_access_token_is_refreshed_and_the_read_retried(hass, toyo
     assert not reauth_started(hass)
 
 
+async def test_revoked_access_token_is_refreshed_and_live_updates_resume(hass, toyota):
+    cloud, entry = await toyota([APPSYNC_EV, APPSYNC_GAS])
+    vin = APPSYNC_EV["vin"]
+    entry.runtime_data.ws_handler._retry_delays[vin] = 0  # retry at once
+    # The connection outlives its first token: a poll replaces it before Toyota revokes again.
+    cloud.revoke_access_token()
+    await poll(hass, entry)
+    cloud.revoke_access_token()
+
+    # Toyota ends one subscription, then refuses the old token when it is started again.
+    ended = cloud.subscriptions[vin]
+    cloud.socket._put({"type": "complete", "id": ended})
+    for _ in range(20):
+        await hass.async_block_till_done()
+
+    assert cloud.refreshes == 2
+    assert cloud.subscriptions[vin] != ended
+    cloud.push_status(vin, pushed_status(vin, 20000))
+    cloud.push_status(APPSYNC_GAS["vin"], pushed_status(APPSYNC_GAS["vin"], 30000))
+    await hass.async_block_till_done()
+    assert odometer(hass, APPSYNC_EV) == "20000"
+    # The other vehicle's subscription was never interrupted.
+    assert odometer(hass, APPSYNC_GAS) == "30000"
+    assert not cloud.socket.closed
+    assert not reauth_started(hass)
+
+
 async def test_failed_token_refresh_starts_reauth_and_stops_live_updates(hass, toyota):
     cloud, entry = await toyota([APPSYNC_EV])
     cloud.revoke_access_token(refresh_works=False)
