@@ -385,6 +385,7 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(name):
                 client = _CommandClient()
                 client.auth.check_tokens = AsyncMock()
+                client.auth.get_access_token = AsyncMock(side_effect=["token", "refreshed"])
                 with patch.object(
                     client_module.aiohttp, "ClientSession", return_value=Session(*connections)
                 ):
@@ -393,6 +394,11 @@ class AppSyncTransportTests(unittest.IsolatedAsyncioTestCase):
                     )
                     if error is None:
                         self.assertEqual("completed", (await send)["status"].lower())
+                        start = next(
+                            frame for frame in connections[-1].sent if frame["type"] == "start"
+                        )
+                        authorization = start["payload"]["extensions"]["authorization"]
+                        self.assertEqual("Bearer refreshed", authorization["Authorization"])
                     else:
                         with self.assertRaisesRegex(RuntimeError, error):
                             await send
