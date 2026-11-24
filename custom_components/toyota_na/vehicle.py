@@ -477,6 +477,7 @@ class ToyotaVehicle:
         self._engine_details = {}
         self._schedule_lock = asyncio.Lock()
         self._health = {}
+        self._tire_pressure = None
         self._notifications = None
         self._feature_timestamps: dict[tuple, datetime] = {}
         self._status_openings: set[VehicleFeatures] = set()
@@ -1707,6 +1708,11 @@ class ToyotaVehicle:
                 self._health[key] = response
                 read_at[key] = now
 
+    @property
+    def tire_pressure(self):
+        """Toyota's latest tire pressure response, None where the endpoint is not read."""
+        return self._tire_pressure
+
     async def update_tire_pressure(self) -> None:
         # Toyota's app reads this endpoint only when tire pressure is enabled.
         if (
@@ -1721,6 +1727,7 @@ class ToyotaVehicle:
             self.region,
             self.brand,
         )
+        self._tire_pressure = status
         self._parse_tire_pressure(status)
 
     def _parse_tire_pressure(self, status) -> None:

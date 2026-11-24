@@ -34,6 +34,8 @@ TO_REDACT = {
     "address",
     "ctsLinks",  # contains a vin number
     "dealerName",
+    "dealerRefID",
+    "dealerReferenceID",
     "device_id",
     "firstName",
     "guid",
@@ -50,6 +52,8 @@ TO_REDACT = {
     "parkingNotes",
     "euiccid",
     "vehicleUnitTerminalNumber",
+    "vhrgenID",  # vehicle health report identifiers
+    "vhrid",
     "contractId",
     "registrationNumber",
     "oldImei",
@@ -107,7 +111,8 @@ async def async_get_config_entry_diagnostics(
         vehicle_list["unexpected"] = type(vehicle_list["data"]).__name__
         vehicle_list["data"] = None
     user_vehicle_list = vehicle_list["data"] or []
-    # Climate schedules and vehicle health as the last poll read them, to see what Toyota reports.
+    # Climate, tire pressure and vehicle health as the last poll read them, to see what Toyota
+    # reports.
     coordinator = getattr(runtime_data, "coordinator", None)
     vehicles = {vehicle.vin: vehicle for vehicle in getattr(coordinator, "data", None) or []}
 
@@ -115,7 +120,9 @@ async def async_get_config_entry_diagnostics(
     telemetry = []
     engine_status = []
     electric_status = []
+    climate_settings = []
     climate_schedules = []
+    tire_pressure = []
     vehicle_health = []
     notification_history = []
 
@@ -215,7 +222,9 @@ async def async_get_config_entry_diagnostics(
         telemetry.append(user_telemetry)
         engine_status.append(user_engine_status)
         electric_status.append(user_electric_status)
+        climate_settings.append(getattr(vehicles.get(vin), "climate_settings", None) or None)
         climate_schedules.append(getattr(vehicles.get(vin), "climate_schedules", None) or None)
+        tire_pressure.append(getattr(vehicles.get(vin), "tire_pressure", None) or None)
         health = getattr(vehicles.get(vin), "health", None) or {}
         vehicle_health.append(
             {key: value for key, value in health.items() if key != "read_at"} or None
@@ -242,7 +251,9 @@ async def async_get_config_entry_diagnostics(
             "telemetry": {"data": telemetry},
             "engine_status": {"data": engine_status},
             "electric_status": {"data": electric_status},
+            "climate_settings": {"data": climate_settings},
             "climate_schedules": {"data": climate_schedules},
+            "tire_pressure": {"data": tire_pressure},
             "vehicle_health": {"data": vehicle_health},
             "notification_history": {"data": notification_history},
         },

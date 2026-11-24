@@ -91,6 +91,7 @@ class FakeVehicle:
 
     climate_schedules = {}
     health = {}
+    tire_pressure = None
     remote_display = None
     notifications = None
     supports_climate_settings = False

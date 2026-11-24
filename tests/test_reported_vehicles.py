@@ -59,12 +59,8 @@ async def test_a_download_replays_into_the_reporters_entities(hass, hass_client,
     fixture = fixture_from_download({"data": download})
     replayed = entity_states(hass, await replay(hass, fixture, caplog))
 
-    def comparable(states):
-        # The tire pressure endpoint is not in diagnostics, so a fixture reads tires from telemetry.
-        return {name: state for name, state in states.items() if "Tire" not in name}
-
-    assert comparable(reported)
-    assert comparable(replayed) == comparable(reported)
+    assert reported
+    assert replayed == reported
 
 
 @pytest.mark.parametrize("path", sorted(FIXTURES.glob("*.json")), ids=lambda path: path.stem)

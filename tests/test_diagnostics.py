@@ -150,9 +150,32 @@ async def test_climate_schedules_come_from_the_last_poll(diagnostics):
     assert result["climate_schedules"]["data"] == [schedules, None]
 
 
+async def test_climate_settings_and_tire_pressure_come_from_the_last_poll(diagnostics):
+    settings = {"temperature": 22.0, "acOperations": []}
+    tires = {"vin": "READ", "flTirePressure": {"value": 36, "unit": "psi"}}
+    read = FakeVehicle(set(), vin="READ")
+    read.climate_settings = settings
+    read.tire_pressure = tires
+    account, result = await diagnostics(
+        [{"vin": vin, "generation": "21MM"} for vin in ("READ", "OTHER")],
+        [read, FakeVehicle(set(), vin="OTHER")],
+        get_telemetry={},
+    )
+    assert result["climate_settings"]["data"] == [settings, None]
+    assert result["tire_pressure"]["data"] == [{**tires, "vin": REDACTED}, None]
+    # Downloading the report asks Toyota for neither again.
+    assert "get_climate_settings" not in account.client.calls
+    assert "get_tire_pressure" not in account.client.calls
+
+
 async def test_vehicle_health_comes_from_the_last_poll(diagnostics):
     read = FakeVehicle(set(), vin="READ")
-    read.health = {"read_at": 1000.0, "report": {"vehicleStatus": {}}, "campaigns": []}
+    read.health = {
+        "read_at": 1000.0,
+        "report": {"vhrid": "report-1", "vhrgenID": "generated-1", "vehicleStatus": {}},
+        "campaigns": [{"campaignNumber": "24V123", "dealerRefID": "dealer-1"}],
+        "status": {"dealerReferenceID": "dealer-2"},
+    }
     other = FakeVehicle(set(), vin="OTHER")
     other.health = {"read_at": 1000.0}
     _, result = await diagnostics(
@@ -162,7 +185,11 @@ async def test_vehicle_health_comes_from_the_last_poll(diagnostics):
         get_telemetry={},
     )
     assert result["vehicle_health"]["data"] == [
-        {"report": {"vehicleStatus": {}}, "campaigns": []},
+        {
+            "report": {"vhrid": REDACTED, "vhrgenID": REDACTED, "vehicleStatus": {}},
+            "campaigns": [{"campaignNumber": "24V123", "dealerRefID": REDACTED}],
+            "status": {"dealerReferenceID": REDACTED},
+        },
         None,
     ]
 
@@ -312,7 +339,9 @@ async def test_report_without_a_client_keeps_config_redacted(
         "telemetry": {"data": []},
         "engine_status": {"data": []},
         "electric_status": {"data": []},
+        "climate_settings": {"data": []},
         "climate_schedules": {"data": []},
+        "tire_pressure": {"data": []},
         "vehicle_health": {"data": []},
         "notification_history": {"data": []},
     }

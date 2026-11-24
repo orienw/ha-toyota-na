@@ -9,9 +9,6 @@ integration against it instead of against payloads written from the app. To add 
 Read the new file in `tests/fixtures/diagnostics/` before committing it. Home Assistant has already
 redacted identifiers, but Toyota's free text is kept. Then read the new snapshot: it is what the
 integration makes of that vehicle.
-
-Diagnostics do not include the tire pressure endpoint or climate settings, so a fixture can't
-reproduce the entities that only those feed.
 """
 
 import copy
@@ -26,7 +23,9 @@ SECTIONS = (
     "telemetry",
     "engine_status",
     "electric_status",
+    "climate_settings",
     "climate_schedules",
+    "tire_pressure",
     "vehicle_health",
     "notification_history",
 )
@@ -34,7 +33,9 @@ SECTIONS = (
 READS = {
     "get_telemetry": ("telemetry",),
     "get_electric_status": ("electric_status",),
+    "get_climate_settings": ("climate_settings",),
     "get_climate_schedules": ("climate_schedules",),
+    "get_tire_pressure": ("tire_pressure",),
     "get_vehicle_health_report": ("vehicle_health", "report"),
     "get_vehicle_health_status": ("vehicle_health", "status"),
     "get_service_campaigns": ("vehicle_health", "campaigns"),
