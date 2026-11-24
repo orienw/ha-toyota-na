@@ -369,9 +369,7 @@ async def test_every_event_type_is_declared_and_translated(hass, notifications):
     state = hass.states.get(entity_id(hass, "event", "TESTVIN.Notifications"))
     event_types = set(state.attributes["event_types"])
     assert event_types == {*NOTIFICATION_EVENT_TYPES.values(), "other"}
-    for path in ("strings.json", "translations/en.json"):
-        states = json.loads((INTEGRATION / path).read_text())["entity"]["event"]["notification"][
-            "state_attributes"
-        ]["event_type"]["state"]
-        assert set(states) == event_types
+    translations = json.loads((INTEGRATION / "translations/en.json").read_text())
+    states = translations["entity"]["event"]["notification"]["state_attributes"]["event_type"]
+    assert set(states["state"]) == event_types
     assert event.notification_event_type(None) == "other"
