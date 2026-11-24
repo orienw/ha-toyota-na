@@ -172,9 +172,14 @@ async def test_vehicle_health_comes_from_the_last_poll(diagnostics):
     read = FakeVehicle(set(), vin="READ")
     read.health = {
         "read_at": 1000.0,
-        "report": {"vhrid": "report-1", "vhrgenID": "generated-1", "vehicleStatus": {}},
-        "campaigns": [{"campaignNumber": "24V123", "dealerRefID": "dealer-1"}],
-        "status": {"dealerReferenceID": "dealer-2"},
+        "report": {
+            "vhrid": "report-1",
+            "vhrgenID": "generated-1",
+            "vehicleStatus": {},
+            "safetyRecallsList": [{"dealerReferenceID": "24V123"}],
+            "serviceCampaigns": [{"dealerRefID": "24S456"}],
+        },
+        "campaigns": [{"campaignNumber": "24V123"}],
     }
     other = FakeVehicle(set(), vin="OTHER")
     other.health = {"read_at": 1000.0}
@@ -186,9 +191,15 @@ async def test_vehicle_health_comes_from_the_last_poll(diagnostics):
     )
     assert result["vehicle_health"]["data"] == [
         {
-            "report": {"vhrid": REDACTED, "vhrgenID": REDACTED, "vehicleStatus": {}},
-            "campaigns": [{"campaignNumber": "24V123", "dealerRefID": REDACTED}],
-            "status": {"dealerReferenceID": REDACTED},
+            "report": {
+                "vhrid": REDACTED,
+                "vhrgenID": REDACTED,
+                "vehicleStatus": {},
+                # Campaign numbers stay: recalls are matched across the two lists by them.
+                "safetyRecallsList": [{"dealerReferenceID": "24V123"}],
+                "serviceCampaigns": [{"dealerRefID": "24S456"}],
+            },
+            "campaigns": [{"campaignNumber": "24V123"}],
         },
         None,
     ]
@@ -372,6 +383,7 @@ async def test_diagnostics_normalizes_generation_and_redacts_pii_fields(diagnost
                 "phoneNumber": "555-0199",
                 "address": "123 Main St",
                 "dealerName": "Example Toyota",
+                "preferredDealerCode": "12345",
             }
         ],
         get_vehicle_status_21mm={"vehicleStatus": []},
@@ -388,5 +400,12 @@ async def test_diagnostics_normalizes_generation_and_redacts_pii_fields(diagnost
     assert result["options"] == {"automatic_wake_interval": 0}
     assert result["websocket"] == {"connected": False}
     vehicle = result["vehicle_list"]["data"][0]
-    for key in ("firstName", "lastName", "phoneNumber", "address", "dealerName"):
+    for key in (
+        "firstName",
+        "lastName",
+        "phoneNumber",
+        "address",
+        "dealerName",
+        "preferredDealerCode",
+    ):
         assert vehicle[key] == REDACTED
