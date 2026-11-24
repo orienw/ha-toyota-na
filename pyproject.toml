@@ -18,3 +18,17 @@ ignore = ["RUF012", "SIM105", "SIM117", "ASYNC109"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B023", "RUF043", "ASYNC110"]
+
+[tool.mypy]
+files = ["custom_components/toyota_na"]
+check_untyped_defs = true
+
+# Home Assistant swaps voluptuous for its own schema library when it starts.
+[[tool.mypy.overrides]]
+module = "voluptuous.*"
+follow_imports = "skip"
+
+# Not yet clean. Remove a module from this list once it passes.
+[[tool.mypy.overrides]]
+module = ["toyota_na.diagnostics", "toyota_na.websocket_handler"]
+ignore_errors = true

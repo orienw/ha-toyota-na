@@ -1,2 +1,3 @@
+mypy==2.4.1
 pytest-homeassistant
 ruff==0.16.6

@@ -31,6 +31,9 @@ jobs:
       - run: pip install -r ${{ matrix.requirements }}
       - run: ruff check .
       - run: ruff format --check .
+      # Types are checked against the newest Home Assistant only.
+      - run: mypy
+        if: matrix.homeassistant == 'newest'
       - run: pytest -q
   hassfest:
     name: hassfest
