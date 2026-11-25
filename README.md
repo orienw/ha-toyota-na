@@ -1,6 +1,10 @@
 # Toyota (North America) for Home Assistant
 
+<!-- ha-marketplace:exclude-start -->
+
 [![Latest stable release](https://img.shields.io/github/v/release/orienw/ha-toyota-na?sort=date&style=for-the-badge&label=stable)](https://github.com/orienw/ha-toyota-na/releases/latest)
+
+<!-- ha-marketplace:exclude-end -->
 
 Home Assistant integration for Toyota and Lexus Connected Services in North
 America, maintained by [@orienw](https://github.com/orienw).
@@ -42,6 +46,8 @@ skipped, and the Home Assistant log records the vehicle and its generation code.
 
 ## Installation
 
+<!-- ha-marketplace:exclude-start -->
+
 Requires Home Assistant **2026.8** or newer. Already using
 `widewing/ha-toyota-na`? Follow
 [Switching from upstream](#switching-from-upstream) first.
@@ -61,9 +67,13 @@ Or add it from **Settings > Marketplace**:
 4. Set up **Toyota (North America)** if Home Assistant opens setup
    automatically, or add it under **Settings > Devices & services**.
 
+<!-- ha-marketplace:exclude-end -->
+
 **Beta releases:** Open **Settings > Devices & services > Devices**, find this
 repository (`Toyota (North America) - orienw`), enable its **Pre-release**
 switch entity, and turn it on.
+
+<!-- ha-marketplace:exclude-start -->
 
 ### HACS (Home Assistant 2026.8 to 2026.10)
 
@@ -76,6 +86,8 @@ switch entity, and turn it on.
 
 **Beta releases:** Open this repository's device under the HACS integration,
 enable its **Pre-release** switch entity, and turn it on.
+
+<!-- ha-marketplace:exclude-end -->
 
 ### Switching from upstream
 
@@ -103,6 +115,8 @@ again.
    it under **Settings > Devices & services**, then verify your vehicles and
    entities are intact.
 
+<!-- ha-marketplace:exclude-start -->
+
 #### Home Assistant 2026.10 and older (HACS)
 
 This fork uses the same `toyota_na` domain, so your account, devices, and
@@ -119,9 +133,13 @@ entity IDs carry over. **Do not delete** your existing Toyota entry under
 
 Confirm HACS shows `orienw/ha-toyota-na` as downloaded.
 
+<!-- ha-marketplace:exclude-end -->
+
 > **Tailgate migration note:** On vehicles with a tailgate, this fork replaces
 > trunk entities with **Tailgate** and **Tailgate Lock**. Update any
 > automations that still reference the old trunk entities.
+
+<!-- ha-marketplace:exclude-start -->
 
 ### Manual installation
 
@@ -132,6 +150,8 @@ Confirm HACS shows `orienw/ha-toyota-na` as downloaded.
 3. Restart Home Assistant. For a new install, add **Toyota (North America)**
    under **Settings > Devices & services**. For an existing install, leave the
    configured entry in place.
+
+<!-- ha-marketplace:exclude-end -->
 
 ## Configuration
 
