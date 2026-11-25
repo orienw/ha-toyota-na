@@ -2,6 +2,7 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 # Home Assistant must alias httpx before respx imports it; only respx's pytest plugin is off.
 addopts = "-p no:respx"
 
