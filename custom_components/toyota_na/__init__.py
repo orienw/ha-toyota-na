@@ -15,6 +15,7 @@ from homeassistant.exceptions import (
     ConfigEntryNotReady,
     ServiceValidationError,
 )
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import service
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
@@ -43,6 +44,7 @@ from .wake_policy import automatic_wake_due, record_vehicle_wake
 from .websocket_handler import ToyotaWebSocketHandler
 
 _LOGGER = logging.getLogger(__name__)
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = [
     "binary_sensor",
     "button",
