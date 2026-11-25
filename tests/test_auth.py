@@ -255,6 +255,7 @@ class TestAuthFlow:
             request_tokens=AsyncMock(),
             get_id_info=AsyncMock(return_value={"email": "owner@example.com"}),
             get_tokens=lambda: {"access_token": "token"},
+            otp_callbacks=None,
         )
         with patch.object(
             config_flow, "ToyotaOneClient", return_value=types.SimpleNamespace(auth=auth)
@@ -281,7 +282,7 @@ class TestAuthFlow:
         with (
             patch.object(auth_module.aiohttp, "ClientSession", return_value=session),
             caplog.at_level(logging.INFO, logger=auth_module.__name__),
-            pytest.raises(LoginError),
+            pytest.raises(LoginError, match="HTTP 401 before the password was sent"),
         ):
             await auth_module.ToyotaOneAuth.authorize(types.SimpleNamespace(), "owner", "password")
         logs = " ".join(
@@ -289,6 +290,83 @@ class TestAuthFlow:
         )
         assert "401" in logs
         assert "private-auth-session" not in logs
+
+    async def test_rejected_sign_in_logs_why_it_was_rejected(self, hass, auth, caplog):
+        auth.authorize.side_effect = LoginError("Toyota did not accept the password.")
+
+        result = await self.sign_in(hass)
+
+        assert result["errors"] == {"base": "not_logged_in"}
+        assert (
+            errors_logged(caplog, config_flow.__name__)[0]
+            .getMessage()
+            .endswith(": Toyota did not accept the password.")
+        )
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            aiohttp.ClientResponseError(MagicMock(), (), status=503, message="Service Unavailable"),
+            aiohttp.ClientConnectionError("network drop"),
+            TimeoutError(),
+        ],
+        ids=["server error", "connection error", "timeout"],
+    )
+    @pytest.mark.parametrize("failing", ["authorize", "request_tokens"])
+    async def test_unavailable_sign_in_service_is_not_a_rejected_sign_in(
+        self, hass, auth, caplog, error, failing
+    ):
+        auth.authorize.return_value = "code"
+        getattr(auth, failing).side_effect = [error, None]
+
+        result = await self.sign_in(hass)
+
+        assert (result["step_id"], result["errors"]) == ("user", {"base": "cannot_connect"})
+        logged = errors_logged(caplog, config_flow.__name__)[0].getMessage()
+        assert logged.startswith("Toyota sign-in service is unavailable: ")
+        assert not logged.endswith(": ")
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], CREDENTIALS)
+        await hass.async_block_till_done()
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    async def test_connection_error_during_otp_lets_the_code_be_sent_again(self, hass, auth):
+        auth.authorize.side_effect = [
+            {"callbacks": []},
+            aiohttp.ClientConnectionError("network drop"),
+            "code",
+        ]
+        auth.otp_callbacks = {"callbacks": []}
+        result = await self.sign_in(hass)
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"code": "123456"}
+        )
+
+        assert (result["step_id"], result["errors"]) == ("otp", {"base": "cannot_connect"})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"code": "123456"}
+        )
+        await hass.async_block_till_done()
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    async def test_server_error_that_ends_the_otp_session_returns_to_credentials(self, hass, auth):
+        def authorize(username, password, otp=None):
+            if otp is None:
+                auth.otp_callbacks = {"callbacks": []}
+                return auth.otp_callbacks
+            auth.otp_callbacks = None
+            raise aiohttp.ClientResponseError(MagicMock(), (), status=503)
+
+        auth.authorize.side_effect = authorize
+        result = await self.sign_in(hass)
+        assert result["step_id"] == "otp"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"code": "123456"}
+        )
+
+        assert (result["step_id"], result["errors"]) == ("user", {"base": "cannot_connect"})
+        auth.request_tokens.assert_not_awaited()
 
     async def test_authorized_login_finishes_without_asking_for_otp(self, hass, auth):
         auth.authorize.return_value = "authorization-code"
@@ -871,10 +949,49 @@ class AuthPromptTests(unittest.IsolatedAsyncioTestCase):
         expired.__aenter__.return_value = expired
         self.session.post.return_value = expired
 
-        with self.assertRaises(auth_module.OtpSessionError):
+        with self.assertRaisesRegex(
+            auth_module.OtpSessionError, "HTTP 401 after the verification code was sent"
+        ):
             await auth_module.ToyotaOneAuth.authorize(self.auth, "owner", "secret", "123456")
 
         self.assertIsNone(self.auth.otp_callbacks)
+
+    async def test_rejected_password_request_says_the_password_was_sent(self):
+        challenge = AsyncMock(status=200)
+        challenge.__aenter__.return_value = challenge
+        challenge.json.return_value = {"callbacks": [self.callback("PasswordCallback", "Password")]}
+        rejected = AsyncMock(status=401)
+        rejected.__aenter__.return_value = rejected
+        self.session.post.side_effect = [challenge, rejected]
+
+        with self.assertRaisesRegex(LoginError, "HTTP 401 after the password was sent"):
+            await auth_module.ToyotaOneAuth.authorize(self.auth, "owner", "secret")
+
+    async def test_rate_limits_and_server_errors_are_not_rejected_sign_ins(self):
+        redirect = self.session.get.return_value
+        for status in (429, 500, 503):
+            error = aiohttp.ClientResponseError(MagicMock(), (), status=status)
+            for failing, otp in (
+                (self.response, None),
+                (self.response, "123456"),
+                (redirect, None),
+            ):
+                with self.subTest(status=status, redirect=failing is redirect, otp=otp):
+                    self.response.status = 200
+                    self.response.json.return_value = {"tokenId": "session"}
+                    redirect.status = 302
+                    failing.status = status
+                    failing.raise_for_status = MagicMock(side_effect=error)
+                    self.auth.otp_callbacks = {
+                        "authId": "orig",
+                        "callbacks": [self.callback("PasswordCallback", "One Time Password")],
+                    }
+
+                    with self.assertRaises(aiohttp.ClientResponseError) as caught:
+                        await auth_module.ToyotaOneAuth.authorize(self.auth, "owner", "secret", otp)
+
+                    self.assertIs(error, caught.exception)
+                    self.assertEqual(otp is None, self.auth.otp_callbacks is not None)
 
 
 class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
@@ -928,6 +1045,11 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
         session.post.return_value = response
         with patch.object(auth_module.aiohttp, "ClientSession", return_value=session):
             with self.assertRaises(LoginError):
+                await auth_module.ToyotaOneAuth.request_tokens(auth, "code")
+            error = aiohttp.ClientResponseError(MagicMock(), (), status=503)
+            response.status = 503
+            response.raise_for_status = MagicMock(side_effect=error)
+            with self.assertRaises(aiohttp.ClientResponseError):
                 await auth_module.ToyotaOneAuth.request_tokens(auth, "code")
         auth._extract_tokens.assert_not_called()
         self.assertEqual(auth._code_verifier, "pending-verifier")
@@ -1013,7 +1135,12 @@ class AuthCallbackTests(unittest.IsolatedAsyncioTestCase):
                     expected = TokenExpired if expired else aiohttp.ClientResponseError
                     with self.assertRaises(expected) as caught:
                         await auth.check_tokens()
-                    if not expired:
+                    if expired:
+                        self.assertEqual(
+                            "Toyota rejected the saved session. Sign in again.",
+                            str(caught.exception),
+                        )
+                    else:
                         self.assertIs(error, caught.exception)
                     self.assertEqual(tokens, auth.get_tokens())
                     session.post.assert_called_once()

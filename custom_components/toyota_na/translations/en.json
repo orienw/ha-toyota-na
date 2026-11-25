@@ -22,6 +22,7 @@
       "reauth_wrong_account": "Sign in with the Toyota or Lexus account already configured for this integration."
     },
     "error": {
+      "cannot_connect": "Toyota's sign-in service is unavailable. Try again in a few minutes.",
       "not_logged_in": "Not logged in",
       "otp_expired": "The verification code expired. Sign in again.",
       "otp_not_logged_in": "Invalid verification code",

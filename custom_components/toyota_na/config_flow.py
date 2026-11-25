@@ -1,5 +1,6 @@
 import logging
 
+import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -48,9 +49,14 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except SsoAccountError:
                 errors["base"] = "sso_account"
                 _LOGGER.error("Toyota account requires identity provider sign-in")
-            except AuthError:
+            except AuthError as err:
                 errors["base"] = "not_logged_in"
-                _LOGGER.error("Not logged in with username and password")
+                _LOGGER.error("Not logged in with username and password: %s", err)
+            except (aiohttp.ClientError, TimeoutError) as err:
+                errors["base"] = "cannot_connect"
+                _LOGGER.error(
+                    "Toyota sign-in service is unavailable: %s", str(err) or type(err).__name__
+                )
             except Exception:
                 errors["base"] = "unknown"
                 _LOGGER.exception("Unknown error with username and password")
@@ -84,12 +90,22 @@ class ToyotaNAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except SsoAccountError:
                 _LOGGER.error("Toyota account requires identity provider sign-in")
                 return await self._async_user_step(None, {"base": "sso_account"})
-            except OtpSessionError:
-                _LOGGER.error("Toyota one-time password session expired or cannot be retried")
+            except OtpSessionError as err:
+                _LOGGER.error(
+                    "Toyota one-time password session expired or cannot be retried: %s", err
+                )
                 return await self._async_user_step(None, {"base": "otp_expired"})
-            except AuthError:
+            except AuthError as err:
                 errors["base"] = "otp_not_logged_in"
-                _LOGGER.error("Not logged in with one time password")
+                _LOGGER.error("Not logged in with one time password: %s", err)
+            except (aiohttp.ClientError, TimeoutError) as err:
+                _LOGGER.error(
+                    "Toyota sign-in service is unavailable: %s", str(err) or type(err).__name__
+                )
+                if self.client.auth.otp_callbacks is None:
+                    # Toyota ended the code's session, so the code cannot be sent again.
+                    return await self._async_user_step(None, {"base": "cannot_connect"})
+                errors["base"] = "cannot_connect"
             except Exception:
                 errors["base"] = "unknown"
                 _LOGGER.exception("Unknown error with one time password")

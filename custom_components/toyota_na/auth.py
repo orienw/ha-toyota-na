@@ -51,6 +51,12 @@ def _callback_prompt(callback):
     )
 
 
+def _raise_if_unavailable(resp):
+    """Raise Toyota's rate limits and server errors as HTTP errors, not as rejected sign-ins."""
+    if resp.status == 429 or resp.status >= 500:
+        resp.raise_for_status()
+
+
 def _has_otp_callback(data):
     """Return whether a ForgeRock response still invites a one-time password."""
     return isinstance(data, dict) and any(
@@ -160,7 +166,7 @@ class ToyotaOneAuth:
             lock = self._token_lock = asyncio.Lock()
         async with lock:
             if self._expires_at is None:
-                raise NotLoggedIn()
+                raise NotLoggedIn("No Toyota session is saved. Sign in again.")
             now = time.time()
             if (
                 now >= self._expires_at
@@ -180,7 +186,7 @@ class ToyotaOneAuth:
                 try:
                     await self.refresh_tokens()
                 except LoginError as err:
-                    raise TokenExpired() from err
+                    raise TokenExpired(str(err)) from err
 
     def _extract_tokens(self, response):
         """Replace tokens atomically, retaining fields omitted during refresh."""
@@ -331,7 +337,17 @@ class ToyotaOneAuth:
                         if otp is not None:
                             self.otp_callbacks = None
                         _LOGGER.info("Toyota authentication failed with HTTP %s", resp.status)
-                        raise terminal_error()
+                        _raise_if_unavailable(resp)
+                        stage = (
+                            "after the verification code was sent"
+                            if otp_submitted
+                            else "after the password was sent"
+                            if password_submitted
+                            else "before the password was sent"
+                        )
+                        raise terminal_error(
+                            f"Toyota authentication failed with HTTP {resp.status} {stage}."
+                        )
                     data = await resp.json()
                     for cb in data.get("callbacks", []):
                         if cb["type"] != "TextOutputCallback":
@@ -354,8 +370,8 @@ class ToyotaOneAuth:
                         if message.casefold() == "password_history_failure":
                             raise PasswordHistoryError()
                         if otp is not None and not _has_otp_callback(data):
-                            raise OtpSessionError()
-                        raise LoginError()
+                            raise OtpSessionError("Toyota rejected the authentication challenge.")
+                        raise LoginError("Toyota rejected the authentication challenge.")
                     if "tokenId" in data:
                         break
                     if not any(cb.get("input") for cb in data.get("callbacks", [])):
@@ -365,7 +381,7 @@ class ToyotaOneAuth:
 
             if "tokenId" not in data:
                 _LOGGER.error("Toyota login did not complete its authentication challenge")
-                raise terminal_error()
+                raise terminal_error("Toyota login did not complete its authentication challenge.")
             headers["Cookie"] = f"iPlanetDirectoryPro={data['tokenId']}"
             self._code_verifier = secrets.token_urlsafe(64)
             challenge = (
@@ -388,8 +404,11 @@ class ToyotaOneAuth:
                 AUTHORIZE_URL_QS, headers=headers, allow_redirects=False
             ) as resp:
                 if resp.status not in (301, 302, 303, 307, 308):
+                    _raise_if_unavailable(resp)
                     _LOGGER.error("Toyota authentication request failed with HTTP %s", resp.status)
-                    raise terminal_error()
+                    raise terminal_error(
+                        f"Toyota authentication request failed with HTTP {resp.status}."
+                    )
                 try:
                     redirect = urlparse(resp.headers.get("Location", ""))
                 except ValueError as err:
@@ -426,7 +445,8 @@ class ToyotaOneAuth:
                 ToyotaOneAuth.ACCESS_TOKEN_URL, data=data, **post_kwargs
             ) as resp:
                 if resp.status != 200:
-                    raise LoginError()
+                    _raise_if_unavailable(resp)
+                    raise LoginError(f"Toyota token request failed with HTTP {resp.status}.")
                 self._extract_tokens(await resp.json())
                 self._code_verifier = None
 
@@ -447,6 +467,6 @@ class ToyotaOneAuth:
                     except ValueError:
                         error = None
                     if isinstance(error, dict) and error.get("error") == "invalid_grant":
-                        raise LoginError()
+                        raise LoginError("Toyota rejected the saved session. Sign in again.")
                 resp.raise_for_status()
                 self._extract_tokens(await resp.json())
