@@ -1,6 +1,7 @@
 {
     "domain": "toyota_na",
     "name": "Toyota (North America)",
+    "categories": ["vehicles_transport.cars_evs"],
     "codeowners": ["@orienw"],
     "config_flow": true,
     "documentation": "https://github.com/orienw/ha-toyota-na",
