@@ -108,9 +108,10 @@ again.
 2. Follow the prompt to delete the existing integration setup and uninstall
    upstream.
 3. Restart Home Assistant.
-4. Open **Settings > Marketplace**, select **Add from link** (connect GitHub if
-   prompted), add `https://github.com/orienw/ha-toyota-na`, open it, and
-   select **Install**.
+4. Open **Settings > Marketplace**. If this repository is not listed yet, select
+   **Add from link** (connect GitHub if prompted) and add
+   `https://github.com/orienw/ha-toyota-na`. Then open
+   **Toyota (North America) - orienw** and select **Install**.
 5. Sign in to **Toyota (North America)** if setup opens automatically, or add
    it under **Settings > Devices & services**, then verify your vehicles and
    entities are intact.
@@ -126,8 +127,8 @@ entity IDs carry over. **Do not delete** your existing Toyota entry under
 1. In **HACS**, open `widewing/ha-toyota-na` and choose **Remove** from its
    three-dot menu. This removes the integration files without touching your
    Home Assistant data.
-2. Add `https://github.com/orienw/ha-toyota-na` as a custom repository (type
-   **Integration**).
+2. If you have not already, add `https://github.com/orienw/ha-toyota-na` as a
+   custom repository (type **Integration**).
 3. Download the latest stable release **before** restarting Home Assistant.
 4. Restart Home Assistant and verify your vehicles and entities are intact.
 
